@@ -79,7 +79,7 @@ class Provider:
         raise NotImplementedError
 
     def vision_models(self):
-        return [m for m in self.list_models() if looks_vision(m)]
+        return sort_models([m for m in self.list_models() if looks_vision(m)])
 
     def stream_chat(self, model, messages, temperature=0.7, json_mode=False, stop_flag=None):
         raise NotImplementedError
@@ -110,7 +110,7 @@ class OllamaProvider(Provider):
                 pass
             if "vision" in caps or (not caps and looks_vision(m)):
                 out.append(m)
-        return out
+        return sort_models(out)
 
     def stream_chat(self, model, messages, temperature=0.7, json_mode=False, stop_flag=None):
         payload = {"model": model, "messages": messages, "stream": True, "options": {"temperature": temperature}}
@@ -259,3 +259,61 @@ KINDS = {"ollama": OllamaProvider, "openai": OpenAIProvider, "anthropic": Anthro
 def make(pid, base_url=None, api_key=""):
     preset = PRESETS.get(pid, PRESETS["ollama"])
     return KINDS[preset["kind"]](base_url or preset["base_url"], api_key, pid)
+
+
+# ---------------------------------------------------------------- model load failures
+# Ollama (llama-server) reports models it can't run with messages such as
+#   "llama-server process has terminated: exit status 1: error loading model: unknown model architecture: 'mllama'"
+LOAD_FAIL_PATTERNS = ("unknown model architecture", "error loading model", "process has terminated",
+                      "llama runner process has terminated", "failed to load model", "unable to load model",
+                      "model architecture not supported", "unsupported model architecture")
+VISION_PREFERENCE = ("qwen2.5vl", "qwen2.5-vl", "qwen3-vl", "qwen3vl", "gemma3", "llava", "minicpm-v", "llama4",
+                     "mistral-small3", "granite3.2-vision", "moondream", "bakllava", "llama3.2-vision")
+CHAT_PREFERENCE = ("qwen2.5", "qwen3", "llama3.2", "llama3.1", "gemma3", "mistral", "phi4")
+VISION_PULL = "ollama pull qwen2.5vl"
+CHAT_PULL = "ollama pull llama3.2"
+
+
+def is_model_load_error(msg):
+    m = str(msg).lower()
+    return any(p in m for p in LOAD_FAIL_PATTERNS)
+
+
+def load_error_detail(msg):
+    """Short reason, e.g. "unknown model architecture: 'mllama'"."""
+    m = str(msg)
+    low = m.lower()
+    for key in ("unknown model architecture", "error loading model", "failed to load model"):
+        i = low.find(key)
+        if i >= 0:
+            return m[i:].split('"')[0].strip().rstrip("}").strip()[:160]
+    return m[:160]
+
+
+def _rank(name, prefs):
+    n = name.lower()
+    for i, p in enumerate(prefs):
+        if p in n:
+            return i
+    return len(prefs)
+
+
+def sort_models(models, prefs=VISION_PREFERENCE, failed=()):
+    """Preferred families first, models that failed to load last; stable otherwise."""
+    failed = set(failed)
+    return sorted(models, key=lambda m: (m in failed, _rank(m, prefs)))
+
+
+def pick_alternative(models, bad, prefs=VISION_PREFERENCE, failed=()):
+    skip = set(failed) | {bad}
+    for m in sort_models(models, prefs, failed):
+        if m not in skip:
+            return m
+    return None
+
+
+def friendly_load_error(model, msg, vision=False, ollama_kind=True):
+    what = "vision model" if vision else "model"
+    return (f"The {what} “{model}” can't run on this {'Ollama' if ollama_kind else 'server'} version "
+            f"({load_error_detail(msg)}). Re-pulling won't fix this. Try another {what}"
+            + (", or update Ollama from ollama.com/download." if ollama_kind else "."))

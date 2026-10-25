@@ -14,7 +14,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Settings page**, **first-run guided tour**, optional **update check** (GitHub releases), **portable vs AppData** data location, and **i18n** (English plus machine-translated Español and Deutsch).
 - Tests for providers, image backends, the gallery, community, updates, paths, the keystore, A/B and i18n, all run against local mock servers.
 
+- **Friendly "model can't load" handling.** Ollama errors such as `unknown model architecture: 'mllama'`, `error loading model` or "llama-server process has terminated" (for example, `llama3.2-vision` on newer Ollama builds) now show a clear message instead of a raw HTTP 500. It explains that the model can't run on this Ollama version and that re-pulling won't help, and suggests another model or updating Ollama. One-click actions switch to another installed model (vision: qwen2.5vl, then gemma3, llava…) or copy `ollama pull qwen2.5vl`. Models that failed are remembered, shown in red with a tooltip in the model pickers, and sorted last. The mark is cleared once the model works again. The same handling covers chat models.
+
 ### Changed
+- The vision model preference order now puts `qwen2.5vl` first, and the "no vision model" hint suggests `ollama pull qwen2.5vl`.
 - User and imported packs now live in `data/packs/`, and the bundled `packs/` folder is read-only. An existing `packs/custom.json` is migrated automatically.
 - `keyring` added to the requirements (optional at runtime).
 

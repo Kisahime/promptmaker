@@ -222,6 +222,10 @@
   "model(s)": "Modell(e)",
   "Update available": "Update verfügbar",
   "is available": "ist verfügbar",
-  "PromptMaker": "PromptMaker"
+  "PromptMaker": "PromptMaker",
+  "Model couldn't load": "Modell konnte nicht geladen werden",
+  "Switch to": "Wechseln zu",
+  "Switched to": "Gewechselt zu",
+  "try again": "bitte erneut versuchen"
  }
 }

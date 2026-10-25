@@ -11,7 +11,7 @@ import time
 from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QBuffer, QIODevice
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence, QFont, QPixmap, QIcon, QImage
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog, QLineEdit,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QMessageBox, QGridLayout, QHBoxLayout, QInputDialog, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QRadioButton, QScrollArea, QSpinBox,
     QSplitter, QStackedWidget, QSlider, QFrame, QLabel, QProgressBar, QDoubleSpinBox, QTextBrowser, QVBoxLayout, QWidget,
 )
@@ -205,17 +205,73 @@ class MainWindow(QMainWindow):
             return self._models_failed(e, quiet)
         return self._models_loaded(models, quiet)
 
-    def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7, model=None):
+    def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7, model=None, vision=False):
         if self.worker and self.worker.isRunning():
             self.notify("The AI is still busy – press Stop first", error=True); return False
         if not model and not self.model.currentText() and not self.refresh_models(quiet=True):
             self.notify(tr("No AI model available – check the AI provider in Settings"), error=True); return False
-        self.worker = ChatWorker(self.provider, model or self.model.currentText(), messages, temperature, json_mode)
+        used = model or self.model.currentText()
+        self.worker = ChatWorker(self.provider, used, messages, temperature, json_mode)
         self.worker.chunk.connect(on_chunk)
-        self.worker.done.connect(lambda t: (self._busy(False), on_done(t)))
-        self.worker.failed.connect(lambda e: (self._busy(False), self.notify(e, error=True)))
+        self.worker.done.connect(lambda t: (self._busy(False), self._mark_model_ok(used), on_done(t)))
+        self.worker.failed.connect(lambda e: (self._busy(False), self._ai_error(e, used, vision)))
         self._busy(True); self.worker.start()
         return True
+
+    # ---- friendly handling of models the provider can't load (e.g. Ollama 'unknown model architecture')
+    def _failed_models(self):
+        return self.store.get(f"failed_models:{self.provider.pid}", {}) or {}
+
+    def _mark_model_ok(self, model):
+        f = self._failed_models()
+        if model in f:
+            f.pop(model); self.store.set(f"failed_models:{self.provider.pid}", f); self._mark_failed_in_pickers()
+
+    def _mark_failed_in_pickers(self):
+        from PySide6.QtGui import QColor
+        failed = self._failed_models()
+        for combo in (self.model, getattr(self, "vision_model", None)):
+            if combo is None:
+                continue
+            for i in range(combo.count()):
+                name = combo.itemText(i)
+                bad = name in failed
+                combo.setItemData(i, QColor("#ff6b6b") if bad else None, Qt.ForegroundRole)
+                combo.setItemData(i, ("⚠ Failed to load last time: " + failed[name]) if bad else None, Qt.ToolTipRole)
+
+    def _ai_error(self, err, model, vision=False):
+        if not providers.is_model_load_error(err):
+            self.notify(err, error=True); return
+        f = self._failed_models(); f[model] = providers.load_error_detail(err)
+        self.store.set(f"failed_models:{self.provider.pid}", f)
+        is_ollama = self.provider.kind == "ollama"
+        combo = self.vision_model if vision and hasattr(self, "vision_model") else self.model
+        models = [combo.itemText(i) for i in range(combo.count())]
+        prefs = providers.VISION_PREFERENCE if vision else providers.CHAT_PREFERENCE
+        alt = providers.pick_alternative(models, model, prefs, f)
+        pull = providers.VISION_PULL if vision else providers.CHAT_PULL
+        self._mark_failed_in_pickers()
+        msg = providers.friendly_load_error(model, err, vision, is_ollama)
+        self.notify(msg, error=True)
+        box = QMessageBox(self); box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Model couldn't load")); box.setText(msg)
+        box.setDetailedText(str(err))
+        switch = box.addButton(tr("Switch to") + f" {alt}", QMessageBox.AcceptRole) if alt else None
+        copy_btn = box.addButton(tr("Copy") + f" `{pull}`", QMessageBox.ActionRole) if is_ollama else None
+        box.addButton(QMessageBox.Close)
+        def clicked(b):
+            if switch is not None and b is switch:
+                combo.setCurrentText(alt)
+                if vision:
+                    self.store.set(f"vision_model:{self.provider.pid}", alt); self.notify(tr("Switched to") + f" {alt}")
+                    self._i2p_run()
+                else:
+                    self.notify(tr("Switched to") + f" {alt} – " + tr("try again"))
+            elif copy_btn is not None and b is copy_btn:
+                copy(pull); self.notify(tr("Copied") + f": {pull}")
+        box.buttonClicked.connect(clicked)
+        self._last_error_box = box
+        box.open()
 
     def _busy(self, busy):
         for b in self.ai_buttons:
@@ -1451,7 +1507,7 @@ class MainWindow(QMainWindow):
         saved = self.store.get(f"model:{pid}") or (self.store.get("model") if pid == "ollama" else None)
         if saved in models:
             self.model.setCurrentText(saved)
-        self._set_banner(True, len(models))
+        self._set_banner(True, len(models)); self._mark_failed_in_pickers()
         name = providers.PRESETS.get(pid, {}).get("label", pid)
         if models:
             self.ai_dot.setText(f"<span style='color:#35d39a'>●</span> {tr('Connected')} · {len(models)} {tr('model(s)')}")
@@ -1706,14 +1762,17 @@ class MainWindow(QMainWindow):
         self.i2p_hint.setText(tr("Looking for vision models…"))
         w = CallWorker(self.provider.vision_models)
         def ok(models):
+            failed = self._failed_models()
+            models = providers.sort_models(models, providers.VISION_PREFERENCE, failed)
             self.vision_model.clear(); self.vision_model.addItems(models)
             saved = self.store.get(f"vision_model:{self.provider.pid}")
-            if saved in models:
+            if saved in models and saved not in failed:
                 self.vision_model.setCurrentText(saved)
+            self._mark_failed_in_pickers()
             if models:
                 self.i2p_hint.setText(f"{len(models)} vision-capable model(s) found.")
             else:
-                self.i2p_hint.setText("No vision model found. For Ollama try: ollama pull llama3.2-vision  (or qwen2.5vl, gemma3, llava). "
+                self.i2p_hint.setText("No vision model found. For Ollama try: ollama pull qwen2.5vl  (or gemma3, llava). "
                                       "LM Studio: load a vision model (e.g. Qwen2.5-VL).")
                 self.vision_model.setEditable(True)
         w.ok.connect(ok); w.failed.connect(lambda e: self.i2p_hint.setText("⚠️ " + e[:200]))
@@ -1737,7 +1796,7 @@ class MainWindow(QMainWindow):
         def chunk(c):
             self.i2p_out.insertPlainText(c)
         self.run_ai(msgs, chunk, lambda t: self.store.add_history(t.strip(), self.profile["name"], "image2prompt"),
-                    temperature=0.4, model=model)
+                    temperature=0.4, model=model, vision=True)
 
     def _i2p_builder(self):
         t = self.i2p_out.toPlainText().strip()

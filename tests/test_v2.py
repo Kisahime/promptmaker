@@ -21,6 +21,8 @@ from promptmaker.library import Library  # noqa: E402
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 LOG = []
+MLLAMA = ("llama-server process has terminated: exit status 1: error loading model: "
+          "unknown model architecture: 'mllama'")
 
 
 class Mock(BaseHTTPRequestHandler):
@@ -76,6 +78,8 @@ class Mock(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         LOG.append(("POST", self.path, body, dict(self.headers)))
         p = self.path
+        if p == "/api/chat" and body.get("model") == "llama3.2-vision":
+            return self._send({"error": MLLAMA}, code=500)
         if p == "/api/chat":
             self.send_response(200); self.end_headers()
             for w in ["Hel", "lo"]:
@@ -282,3 +286,69 @@ def test_i18n():
     assert i18n.tr("unknown string xyz") == "unknown string xyz"
     i18n.set_language("en")
     assert i18n.tr("Settings") == "Settings"
+
+
+# ---------------------------------------------------------------- model load failures
+def test_model_load_error_detection(server):
+    _, url = server
+    p = providers.make("ollama", url)
+    with pytest.raises(providers.ProviderError) as ei:
+        list(p.stream_chat("llama3.2-vision", [{"role": "user", "content": "x"}]))
+    err = str(ei.value)
+    assert "HTTP 500" in err and providers.is_model_load_error(err)
+    assert providers.load_error_detail(err) == "unknown model architecture: 'mllama'"
+    for m in ("llama runner process has terminated: signal: killed", "error loading model: x", "failed to load model"):
+        assert providers.is_model_load_error(m)
+    for m in ("Can't reach http://localhost:11434", "HTTP 404: model 'x' not found, try pulling it first", "timed out"):
+        assert not providers.is_model_load_error(m)
+    msg = providers.friendly_load_error("llama3.2-vision", err, vision=True)
+    assert "can't run on this Ollama version" in msg and "update Ollama" in msg and "mllama" in msg
+
+
+def test_vision_preference_and_alternative():
+    ms = ["llama3.2-vision:latest", "llava:7b", "gemma3:4b", "qwen2.5vl:7b", "mystery-vl"]
+    assert providers.sort_models(ms)[0] == "qwen2.5vl:7b"
+    assert providers.sort_models(ms)[:3] == ["qwen2.5vl:7b", "gemma3:4b", "llava:7b"]
+    failed = {"qwen2.5vl:7b": "x"}
+    assert providers.sort_models(ms, failed=failed)[-1] == "qwen2.5vl:7b"
+    assert providers.pick_alternative(ms, "llama3.2-vision:latest") == "qwen2.5vl:7b"
+    assert providers.pick_alternative(ms, "llama3.2-vision:latest", failed=failed) == "gemma3:4b"
+    assert providers.pick_alternative(["only"], "only") is None
+    assert providers.pick_alternative(["llama3.2", "mistral"], "mistral", providers.CHAT_PREFERENCE) == "llama3.2"
+
+
+def test_ollama_vision_models_sorted(server):
+    _, url = server
+    p = providers.make("ollama", url)
+    # /api/show in the mock marks only llava as vision; gemma3 falls back to name hints only if no caps
+    assert p.vision_models()[0] == "llava:7b"
+
+
+def test_ui_friendly_model_error(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("PROMPTMAKER_NO_NET", "1"); monkeypatch.setenv("PROMPTMAKER_NO_TOUR", "1")
+    from PySide6.QtWidgets import QApplication
+    from promptmaker.app import MainWindow
+    from promptmaker.storage import Store
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow(Store(str(tmp_path / "t.db")), str(tmp_path))
+    w.vision_model.clear(); w.vision_model.addItems(["llama3.2-vision:latest", "gemma3:4b", "qwen2.5vl:7b"])
+    w._ai_error("HTTP 500 from http://x/api/chat: {\"error\":\"" + MLLAMA + "\"}", "llama3.2-vision:latest", vision=True)
+    assert "llama3.2-vision:latest" in w._failed_models()
+    box = w._last_error_box
+    labels = [b.text() for b in box.buttons()]
+    assert any("qwen2.5vl:7b" in t for t in labels) and any("ollama pull qwen2.5vl" in t for t in labels)
+    from PySide6.QtCore import Qt
+    assert "Failed to load" in (w.vision_model.itemData(0, Qt.ToolTipRole) or "")
+    switch = next(b for b in box.buttons() if "qwen2.5vl:7b" in b.text())
+    switch.click(); app.processEvents()
+    assert w.vision_model.currentText() == "qwen2.5vl:7b"
+    copy_btn = next(b for b in box.buttons() if "ollama pull" in b.text())
+    copy_btn.click(); app.processEvents()
+    assert QApplication.clipboard().text() == "ollama pull qwen2.5vl"
+    w._mark_model_ok("llama3.2-vision:latest")
+    assert "llama3.2-vision:latest" not in w._failed_models()
+    w._ai_error("Can't reach the server", "x")  # ordinary errors: toast only, no dialog change
+    assert w._last_error_box is box
+    box.close(); w.close()
