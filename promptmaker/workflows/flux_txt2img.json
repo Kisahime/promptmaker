@@ -1,0 +1,13 @@
+{
+ "_meta": {"name": "FLUX.1 dev txt2img (fp8 checkpoint)", "description": "FLUX.1 [dev] all-in-one fp8 checkpoint (e.g. flux1-dev-fp8.safetensors in models/checkpoints). CFG stays 1; FluxGuidance controls strength. Negative prompt is ignored by FLUX.", "defaults": {"steps": 20, "cfg": 1.0, "sampler": "euler", "scheduler": "simple", "checkpoint": "flux1-dev-fp8.safetensors"}},
+ "workflow": {
+  "30": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "{{checkpoint}}"}},
+  "27": {"class_type": "EmptySD3LatentImage", "inputs": {"width": "{{width}}", "height": "{{height}}", "batch_size": 1}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{prompt}}", "clip": ["30", 1]}},
+  "35": {"class_type": "FluxGuidance", "inputs": {"guidance": 3.5, "conditioning": ["6", 0]}},
+  "33": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["30", 1]}},
+  "31": {"class_type": "KSampler", "inputs": {"seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}", "sampler_name": "{{sampler}}", "scheduler": "{{scheduler}}", "denoise": 1.0, "model": ["30", 0], "positive": ["35", 0], "negative": ["33", 0], "latent_image": ["27", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["31", 0], "vae": ["30", 2]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "PromptMaker", "images": ["8", 0]}}
+ }
+}

@@ -42,21 +42,29 @@ def slug(name):
 
 
 class Library:
-    def __init__(self, packs_dir, disabled=()):
+    def __init__(self, packs_dir, disabled=(), user_dir=None):
         self.dir = packs_dir
-        os.makedirs(packs_dir, exist_ok=True)
+        self.user_dir = user_dir or packs_dir
+        os.makedirs(self.user_dir, exist_ok=True)
         self.disabled = set(disabled)
         self.reload()
 
     def reload(self):
-        self.packs = {}
-        for fn in sorted(os.listdir(self.dir), key=lambda f: (f != "core.json", f != "custom.json", f)):
-            if fn.endswith(".json"):
-                try:
-                    with open(os.path.join(self.dir, fn), encoding="utf-8") as f:
-                        self.packs[fn[:-5]] = validate_pack(json.load(f))
-                except (OSError, ValueError, PackError):
-                    continue
+        self.packs, self.paths, self.bundled = {}, {}, set()
+        dirs = [self.dir] + ([self.user_dir] if os.path.abspath(self.user_dir) != os.path.abspath(self.dir) else [])
+        for d in dirs:
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d), key=lambda f: (f != "core.json", f != "custom.json", f)):
+                if fn.endswith(".json"):
+                    try:
+                        with open(os.path.join(d, fn), encoding="utf-8") as f:
+                            self.packs[fn[:-5]] = validate_pack(json.load(f))
+                        self.paths[fn[:-5]] = os.path.join(d, fn)
+                        if d == self.dir and fn[:-5] != CUSTOM_ID and not fn.startswith("community_"):
+                            self.bundled.add(fn[:-5])
+                    except (OSError, ValueError, PackError):
+                        continue
         if CUSTOM_ID not in self.packs:
             self.packs[CUSTOM_ID] = {"name": "My presets", "description": "Chips you added yourself.",
                                      "version": "1.0", "categories": {}}
@@ -105,10 +113,12 @@ class Library:
         self._merge()
 
     def pack_path(self, pid):
-        return os.path.join(self.dir, pid + ".json")
+        return self.paths.get(pid) or os.path.join(self.user_dir, pid + ".json")
 
     def save_pack(self, pid):
-        with open(self.pack_path(pid), "w", encoding="utf-8") as f:
+        path = self.pack_path(pid)
+        self.paths[pid] = path
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.packs[pid], f, indent=1, ensure_ascii=False)
 
     def add_custom(self, cat, item):
@@ -136,9 +146,10 @@ class Library:
             json.dump(self.packs[pid], f, indent=1, ensure_ascii=False)
 
     def delete_pack(self, pid):
-        if pid in ("core", CUSTOM_ID):
-            raise PackError("The core and custom packs can't be deleted (disable them instead).")
+        if pid in self.bundled or pid == CUSTOM_ID:
+            raise PackError("Built-in packs and My presets can't be deleted (disable them instead).")
         os.remove(self.pack_path(pid))
+        self.paths.pop(pid, None)
         self.packs.pop(pid)
         self.disabled.discard(pid)
         self._merge()

@@ -1,0 +1,10 @@
+{"profiles": [{
+ "id": "sdxl_lightning", "name": "SDXL-Lightning (ByteDance, few-step)", "family": "Stable Diffusion", "format": "tags",
+ "negative": "limited", "weighting": "parens", "weight_max": 1.4, "quality_prefix": "",
+ "negative_default": "", "length": [10, 75], "param_style": "settings",
+ "resolutions": {"1:1": "1024x1024", "16:9": "1344x768", "9:16": "768x1344", "4:3": "1152x896", "3:4": "896x1152", "3:2": "1216x832", "2:3": "832x1216", "21:9": "1536x640", "4:5": "896x1152"},
+ "settings": "Use the 2/4/8-step checkpoint or LoRA with matching steps, CFG 0–1 (negative prompt has little effect at CFG ≤1), Euler sampler with sgm_uniform / trailing timesteps.",
+ "ai_guidance": "SDXL-Lightning: concise comma-separated SDXL-style descriptive phrases, subject first; keep it under ~75 tokens; avoid relying on a negative prompt.",
+ "tips": ["Match the step count to the checkpoint (2, 4 or 8 steps).", "CFG 0–1: put exclusions into the positive prompt."],
+ "sources": ["https://huggingface.co/ByteDance/SDXL-Lightning"]
+}]}

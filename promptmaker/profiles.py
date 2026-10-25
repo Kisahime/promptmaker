@@ -30,15 +30,35 @@ def ensure_user_file(path):
 def load(path=BUNDLED):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+    raw = {p["id"]: p for p in data.get("profiles", []) if "id" in p and "name" in p}
     out = {}
-    for p in data.get("profiles", []):
-        if "id" not in p or "name" not in p:
-            continue
-        full = dict(DEFAULTS); full.update(p)
-        out[p["id"]] = full
+    for pid, p in raw.items():
+        out[pid] = resolve(p, raw)
     if not out:
         raise ValueError("No valid profiles found")
     return out
+
+
+def resolve(p, raw, _seen=None):
+    """Apply defaults and "inherits": child fields override the parent profile's (one level or a chain)."""
+    seen = _seen or set()
+    full = dict(DEFAULTS)
+    parent = p.get("inherits")
+    if parent and parent in raw and parent not in seen and parent != p.get("id"):
+        seen.add(p.get("id"))
+        full.update({k: v for k, v in resolve(raw[parent], raw, seen).items() if k not in ("id", "name", "inherits")})
+    full.update(p)
+    return full
+
+
+def raw_profile(path, pid):
+    try:
+        for p in json.load(open(path, encoding="utf-8")).get("profiles", []):
+            if p.get("id") == pid:
+                return p
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def save_profile(path, profile):

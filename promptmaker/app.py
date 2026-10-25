@@ -1,22 +1,29 @@
 """PromptMaker – desktop UI (PySide6)."""
+import base64
 import html
 import json
 import os
+import shutil
+import re
 import sys
 import time
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence, QFont
+from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QBuffer, QIODevice
+from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence, QFont, QPixmap, QIcon, QImage
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog, QLineEdit,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QMessageBox, QGridLayout, QHBoxLayout, QInputDialog, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QRadioButton, QScrollArea, QSpinBox,
-    QSplitter, QStackedWidget, QSlider, QFrame, QTextBrowser, QVBoxLayout, QWidget,
+    QSplitter, QStackedWidget, QSlider, QFrame, QLabel, QProgressBar, QDoubleSpinBox, QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from . import __version__, builder, ollama, profiles, scoring, theme
+from . import (__version__, abtest, builder, civitai, community, i18n, imagegen, ollama, paths, profiles, providers, scoring,
+               theme, updates)
+from .gallery import Gallery
+from .i18n import tr
+from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
-from .widgets import (Card, ChatWorker, FlowLayout, ScoreBar, Toast, button, chip, hrow, label)
+from .widgets import (CallWorker, Card, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -28,8 +35,9 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🔍", "Analyse"), ("📊", "Score"), ("📋", "Templates"),
-       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🎯", "Model profiles")]
+NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔍", "Analyse"), ("📊", "Score"),
+       ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
+       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("⚙", "Settings")]
 
 
 def copy(text):
@@ -62,7 +70,17 @@ class MainWindow(QMainWindow):
         self.chip_map = {}
         self.suggestions = []
         self.chat = []
-        self.lib = Library(os.path.join(APP_DIR, "packs"), self.store.get("packs_disabled", []))
+        _old, _new = os.path.join(APP_DIR, "packs", "custom.json"), os.path.join(data_dir, "packs", "custom.json")
+        if os.path.exists(_old) and not os.path.exists(_new):  # v1 kept custom chips next to the bundled packs
+            os.makedirs(os.path.dirname(_new), exist_ok=True); shutil.copy2(_old, _new); os.replace(_old, _old + ".migrated")
+        self.lib = Library(os.path.join(APP_DIR, "packs"), self.store.get("packs_disabled", []), os.path.join(data_dir, "packs"))
+        self.keys = KeyStore(data_dir)
+        self.gallery = Gallery(os.path.join(data_dir, "gallery"))
+        self.queue_jobs = []
+        self.genq = GenQueue()
+        self.genq.progress.connect(self._gen_progress); self.genq.finished_job.connect(self._gen_done)
+        self.genq.failed_job.connect(self._gen_failed)
+        self.make_provider()
         self.profiles_path = profiles.ensure_user_file(os.path.join(data_dir, "profiles.json"))
         self.profiles = profiles.load(self.profiles_path)
         self.setWindowTitle("PromptMaker — AI Image Prompt Studio")
@@ -75,9 +93,10 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
         self.setCentralWidget(root)
-        for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._analyse_page, self._score_page,
+        for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._analyse_page,
+                           self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
-                           self._packs_page, self._profiles_page):
+                           self._packs_page, self._community_page, self._profiles_page, self._settings_page):
             self.stack.addWidget(builder_fn())
         self.toast = Toast(root)
         self.nav.currentRowChanged.connect(self._nav_changed)
@@ -88,7 +107,11 @@ class MainWindow(QMainWindow):
         self.apply_theme(self.store.get("theme", "dark"))
         self.update_preview()
         self._create_profile_refresh()
-        QTimer.singleShot(50, lambda: self.refresh_models(quiet=True))
+        QTimer.singleShot(50, self.refresh_models_async)
+        if self.store.get("check_updates", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
+            QTimer.singleShot(3000, self.check_updates)
+        if not self.store.get("tour_done") and not os.environ.get("PROMPTMAKER_NO_TOUR"):
+            QTimer.singleShot(600, self.start_tour)
 
     # ------------------------------------------------------------------ chrome
     def _sidebar(self):
@@ -98,7 +121,7 @@ class MainWindow(QMainWindow):
         v.addWidget(label(f"AI image prompt studio · v{__version__}", "brandSub"))
         self.nav = QListWidget(); self.nav.setObjectName("sidebar")
         for icon, name in NAV:
-            it = QListWidgetItem(f"{icon}   {name}"); self.nav.addItem(it)
+            it = QListWidgetItem(f"{icon}   {tr(name)}"); self.nav.addItem(it)
         v.addWidget(self.nav, 1)
         foot = QWidget(); foot.setObjectName("sideFoot")
         f = QVBoxLayout(foot); f.setContentsMargins(14, 10, 14, 14); f.setSpacing(6)
@@ -110,12 +133,14 @@ class MainWindow(QMainWindow):
         self.profile_combo.setCurrentIndex(max(0, idx))
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
         f.addWidget(self.profile_combo)
-        f.addWidget(label("LOCAL AI (OLLAMA)", "groupLabel"))
+        f.addWidget(label("AI PROVIDER", "groupLabel"))
+        self.prov_label = label("", "hint"); f.addWidget(self.prov_label)
         self.model = QComboBox(); self.model.setPlaceholderText("no models")
-        self.model.currentTextChanged.connect(lambda m: m and self.store.set("model", m))
+        self.model.currentTextChanged.connect(lambda m: m and self.store.set(f"model:{self.provider.pid}", m))
         f.addWidget(self.model)
         self.ai_dot = label("○ checking…", "hint", wrap=True)
         f.addLayout(hrow(self.ai_dot, None, button("⟳", self.refresh_models, "ghost", "Refresh Ollama models")))
+        self.update_btn = button("", None, "ghost"); self.update_btn.setVisible(False); f.addWidget(self.update_btn)
         self.theme_btn = button("🌙  Dark mode", self.toggle_theme, "ghost")
         f.addWidget(self.theme_btn)
         v.addWidget(foot)
@@ -175,37 +200,80 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ AI plumbing
     def refresh_models(self, quiet=False):
         try:
-            models = ollama.list_models()
-        except ollama.OllamaError as e:
-            self.model.clear()
-            self.ai_dot.setText("<span style='color:#ff6b81'>●</span> Ollama not running")
-            self.ai_dot.setToolTip(str(e)); self._set_banner(False)
-            if not quiet:
-                self.notify(str(e), error=True)
-            return []
-        self.model.blockSignals(True); self.model.clear(); self.model.addItems(models); self.model.blockSignals(False)
-        if self.store.get("model") in models:
-            self.model.setCurrentText(self.store.get("model"))
-        self._set_banner(True, len(models))
-        if models:
-            self.ai_dot.setText(f"<span style='color:#35d39a'>●</span> Connected · {len(models)} model(s)")
-        else:
-            self.ai_dot.setText("<span style='color:#ffc34d'>●</span> No models – run: ollama pull llama3.2")
-        if not quiet:
-            self.notify("Ollama: " + (f"{len(models)} model(s) found" if models else "running, but no models pulled"))
-        return models
+            models = self.provider.list_models()
+        except Exception as e:  # noqa: BLE001
+            return self._models_failed(e, quiet)
+        return self._models_loaded(models, quiet)
 
-    def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7):
+    def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7, model=None, vision=False):
         if self.worker and self.worker.isRunning():
             self.notify("The AI is still busy – press Stop first", error=True); return False
-        if not self.model.currentText() and not self.refresh_models(quiet=True):
-            self.notify(ollama.INSTALL_HINT, error=True); return False
-        self.worker = ChatWorker(self.model.currentText(), messages, temperature, json_mode)
+        if not model and not self.model.currentText() and not self.refresh_models(quiet=True):
+            self.notify(tr("No AI model available – check the AI provider in Settings"), error=True); return False
+        used = model or self.model.currentText()
+        self.worker = ChatWorker(self.provider, used, messages, temperature, json_mode)
         self.worker.chunk.connect(on_chunk)
-        self.worker.done.connect(lambda t: (self._busy(False), on_done(t)))
-        self.worker.failed.connect(lambda e: (self._busy(False), self.notify(e, error=True)))
+        self.worker.done.connect(lambda t: (self._busy(False), self._mark_model_ok(used), on_done(t)))
+        self.worker.failed.connect(lambda e: (self._busy(False), self._ai_error(e, used, vision)))
         self._busy(True); self.worker.start()
         return True
+
+    # ---- friendly handling of models the provider can't load (e.g. Ollama 'unknown model architecture')
+    def _failed_models(self):
+        return self.store.get(f"failed_models:{self.provider.pid}", {}) or {}
+
+    def _mark_model_ok(self, model):
+        f = self._failed_models()
+        if model in f:
+            f.pop(model); self.store.set(f"failed_models:{self.provider.pid}", f); self._mark_failed_in_pickers()
+
+    def _mark_failed_in_pickers(self):
+        from PySide6.QtGui import QColor
+        failed = self._failed_models()
+        notes = getattr(self.provider, "notes", {}) or {}
+        for combo in (self.model, getattr(self, "vision_model", None)):
+            if combo is None:
+                continue
+            for i in range(combo.count()):
+                name = combo.itemText(i)
+                tip = ("⚠ " + notes[name]) if name in notes else (
+                    ("⚠ Failed to load last time: " + failed[name]) if name in failed else None)
+                combo.setItemData(i, QColor("#ff6b6b") if tip else None, Qt.ForegroundRole)
+                combo.setItemData(i, tip, Qt.ToolTipRole)
+
+    def _ai_error(self, err, model, vision=False):
+        if not providers.is_model_load_error(err):
+            self.notify(err, error=True); return
+        f = self._failed_models(); f[model] = providers.load_error_detail(err)
+        self.store.set(f"failed_models:{self.provider.pid}", f)
+        is_ollama = self.provider.kind == "ollama"
+        combo = self.vision_model if vision and hasattr(self, "vision_model") else self.model
+        models = [combo.itemText(i) for i in range(combo.count())]
+        prefs = providers.VISION_PREFERENCE if vision else providers.CHAT_PREFERENCE
+        alt = providers.pick_alternative(models, model, prefs, {**f, **(getattr(self.provider, "notes", {}) or {})})
+        pull = providers.VISION_PULL if vision else providers.CHAT_PULL
+        self._mark_failed_in_pickers()
+        msg = providers.friendly_load_error(model, err, vision, is_ollama)
+        self.notify(msg, error=True)
+        box = QMessageBox(self); box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Model couldn't load")); box.setText(msg)
+        box.setDetailedText(str(err))
+        switch = box.addButton(tr("Switch to") + f" {alt}", QMessageBox.AcceptRole) if alt else None
+        copy_btn = box.addButton(tr("Copy") + f" `{pull}`", QMessageBox.ActionRole) if is_ollama else None
+        box.addButton(QMessageBox.Close)
+        def clicked(b):
+            if switch is not None and b is switch:
+                combo.setCurrentText(alt)
+                if vision:
+                    self.store.set(f"vision_model:{self.provider.pid}", alt); self.notify(tr("Switched to") + f" {alt}")
+                    self._i2p_run()
+                else:
+                    self.notify(tr("Switched to") + f" {alt} – " + tr("try again"))
+            elif copy_btn is not None and b is copy_btn:
+                copy(pull); self.notify(tr("Copied") + f": {pull}")
+        box.buttonClicked.connect(clicked)
+        self._last_error_box = box
+        box.open()
 
     def _busy(self, busy):
         for b in self.ai_buttons:
@@ -269,7 +337,8 @@ class MainWindow(QMainWindow):
         res.add(hrow(button("📋 Copy", self.c_copy, "primary"), button("Copy negative", self.c_copy_neg),
                      button("💬 Refine in chat", self.c_refine), button("↩ Load into Builder", self.c_to_builder),
                      button("📊 Score", self.c_score), button("🕘 Save to history", self.c_hist),
-                     button("⭐ Favourite", self.c_fav), None, self.ai_btn("⟳ Regenerate", self.create_generate)))
+                     button("⭐ Favourite", self.c_fav), button("🖼 Generate", lambda: self.generate_image(
+                         self.c_prompt.toPlainText(), self.c_neg.toPlainText())), None, self.ai_btn("⟳ Regenerate", self.create_generate)))
         v.addWidget(res, 1)
         self.create_opts = []
         return w
@@ -304,6 +373,9 @@ class MainWindow(QMainWindow):
                                      "  (or qwen2.5 / gemma3), then click ⟳. Meanwhile use ⚡ Offline build.")
             self.start_btn.hide()
         else:
+            if self.provider.pid != "ollama":
+                self.banner_text.setText("⚠️ " + tr("The AI provider isn't reachable – check it in Settings. ⚡ Offline build works without AI."))
+                self.start_btn.hide(); return
             found = ollama.find_ollama_app()
             self.banner_text.setText("⚠️ Local AI is offline. " + ("Click Start Ollama to launch it." if found else
                                      "Ollama isn't installed – get it from ollama.com/download.") +
@@ -322,8 +394,8 @@ class MainWindow(QMainWindow):
             if self.refresh_models(quiet=True):
                 self.notify("Ollama is ready"); self.start_btn.setEnabled(True); return
             try:
-                ollama.list_models(); running = True
-            except ollama.OllamaError:
+                self.provider.list_models(); running = True
+            except Exception:  # noqa: BLE001
                 running = False
             if running or self._start_tries > 20:
                 self.start_btn.setEnabled(True)
@@ -559,7 +631,8 @@ class MainWindow(QMainWindow):
         right.add(hrow(button("📋 Copy prompt", self.copy_prompt, "primary"), button("Copy negative", self.copy_negative),
                        button("⭐", self.save_fav, tip="Save favourite")))
         right.add(hrow(button("💬 Refine with AI", lambda: self.send_to("Refine")),
-                       button("📊 Score", lambda: self.send_to("Score"))))
+                       button("📊 Score", lambda: self.send_to("Score")),
+                       button("🖼 Generate", lambda: self.generate_image(self.build_result()["prompt"], self.build_result()["negative"]))))
         split.addWidget(right)
         split.setSizes([210, 620, 520])
 
@@ -1057,7 +1130,7 @@ class MainWindow(QMainWindow):
         left = Card("Your templates")
         self.tpl_list = QListWidget(); self.tpl_list.currentItemChanged.connect(self._tpl_selected)
         left.add(self.tpl_list, 1)
-        left.add(hrow(button("＋ New", self.tpl_new), button("🗑 Delete", self.tpl_delete, "danger")))
+        left.add(hrow(button("＋ New", self.tpl_new), ConfirmButton("🗑 Delete", self.tpl_delete, "Confirm delete", 4, "danger")))
         row.addWidget(left, 1)
         right = Card("Edit")
         self.tpl_name = QLineEdit(); self.tpl_name.setPlaceholderText("Template name")
@@ -1178,8 +1251,8 @@ class MainWindow(QMainWindow):
         self.hist_list.itemDoubleClicked.connect(lambda it: (copy(it.data(Qt.UserRole)[1]), self.notify("Copied")))
         c.add(self.hist_list, 1)
         c.add(hrow(button("📋 Copy", self.hist_copy, "primary"), button("💬 Refine", self.hist_refine),
-                   button("📊 Score", self.hist_score), None, button("🗑 Delete", self.hist_delete, "danger"),
-                   button("Clear all", self.hist_clear, "ghost")))
+                   button("📊 Score", self.hist_score), None, ConfirmButton("🗑 Delete", self.hist_delete, "Confirm delete", 4, "danger"),
+                   self._hist_clear_btn()))
         v.addWidget(c, 1)
         return w
 
@@ -1212,13 +1285,13 @@ class MainWindow(QMainWindow):
         if h:
             self.store.delete_history(h[0]); self.load_history(); self.notify("Deleted")
 
+    def _hist_clear_btn(self):
+        self.hist_clear_btn = ConfirmButton("Clear all", self.hist_clear, "Confirm clear", 4, "ghost",
+                                            "Delete all history – click twice to confirm")
+        return self.hist_clear_btn
+
     def hist_clear(self):
-        if self.hist_clear_armed:
-            self.store.clear_history(); self.load_history(); self.notify("History cleared"); self.hist_clear_armed = False
-        else:
-            self.hist_clear_armed = True; self.notify("Click 'Clear all' again within 4 s to confirm", error=True)
-            QTimer.singleShot(4000, lambda: setattr(self, "hist_clear_armed", False))
-    hist_clear_armed = False
+        self.store.clear_history(); self.load_history(); self.notify(tr("History cleared"))
 
     def _fav_page(self):
         w, v = page("Favourites", "Saved Builder setups and prompts.")
@@ -1227,7 +1300,7 @@ class MainWindow(QMainWindow):
         self.fav_list.itemDoubleClicked.connect(lambda *_: self.fav_load())
         c.add(self.fav_list, 1)
         c.add(hrow(button("📋 Copy", self.fav_copy, "primary"), button("↩ Load into Builder", self.fav_load), None,
-                   button("🗑 Delete", self.fav_delete, "danger")))
+                   ConfirmButton("🗑 Delete", self.fav_delete, "Confirm delete", 4, "danger")))
         v.addWidget(c, 1)
         return w
 
@@ -1268,7 +1341,7 @@ class MainWindow(QMainWindow):
         c.add(self.pack_list, 1)
         c.add(hrow(button("📥 Import pack…", self.pack_import, "primary"), button("📤 Export selected…", self.pack_export),
                    button("📂 Open packs folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.lib.dir))), None,
-                   button("🗑 Delete", self.pack_delete, "danger")))
+                   ConfirmButton("🗑 Delete", self.pack_delete, "Confirm delete", 4, "danger")))
         c.add(label('Pack format: {"name": "...", "description": "...", "categories": {"Style": {"Group": ["item", ...]}}}', "hint", wrap=True))
         v.addWidget(c, 1)
         self.load_packs()
@@ -1333,6 +1406,8 @@ class MainWindow(QMainWindow):
         self.prof_list = QListWidget(); self.prof_list.currentRowChanged.connect(self._prof_selected)
         left.add(self.prof_list, 1)
         left.add(hrow(button("Use as target", self._prof_use, "primary"), button("Duplicate", self._prof_dup)))
+        self.cv_refresh_btn = button("⟳ Refresh from Civitai", self.civitai_refresh, tip="Re-fetch this checkpoint's recommendations")
+        left.add(hrow(button("🌐 Import from Civitai…", self.civitai_import, "primary"), self.cv_refresh_btn))
         row.addWidget(left, 1)
         right = Card("Details")
         self.prof_view = QTextBrowser(); self.prof_view.setOpenExternalLinks(True)
@@ -1369,9 +1444,19 @@ class MainWindow(QMainWindow):
             f"<tr><td><b>Weighting</b></td><td>{p['weighting']}</td></tr><tr><td><b>Length</b></td><td>{lo}–{hi} words</td></tr>"
             f"<tr><td><b>Quality prefix</b></td><td>{html.escape(p.get('quality_prefix') or '–')}</td></tr>"
             f"<tr><td><b>Settings</b></td><td>{html.escape(p.get('settings') or '–')}</td></tr>"
+            + (f"<tr><td><b>Inherits</b></td><td>{html.escape(p['inherits'])}</td></tr>" if p.get("inherits") else "")
+            + (f"<tr><td><b>Civitai</b></td><td>{html.escape(str(p['civitai'].get('model_name')))} · version "
+               f"{html.escape(str(p['civitai'].get('version_name')))} (#{p['civitai'].get('version_id')}) · base "
+               f"{html.escape(str(p['civitai'].get('base_model')))} · fetched {p['civitai'].get('fetched')}"
+               + (f" · trained words: {html.escape(', '.join(p['civitai'].get('trained_words') or []))}" if p['civitai'].get('trained_words') else "")
+               + "</td></tr>" if p.get("civitai") else "") +
+            f"<tr><td><b>Negative default</b></td><td>{html.escape(p.get('negative_default') or '–')}</td></tr>"
             f"<tr><td><b>Resolutions</b></td><td>{html.escape(res)}</td></tr></table>"
             f"<h3>Tips</h3><ul>{tips}</ul><h3>Sources</h3><ul>{src or '<li>–</li>'}</ul>")
-        self.prof_json.setPlainText(json.dumps({k: v for k, v in p.items()}, indent=1, ensure_ascii=False))
+        raw = profiles.raw_profile(self.profiles_path, p["id"]) if p.get("inherits") else None
+        self.prof_json.setPlainText(json.dumps(raw or {k: v for k, v in p.items()}, indent=1, ensure_ascii=False))
+        if hasattr(self, "cv_refresh_btn"):
+            self.cv_refresh_btn.setEnabled(bool(p.get("civitai")))
 
     def _prof_use(self):
         it = self.prof_list.currentItem()
@@ -1411,6 +1496,806 @@ class MainWindow(QMainWindow):
         self._fill_prof_list(select if isinstance(select, str) else None)
         self._profile_changed()
 
+    # ================================================================== v2: providers
+    def make_provider(self):
+        pid = self.store.get("provider", "ollama")
+        url = self.store.get(f"provider_url:{pid}") or providers.PRESETS.get(pid, {}).get("base_url")
+        key = self.keys.get(f"api_key:{pid}") if providers.PRESETS.get(pid, {}).get("key") else ""
+        self.provider = providers.make(pid, url, key)
+        if hasattr(self, "prov_label"):
+            self.prov_label.setText(providers.PRESETS.get(pid, providers.PRESETS["ollama"])["label"])
+        return self.provider
+
+    def refresh_models_async(self):
+        if getattr(self, "_closing", False):
+            return
+        w = CallWorker(self.provider.list_models)
+        w.ok.connect(lambda models: self._models_loaded(models, True))
+        w.failed.connect(lambda e: self._models_failed(e, True))
+        self._keep(w); w.start()
+
+    def closeEvent(self, e):
+        """Let background workers finish so no QThread is destroyed while running (crashes on Windows)."""
+        self._closing = True
+        for x in list(getattr(self, "_workers", [])) + [getattr(self, "worker", None)]:
+            if x is not None and x.isRunning():
+                if hasattr(x, "stop"):
+                    x.stop()
+                x.wait(5000)
+        q = getattr(self, "genq", None)
+        if q is not None and q.isRunning():
+            q.clear(); q.cancel_current(); q.wait(5000)
+        super().closeEvent(e)
+
+    def _keep(self, w):
+        self._workers = [x for x in getattr(self, "_workers", []) if x.isRunning()] + [w]
+
+    def _models_loaded(self, models, quiet):
+        pid = self.provider.pid
+        self.model.blockSignals(True); self.model.clear(); self.model.addItems(models); self.model.blockSignals(False)
+        saved = self.store.get(f"model:{pid}") or (self.store.get("model") if pid == "ollama" else None)
+        if saved in models:
+            self.model.setCurrentText(saved)
+        self._set_banner(True, len(models)); self._mark_failed_in_pickers()
+        name = providers.PRESETS.get(pid, {}).get("label", pid)
+        if models:
+            self.ai_dot.setText(f"<span style='color:#35d39a'>●</span> {tr('Connected')} · {len(models)} {tr('model(s)')}")
+        else:
+            self.ai_dot.setText("<span style='color:#ffc34d'>●</span> " + tr("No models found") +
+                                (" – ollama pull llama3.2" if pid == "ollama" else ""))
+        if not quiet:
+            self.notify(f"{name}: " + (f"{len(models)} model(s)" if models else "connected, no models"))
+        return models
+
+    def _models_failed(self, err, quiet):
+        self.model.clear()
+        self.ai_dot.setText("<span style='color:#ff6b81'>●</span> " + tr("AI provider offline"))
+        self.ai_dot.setToolTip(str(err)); self._set_banner(False)
+        if not quiet:
+            self.notify(str(err), error=True)
+        return []
+
+    # ================================================================== v2: image generation
+    def image_backend(self):
+        kind = self.store.get("img_backend", "none")
+        if kind == "none":
+            return None
+        default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
+        return imagegen.make_backend(kind, self.store.get(f"img_url:{kind}", default))
+
+    def _workflow(self):
+        wfs = imagegen.list_workflows(os.path.join(self.data_dir, "workflows"))
+        name = self.store.get("img_workflow", "sdxl_txt2img")
+        path = wfs.get(name) or next(iter(wfs.values()))
+        return imagegen.load_workflow(path) + (name,)
+
+    def _size_for_profile(self):
+        aspect = self.aspect.currentText()
+        res = profiles.resolution(self.profile, aspect)
+        if "x" not in res:
+            res = profiles.resolution(self.profiles.get("sdxl", self.profile), aspect) or "1024x1024"
+        try:
+            w, h = (int(x) for x in res.lower().split("x"))
+        except ValueError:
+            w, h = 1024, 1024
+        return w, h
+
+    def generate_image(self, prompt, negative="", seed=None, tag="", quiet=False):
+        prompt = (prompt or "").strip()
+        if not prompt:
+            self.notify(tr("Nothing to generate yet"), error=True); return None
+        backend = self.image_backend()
+        if not backend:
+            self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); self.go("Settings"); return None
+        wf, meta, wf_name = (None, {}, "") if isinstance(backend, imagegen.A1111) else self._workflow()
+        d = meta.get("defaults", {})
+        w, h = self._size_for_profile()
+        clean = re.sub(r"\s--\w+(\s+[^-\s][^\s]*)?", "", prompt) if "--" in prompt else prompt
+        g = self.profile.get("gen") or {}  # checkpoint-specific recommendations (e.g. imported from Civitai)
+        a1 = isinstance(backend, imagegen.A1111)
+        job = imagegen.Job(clean, negative, w, h, seed, g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
+                           g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
+                           self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""),
+                           wf_name or "a1111",
+                           (g.get("a1111_sampler") if a1 else g.get("sampler")) or self.store.get("img_sampler") or d.get("sampler", "euler"),
+                           g.get("scheduler") or d.get("scheduler", "normal"), tag)
+        if g.get("clip_skip"):
+            job.clip_skip = g["clip_skip"]
+        job.backend_name = backend.name
+        self.genq.add(job, backend, wf)
+        self.queue_jobs.append(job)
+        self._render_queue()
+        if not quiet:
+            self.notify(tr("Queued for generation") + f" · seed {job.seed}")
+        return job
+
+    def _render_queue(self):
+        if not hasattr(self, "queue_list"):
+            return
+        self.queue_list.clear()
+        for j in self.queue_jobs[-30:]:
+            st = getattr(j, "state", "queued")
+            icon = {"queued": "⏳", "running": "⚙", "done": "✅", "failed": "⚠️"}.get(st, "•")
+            self.queue_list.addItem(f"{icon} {j.width}×{j.height} · seed {j.seed} · {j.prompt[:70]}" +
+                                    (f"  — {j.error}" if st == "failed" else ""))
+        self.queue_list.scrollToBottom()
+
+    def _gen_progress(self, jid, pct, msg):
+        for j in self.queue_jobs:
+            if j.id == jid:
+                j.state = "running"
+        self.gen_bar.setRange(0, 0 if pct < 0 else 100)
+        if pct >= 0:
+            self.gen_bar.setValue(pct)
+        self.gen_status.setText(msg)
+        self._render_queue()
+
+    def _gen_done(self, job, imgs):
+        job.state = "done"
+        paths = []
+        for b in imgs:
+            meta = job.meta(); meta["backend"] = getattr(job, "backend_name", "")
+            paths.append(self.gallery.save(b, meta))
+        job.paths = paths
+        self.store.add_history(job.prompt, self.profile["name"], "generated")
+        self.gen_status.setText(tr("Done") + f" · {len(paths)} image(s)")
+        self.gen_bar.setRange(0, 100); self.gen_bar.setValue(100)
+        self._render_queue(); self.load_gallery()
+        for cb in getattr(self, "_job_callbacks", {}).pop(job.id, []):
+            cb(job)
+        self.notify(tr("Image ready") + " – " + tr("saved to Gallery"))
+
+    def _gen_failed(self, job, err):
+        job.state, job.error = "failed", err
+        self.gen_status.setText("⚠️ " + err[:160]); self.gen_bar.setRange(0, 100); self.gen_bar.setValue(0)
+        self._render_queue()
+        if err.startswith(imagegen.API_DISABLED):
+            self.show_api_disabled(err)
+        elif err != "Cancelled":
+            self.notify(err, error=True)
+
+    # ------------------------------------------------------------------ Gallery page
+    def _gallery_page(self):
+        w, v = page("Gallery", "Images you generate are saved in your data folder with their prompt, model profile, settings and seed.")
+        q = Card()
+        self.gen_status = label(tr("Idle"), "muted"); self.gen_bar = QProgressBar(); self.gen_bar.setFixedHeight(8)
+        self.backend_lbl = label("", "badge")
+        q.add(hrow(label("Queue", "h2"), self.backend_lbl, None, self.gen_status,
+                   button("■ Cancel current", lambda: self.genq.cancel_current(), "ghost"),
+                   button("Clear queue", lambda: (self.genq.clear(), self.notify(tr("Queue cleared"))), "ghost")))
+        q.add(self.gen_bar)
+        self.queue_list = QListWidget(); self.queue_list.setFixedHeight(84); q.add(self.queue_list)
+        v.addWidget(q)
+        row = QSplitter(); row.setChildrenCollapsible(False); v.addWidget(row, 1)
+        left = Card()
+        self.gal_list = QListWidget(); self.gal_list.setViewMode(QListWidget.IconMode); self.gal_list.setIconSize(QSize(150, 150))
+        self.gal_list.setResizeMode(QListWidget.Adjust); self.gal_list.setMovement(QListWidget.Static); self.gal_list.setSpacing(8)
+        self.gal_list.currentItemChanged.connect(self._gal_selected)
+        self.gal_list.itemDoubleClicked.connect(lambda *_: self._gal_open())
+        left.add(self.gal_list, 1)
+        row.addWidget(left)
+        right = Card()
+        self.gal_preview = QLabel(tr("Select an image")); self.gal_preview.setAlignment(Qt.AlignCenter)
+        self.gal_preview.setMinimumHeight(280)
+        right.add(self.gal_preview, 2)
+        self.gal_meta = QTextBrowser(); right.add(self.gal_meta, 1)
+        right.add(hrow(button("🔍 Open full size", self._gal_open), button("📋 Copy prompt", self._gal_copy),
+                       button("♻ Reuse prompt", self._gal_reuse, "primary")))
+        right.add(hrow(button("🎲 Same seed again", self._gal_regen), button("📂 Folder", lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(self.gallery.root))), None, ConfirmButton("🗑 Delete", self._gal_delete, "Confirm delete", 4, "danger")))
+        row.addWidget(right); row.setSizes([700, 480])
+        self.load_gallery()
+        return w
+
+    def load_gallery(self):
+        if not hasattr(self, "gal_list"):
+            return
+        self.gal_list.clear()
+        for path, meta in self.gallery.items()[:400]:
+            pm = QPixmap(path)
+            it = QListWidgetItem(QIcon(pm.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)), "")
+            it.setData(Qt.UserRole, (path, meta)); it.setToolTip(meta.get("prompt", "")[:200])
+            self.gal_list.addItem(it)
+        b = self.image_backend()
+        self.backend_lbl.setText((b.name if b else tr("No backend – see Settings")))
+
+    def _gal_cur(self):
+        it = self.gal_list.currentItem()
+        return it.data(Qt.UserRole) if it else (None, {})
+
+    def _gal_selected(self, it, _=None):
+        if not it:
+            return
+        path, meta = it.data(Qt.UserRole)
+        pm = QPixmap(path)
+        self.gal_preview.setPixmap(pm.scaled(self.gal_preview.width(), max(280, self.gal_preview.height()),
+                                             Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        when = time.strftime("%d %b %Y %H:%M", time.localtime(meta.get("saved", 0))) if meta.get("saved") else ""
+        rows = "".join(f"<tr><td style='padding-right:10px'><b>{k}</b></td><td>{html.escape(str(meta.get(k, '')))}</td></tr>"
+                       for k in ("profile", "backend", "workflow", "checkpoint", "seed", "steps", "cfg", "sampler", "width", "height"))
+        self.gal_meta.setHtml(f"<p>{html.escape(meta.get('prompt', ''))}</p>" +
+                              (f"<p><i>Negative:</i> {html.escape(meta['negative'])}</p>" if meta.get("negative") else "") +
+                              f"<table>{rows}</table><p style='color:gray'>{when} · {html.escape(os.path.basename(path))}</p>")
+
+    def _gal_open(self):
+        p, _ = self._gal_cur()
+        if p:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+
+    def _gal_copy(self):
+        _, m = self._gal_cur()
+        if m.get("prompt"):
+            copy(m["prompt"]); self.notify(tr("Copied"))
+
+    def _gal_reuse(self):
+        _, m = self._gal_cur()
+        if m.get("prompt"):
+            self.set_work(m["prompt"], "from Gallery"); self.go("Refine")
+
+    def _gal_regen(self):
+        _, m = self._gal_cur()
+        if m.get("prompt"):
+            self.generate_image(m["prompt"], m.get("negative", ""), m.get("seed"))
+
+    def _gal_delete(self):
+        p, _ = self._gal_cur()
+        if p:
+            self.gallery.delete(p); self.gal_preview.setText(tr("Deleted")); self.gal_meta.clear(); self.load_gallery()
+            self.notify(tr("Deleted"))
+
+    # ------------------------------------------------------------------ Image → Prompt
+    def _img2prompt_page(self):
+        w, v = page("Image to Prompt", "Drop, paste or open an image – a local vision model describes it as a prompt for your target model.")
+        row = QHBoxLayout(); row.setSpacing(14); v.addLayout(row, 1)
+        left = Card("Image")
+        self.drop = DropLabel(tr("Drop an image here\nor use Paste / Open"))
+        self.drop.dropped.connect(self._i2p_set_image)
+        left.add(self.drop, 1)
+        left.add(hrow(button("📋 Paste", self._i2p_paste), button("📂 Open…", self._i2p_open), None))
+        self.vision_model = QComboBox(); self.vision_model.setMinimumWidth(220)
+        left.add(hrow(label("Vision model"), self.vision_model, button("⟳", self._i2p_models, "ghost", "Find vision-capable models")))
+        self.i2p_hint = label("", "hint", wrap=True); left.add(self.i2p_hint)
+        self.i2p_detail = QComboBox(); self.i2p_detail.addItems(["Balanced", "Short", "Very detailed"])
+        left.add(hrow(label("Detail"), self.i2p_detail, None, self.stop_btn(),
+                      self.ai_btn("👁 Describe as prompt", self._i2p_run, "primary")))
+        row.addWidget(left, 1)
+        right = Card("Prompt")
+        self.i2p_out = QPlainTextEdit(); right.add(self.i2p_out, 1)
+        right.add(hrow(button("📋 Copy", lambda: (copy(self.i2p_out.toPlainText()), self.notify(tr("Copied"))), "primary"),
+                       button("↩ Load into Builder", self._i2p_builder), button("💬 Refine", lambda: (
+                           self.set_work(self.i2p_out.toPlainText(), "from image"), self.go("Refine"))),
+                       button("📊 Score", lambda: (self.score_in.setPlainText(self.i2p_out.toPlainText()), self.go("Score"))),
+                       button("🖼 Generate", lambda: self.generate_image(self.i2p_out.toPlainText()))))
+        row.addWidget(right, 1)
+        self.i2p_b64 = None
+        return w
+
+    def _i2p_set_image(self, img):
+        if img.isNull():
+            self.notify(tr("That isn't an image I can read"), error=True); return
+        if max(img.width(), img.height()) > 1024:
+            img = img.scaled(1024, 1024, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        buf = QBuffer(); buf.open(QIODevice.WriteOnly); img.save(buf, "PNG")
+        self.i2p_b64 = base64.b64encode(bytes(buf.data())).decode()
+        self.drop.setPixmap(QPixmap.fromImage(img).scaled(self.drop.width() - 10, self.drop.height() - 10,
+                                                          Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        if not self.vision_model.count():
+            self._i2p_models()
+
+    def _i2p_paste(self):
+        img = QGuiApplication.clipboard().image()
+        if img.isNull():
+            self.notify(tr("No image on the clipboard"), error=True)
+        else:
+            self._i2p_set_image(img)
+
+    def _i2p_open(self):
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open image"), os.path.expanduser("~"), "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+        if path:
+            self._i2p_set_image(QImage(path))
+
+    def _i2p_models(self):
+        self.i2p_hint.setText(tr("Looking for vision models…"))
+        w = CallWorker(self.provider.vision_models)
+        def ok(models):
+            failed = {**self._failed_models(), **(getattr(self.provider, "notes", {}) or {})}
+            models = providers.sort_models(models, providers.VISION_PREFERENCE, failed)
+            self.vision_model.clear(); self.vision_model.addItems(models)
+            saved = self.store.get(f"vision_model:{self.provider.pid}")
+            if saved in models and saved not in failed:
+                self.vision_model.setCurrentText(saved)
+            elif models and models[0] not in failed:
+                self.vision_model.setCurrentIndex(0)
+            self._mark_failed_in_pickers()
+            if models:
+                self.i2p_hint.setText(f"{len(models)} vision-capable model(s) found.")
+            else:
+                self.i2p_hint.setText("No vision model found. For Ollama try: ollama pull qwen2.5vl  (or gemma3, llava). "
+                                      "LM Studio: load a vision model (e.g. Qwen2.5-VL).")
+                self.vision_model.setEditable(True)
+        w.ok.connect(ok); w.failed.connect(lambda e: self.i2p_hint.setText("⚠️ " + e[:200]))
+        self._keep(w); w.start()
+
+    def _i2p_run(self):
+        if not self.i2p_b64:
+            self.notify(tr("Add an image first"), error=True); return
+        model = self.vision_model.currentText().strip()
+        if not model:
+            self.notify(tr("Pick a vision model first"), error=True); self._i2p_models(); return
+        self.store.set(f"vision_model:{self.provider.pid}", model)
+        detail = {"Short": "Keep it short (about 25 words).", "Very detailed": "Be very detailed (90-150 words).",
+                  "Balanced": "Use the ideal length for the target model."}[self.i2p_detail.currentText()]
+        msgs = [{"role": "system", "content": ollama.system_for(self.profile,
+                 "Look at the image and write a prompt that would recreate it: subject, appearance, pose, setting, style/medium, "
+                 f"lighting, camera/composition, colours and mood. {detail} Follow the target model's format exactly. "
+                 "Reply with only the prompt.")},
+                {"role": "user", "content": "Write the prompt for this image.", "images": [self.i2p_b64]}]
+        self.i2p_out.clear()
+        def chunk(c):
+            self.i2p_out.insertPlainText(c)
+        self.run_ai(msgs, chunk, lambda t: self.store.add_history(t.strip(), self.profile["name"], "image2prompt"),
+                    temperature=0.4, model=model, vision=True)
+
+    def _i2p_builder(self):
+        t = self.i2p_out.toPlainText().strip()
+        if not t:
+            return
+        self.an_in.setPlainText(t)
+        if self.model.currentText():
+            self._pending_builder_load = True; self.ai_analyse(); self.notify(tr("Analysing – it will load into the Builder"))
+        else:
+            self.quick_analyse(); self.load_analysis()
+
+    # ------------------------------------------------------------------ A/B test
+    def _ab_page(self):
+        w, v = page("A/B Test", "Compare two prompts for the target model: scores, differences and (with a backend) images from the same seed.")
+        row = QHBoxLayout(); row.setSpacing(14); v.addLayout(row, 1)
+        self.ab = {}
+        for side in "AB":
+            c = Card(f"Prompt {side}")
+            ed = QPlainTextEdit(); ed.setFixedHeight(110); c.add(ed)
+            c.add(hrow(button("Builder", lambda _=False, e=ed: e.setPlainText(self.build_result()["prompt"]), "ghost"),
+                       button("Working", lambda _=False, e=ed: e.setPlainText(self.work.toPlainText()), "ghost"),
+                       button("Create", lambda _=False, e=ed: e.setPlainText(self.c_prompt.toPlainText()), "ghost"), None))
+            score = label("–", "scoreBig"); detail = label("", "hint", wrap=True)
+            c.add(hrow(score, detail, None))
+            diff = QTextBrowser(); diff.setFixedHeight(110); c.add(diff)
+            img = QLabel(tr("No image yet")); img.setAlignment(Qt.AlignCenter); img.setMinimumHeight(200); c.add(img, 1)
+            c.add(button(f"🏆 {side} wins", lambda _=False, s=side: self._ab_pick(s), "primary"))
+            row.addWidget(c, 1)
+            self.ab[side] = dict(edit=ed, score=score, detail=detail, diff=diff, img=img, ai=None)
+        bar = Card()
+        self.ab_seed = QSpinBox(); self.ab_seed.setRange(0, 2**31 - 1); self.ab_seed.setSpecialValueText("random seed")
+        self.ab_summary = label("", "muted", wrap=True)
+        bar.add(hrow(button("⚖ Compare", self.ab_compare, "primary"), self.ai_btn("🧠 AI scores", self.ab_ai),
+                     button("🖼 Generate both (same seed)", self.ab_generate), label("Seed"), self.ab_seed, None, self.ab_summary))
+        v.addWidget(bar)
+        return w
+
+    def ab_compare(self):
+        a, b = self.ab["A"]["edit"].toPlainText(), self.ab["B"]["edit"].toPlainText()
+        if not a.strip() or not b.strip():
+            self.notify(tr("Fill in both prompts"), error=True); return
+        ha, hb = abtest.diff_html(a, b)
+        self.ab["A"]["diff"].setHtml(ha); self.ab["B"]["diff"].setHtml(hb)
+        res = {}
+        for side, text in (("A", a), ("B", b)):
+            s = scoring.heuristic_score(text, self.profile, self.lib.all_items())
+            res[side] = s["total"]
+            self.ab[side]["score"].setText(str(s["total"]))
+            self.ab[side]["detail"].setText(" · ".join(f"{k[:5]} {v[0]}" for k, v in s["criteria"].items()) +
+                                            (f"\nAI: {self.ab[side]['ai']}" if self.ab[side]["ai"] is not None else ""))
+        win = abtest.verdict(res["A"], res["B"])
+        self.ab_summary.setText(f"Heuristic for {self.profile['name']}: " + ("tie" if win == "tie" else f"{win} looks stronger") +
+                                f" · {abtest.similarity(a, b)}% similar")
+
+    def ab_ai(self):
+        self.ab_compare()
+        texts = {s: self.ab[s]["edit"].toPlainText() for s in "AB"}
+        if not all(t.strip() for t in texts.values()):
+            return
+        def score_side(side, then=None):
+            def done(t):
+                try:
+                    d = builder.parse_json_loose(t)
+                    tot = 0
+                    for k in scoring.RUBRIC:
+                        e = d.get("scores", {}).get(k, {})
+                        tot += max(0, min(10, int(float(e.get("score", 0) if isinstance(e, dict) else e))))
+                    self.ab[side]["ai"] = tot * 2
+                except (ValueError, TypeError):
+                    self.ab[side]["ai"] = "?"
+                self.ab_compare()
+                if then:
+                    then()
+            self.run_ai(ollama.score_messages(texts[side], self.profile), lambda c: None, done, json_mode=True, temperature=0.2)
+        score_side("A", lambda: QTimer.singleShot(100, lambda: score_side("B")))
+
+    def ab_generate(self):
+        seed = self.ab_seed.value() or imagegen.new_seed()
+        self.ab_seed.setValue(seed)
+        self._job_callbacks = getattr(self, "_job_callbacks", {})
+        for side in "AB":
+            job = self.generate_image(self.ab[side]["edit"].toPlainText(), self.negative.toPlainText()
+                                      if self.profile.get("negative") in ("supported", "optional", "limited") else "",
+                                      seed=seed, tag="ab" + side, quiet=True)
+            if not job:
+                return
+            self.ab[side]["img"].setText(tr("Generating…"))
+            self._job_callbacks.setdefault(job.id, []).append(
+                lambda j, s=side: self.ab[s]["img"].setPixmap(QPixmap(j.paths[0]).scaled(
+                    self.ab[s]["img"].width(), max(200, self.ab[s]["img"].height()), Qt.KeepAspectRatio, Qt.SmoothTransformation)))
+        self.notify(f"Generating A and B with seed {seed}")
+
+    def _ab_pick(self, side):
+        t = self.ab[side]["edit"].toPlainText().strip()
+        if t:
+            self.store.add_history(t, self.profile["name"], f"A/B winner ({side})")
+            self.notify(f"{side} saved to history as the winner")
+
+    # ------------------------------------------------------------------ Community
+    def _community_page(self):
+        w, v = page("Community", "Browse packs and model profiles shared by the community. Downloads are verified with SHA-256 before installing.")
+        c = Card()
+        self.comm_list = QListWidget(); self.comm_list.setWordWrap(True)
+        c.add(self.comm_list, 1)
+        self.comm_status = label("", "hint", wrap=True)
+        c.add(hrow(button("⟳ Refresh", self.comm_refresh), button("⬇ Install / update", self.comm_install, "primary"),
+                   ConfirmButton("🗑 Uninstall", self.comm_uninstall, "Confirm uninstall", 4, "danger"), None, self.comm_status))
+        c.add(label("Want to share a pack or profile? See CONTRIBUTING.md – submit it with a pull request.", "hint"))
+        v.addWidget(c, 1)
+        self.comm_items = []
+        return w
+
+    def comm_refresh(self):
+        url = self.store.get("community_index") or community.DEFAULT_INDEX
+        self.comm_status.setText(tr("Loading…"))
+        wk = CallWorker(community.load_index, url)
+        wk.ok.connect(self._comm_loaded); wk.failed.connect(lambda e: self.comm_status.setText("⚠️ " + e[:240]))
+        self._keep(wk); wk.start()
+
+    def _comm_loaded(self, items):
+        self.comm_items = items
+        inst = self.store.get("community_installed", {})
+        self.comm_list.clear()
+        for e in items:
+            st = community.status(e, inst)
+            badge = {"available": "", "installed": "✅ installed", "update": "⬆ update available"}[st]
+            it = QListWidgetItem(f"{'📦' if e['kind'] == 'pack' else '🎯'}  {e['name']}  ·  v{e['version']}  ·  by {e.get('author', '?')}   {badge}\n"
+                                 f"{e.get('description', '')}")
+            it.setData(Qt.UserRole, e); self.comm_list.addItem(it)
+        self.comm_status.setText(f"{len(items)} item(s)")
+
+    def _comm_cur(self):
+        it = self.comm_list.currentItem()
+        if not it:
+            self.notify(tr("Select an item first"), error=True)
+        return it.data(Qt.UserRole) if it else None
+
+    def comm_install(self):
+        e = self._comm_cur()
+        if not e:
+            return
+        inst = self.store.get("community_installed", {})
+        def do():
+            return community.install(e, self.lib, self.profiles_path, inst)
+        wk = CallWorker(do)
+        def ok(new):
+            self.store.set("community_installed", new)
+            self._library_changed(); self.load_packs()
+            if e["kind"] == "profile":
+                self._prof_reload()
+            self._comm_loaded(self.comm_items); self.notify(f"Installed {e['name']} v{e['version']}")
+        wk.ok.connect(ok); wk.failed.connect(lambda m: self.notify(m, error=True))
+        self._keep(wk); wk.start()
+
+    def comm_uninstall(self):
+        e = self._comm_cur()
+        if not e:
+            return
+        inst = community.uninstall(e["id"], self.lib, self.profiles_path, self.store.get("community_installed", {}))
+        self.store.set("community_installed", inst)
+        self._library_changed(); self.load_packs()
+        if e["kind"] == "profile":
+            self._prof_reload()
+        self._comm_loaded(self.comm_items); self.notify(f"Uninstalled {e['name']}")
+
+    # ------------------------------------------------------------------ Settings
+    def _settings_page(self):
+        w, v = page("Settings")
+        inner = QWidget(); iv = QVBoxLayout(inner); iv.setContentsMargins(0, 0, 8, 0); iv.setSpacing(14)
+        # General
+        g = Card("General")
+        self.lang = QComboBox()
+        for code, name in i18n.available().items():
+            self.lang.addItem(name, code)
+        self.lang.setCurrentIndex(max(0, self.lang.findData(self.store.get("language", "en"))))
+        self.lang.currentIndexChanged.connect(lambda: (self.store.set("language", self.lang.currentData()),
+                                                       self.notify(tr("Language saved – restart PromptMaker to apply"))))
+        g.add(hrow(label("Language"), self.lang, None))
+        self.chk_updates = QCheckBox(tr("Check GitHub for new versions at startup"))
+        self.chk_updates.setChecked(self.store.get("check_updates", True))
+        self.chk_updates.toggled.connect(lambda on: self.store.set("check_updates", on))
+        g.add(hrow(self.chk_updates, button("Check now", lambda: self.check_updates(manual=True)), None))
+        self.portable = QCheckBox(tr("Portable mode – keep data next to the app (off = user AppData folder)"))
+        self.portable.setChecked(paths.is_portable(APP_DIR))
+        g.add(hrow(self.portable, button("Apply", self._apply_portable), None))
+        g.add(label(f"{tr('Data folder')}: {self.data_dir}", "hint", wrap=True))
+        g.add(hrow(button("📂 Open data folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.data_dir))),
+                   button("🧭 Show the tour again", self.start_tour), None))
+        iv.addWidget(g)
+        # AI provider
+        a = Card("AI provider")
+        self.prov_combo = QComboBox()
+        for pid, p in providers.PRESETS.items():
+            self.prov_combo.addItem(p["label"], pid)
+        self.prov_combo.setCurrentIndex(max(0, self.prov_combo.findData(self.store.get("provider", "ollama"))))
+        self.prov_url = QLineEdit(); self.prov_key = QLineEdit(); self.prov_key.setEchoMode(QLineEdit.Password)
+        self.prov_key.setPlaceholderText(tr("API key (stored locally, never uploaded except to that provider)"))
+        self.prov_combo.currentIndexChanged.connect(self._prov_form)
+        a.add(hrow(label("Provider"), self.prov_combo, label("Base URL"), self.prov_url))
+        self.key_row = QWidget(); kr = QHBoxLayout(self.key_row); kr.setContentsMargins(0, 0, 0, 0)
+        kr.addWidget(self.prov_key, 1); kr.addWidget(button("Save key", self._prov_save_key)); kr.addWidget(button("Clear key", self._prov_clear_key, "ghost"))
+        a.add(self.key_row)
+        self.key_note = label("", "hint", wrap=True); a.add(self.key_note)
+        self.prov_test_lbl = label("", "muted", wrap=True)
+        a.add(hrow(button("Use this provider", self._prov_apply, "primary"), button("Test connection", self._prov_test), None, self.prov_test_lbl))
+        a.add(label("All AI features (Create, Refine, Analyse, Score, Batch, Image to Prompt, A/B) use this provider. "
+                    "Cloud providers send your prompts to that company and may cost money on your account.", "hint", wrap=True))
+        iv.addWidget(a)
+        # Image generation
+        im = Card("Image generation")
+        self.img_kind = QComboBox()
+        for k, n in (("none", "Off"), ("comfyui", "ComfyUI"), ("a1111", "Forge / AUTOMATIC1111")):
+            self.img_kind.addItem(n, k)
+        self.img_kind.setCurrentIndex(max(0, self.img_kind.findData(self.store.get("img_backend", "none"))))
+        self.img_url = QLineEdit()
+        self.img_kind.currentIndexChanged.connect(self._img_form)
+        im.add(hrow(label("Backend"), self.img_kind, label("URL"), self.img_url))
+        self.img_wf = QComboBox()
+        for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
+            self.img_wf.addItem(name)
+        self.img_wf.setCurrentText(self.store.get("img_workflow", "sdxl_txt2img"))
+        self.img_ckpt = QComboBox(); self.img_ckpt.setEditable(True); self.img_ckpt.setMinimumWidth(260)
+        self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
+        wl.addWidget(label("Workflow")); wl.addWidget(self.img_wf); wl.addStretch()
+        im.add(self.wf_row)
+        self.img_steps = QSpinBox(); self.img_steps.setRange(0, 150); self.img_steps.setSpecialValueText("default")
+        self.img_steps.setValue(self.store.get("img_steps") or 0)
+        self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
+        self.img_cfg.setValue(self.store.get("img_cfg") or 0)
+        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Load checkpoint list"),
+                    label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        self.img_test_lbl = label("", "muted", wrap=True)
+        im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
+        im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
+                     "{{checkpoint}} {{sampler}} {{scheduler}} placeholders. Put your own in data/workflows/. "
+                     "Start ComfyUI normally; for Forge/A1111 launch with --api.", "hint", wrap=True))
+        iv.addWidget(im)
+        # Community
+        cv = Card("Civitai")
+        self.cv_key = QLineEdit(); self.cv_key.setEchoMode(QLineEdit.Password)
+        self.cv_key.setPlaceholderText(tr("key saved") if self.keys.get("api_key:civitai") else tr("Optional – needed only for NSFW / gated models"))
+        cv.add(hrow(label("API key"), self.cv_key, button("Save key", self._cv_key_save), button("Clear key", self._cv_key_clear, "ghost")))
+        cv.add(label("Used by Model profiles → Import from Civitai. Create a key at civitai.com/user/account (API Keys). "
+                     "Keys are stored in " + self.keys.backend + ". Responses are cached for 24 h in data/cache/civitai.", "hint", wrap=True))
+        iv.addWidget(cv)
+        cm = Card("Community gallery")
+        self.comm_url = QLineEdit(self.store.get("community_index") or community.DEFAULT_INDEX)
+        cm.add(hrow(label("Index URL"), self.comm_url, button("Save", lambda: (self.store.set("community_index", self.comm_url.text().strip()),
+                                                                            self.notify(tr("Saved"))))))
+        iv.addWidget(cm)
+        iv.addStretch()
+        v.addWidget(scroll(inner), 1)
+        self._prov_form(); self._img_form()
+        return w
+
+    def _cv_key_save(self):
+        k = self.cv_key.text().strip()
+        if k:
+            self.keys.set("api_key:civitai", k); self.cv_key.clear(); self.cv_key.setPlaceholderText(tr("key saved")); self.notify(tr("Key saved"))
+
+    def _cv_key_clear(self):
+        self.keys.delete("api_key:civitai"); self.cv_key.setPlaceholderText(tr("Optional – needed only for NSFW / gated models"))
+        self.notify(tr("Key removed"))
+
+    # ---------------------------------------------------------------- Civitai import
+    def civitai_client(self):
+        return civitai.Client(self.keys.get("api_key:civitai"), os.path.join(self.data_dir, "cache", "civitai"),
+                              base=self.store.get("civitai_api") or civitai.API)
+
+    def civitai_import(self, _=False, ref=None, existing=None):
+        from .civitai_dialog import CivitaiDialog
+        dlg = CivitaiDialog(self, ref or "", existing)
+        self._cv_dialog = dlg
+        dlg.saved.connect(self._civitai_saved)
+        dlg.show()
+        if ref:
+            dlg.fetch(force=existing is not None)
+        return dlg
+
+    def civitai_refresh(self):
+        it = self.prof_list.currentItem()
+        p = self.profiles.get(it.data(Qt.UserRole)) if it else None
+        if not p or not p.get("civitai"):
+            self.notify(tr("Select a profile imported from Civitai"), error=True); return None
+        c = p["civitai"]
+        return self.civitai_import(ref=f"https://civitai.com/models/{c.get('model_id')}?modelVersionId={c.get('version_id')}",
+                                   existing=profiles.raw_profile(self.profiles_path, p["id"]) or p)
+
+    def _civitai_saved(self, prof):
+        profiles.save_profile(self.profiles_path, prof)
+        self._prof_reload(prof["id"])
+        i = self.profile_combo.findData(prof["id"])
+        if i >= 0:
+            self.profile_combo.setCurrentIndex(i)
+        self.notify(tr("Profile saved") + f": {prof['name']}")
+
+    def _prov_form(self, *_):
+        pid = self.prov_combo.currentData(); p = providers.PRESETS[pid]
+        self.prov_url.setText(self.store.get(f"provider_url:{pid}") or p["base_url"])
+        self.key_row.setVisible(bool(p["key"]))
+        has = bool(self.keys.get(f"api_key:{pid}")) if p["key"] else False
+        self.prov_key.clear()
+        self.prov_key.setPlaceholderText(("✓ " + tr("key saved") + " – ") if has else "" + tr("Paste API key"))
+        warn = "" if self.keys.use_keyring else " ⚠️ " + tr("No secure keyring available – keys are saved in plain text in your data folder.")
+        self.key_note.setText((tr("Keys are stored in") + f" {self.keys.backend}." + warn) if p["key"] else "")
+
+    def _prov_save_key(self):
+        k = self.prov_key.text().strip()
+        if k:
+            where = self.keys.set(f"api_key:{self.prov_combo.currentData()}", k)
+            self.notify(tr("Key saved") + (" (" + tr("plain-text file") + ")" if where == "file" else ""), error=where == "file")
+            self._prov_form()
+
+    def _prov_clear_key(self):
+        self.keys.delete(f"api_key:{self.prov_combo.currentData()}"); self._prov_form(); self.notify(tr("Key removed"))
+
+    def _prov_apply(self):
+        pid = self.prov_combo.currentData()
+        self.store.set("provider", pid); self.store.set(f"provider_url:{pid}", self.prov_url.text().strip())
+        if self.prov_key.text().strip():
+            self._prov_save_key()
+        self.make_provider(); self.model.clear(); self.refresh_models_async()
+        self.notify(tr("Provider") + ": " + providers.PRESETS[pid]["label"])
+
+    def _prov_test(self):
+        pid = self.prov_combo.currentData()
+        key = self.prov_key.text().strip() or self.keys.get(f"api_key:{pid}")
+        prov = providers.make(pid, self.prov_url.text().strip(), key)
+        self.prov_test_lbl.setText(tr("Testing…"))
+        wk = CallWorker(prov.test)
+        wk.ok.connect(lambda m: self.prov_test_lbl.setText("✅ " + m)); wk.failed.connect(lambda e: self.prov_test_lbl.setText("⚠️ " + e[:240]))
+        self._keep(wk); wk.start()
+
+    def _img_form(self, *_):
+        kind = self.img_kind.currentData()
+        default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
+        self.img_url.setText(self.store.get(f"img_url:{kind}", default) if kind != "none" else "")
+        self.img_url.setEnabled(kind != "none"); self.wf_row.setVisible(kind == "comfyui")
+        key = self.img_wf.currentText() if kind == "comfyui" else "a1111"
+        self.img_ckpt.setCurrentText(self.store.get(f"img_checkpoint:{key}", ""))
+
+    def _img_save(self):
+        kind = self.img_kind.currentData()
+        self.store.set("img_backend", kind)
+        if kind != "none":
+            self.store.set(f"img_url:{kind}", self.img_url.text().strip())
+        self.store.set("img_workflow", self.img_wf.currentText())
+        self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.currentText().strip())
+        self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
+        self.load_gallery(); self.notify(tr("Image generation settings saved"))
+
+    def _img_test_failed(self, e):
+        self.img_test_lbl.setText("⚠️ " + e[:240])
+        if e.startswith(imagegen.API_DISABLED):
+            self.show_api_disabled(e)
+
+    def show_api_disabled(self, e):
+        """Friendly 'Forge API is off' dialog with the exact fix and a Copy button."""
+        box = QMessageBox(self); box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Forge API is switched off"))
+        bat = re.search(r"open (.+?webui-user\.bat)", e)
+        bat = bat.group(1) if bat else "webui-user.bat"
+        box.setText(tr("Forge is running, but its API isn't enabled, so PromptMaker can't send it prompts.") + "\n\n"
+                    + tr("How to fix:") + f"\n1. {tr('Close the Forge window.')}\n2. {tr('Open')} {bat} {tr('in Notepad.')}"
+                    f"\n3. {tr('Change the line')}  set COMMANDLINE_ARGS=  {tr('to')}  {imagegen.API_FIX}"
+                    f"\n    ({tr('keep any other flags after --api')})\n4. {tr('Save, start Forge again, then click Test connection.')}")
+        box.setDetailedText(e)
+        cp = box.addButton(tr("Copy") + f" `{imagegen.API_FIX}`", QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Close)
+        box.buttonClicked.connect(lambda b: b is cp and (copy(imagegen.API_FIX), self.notify(tr("Copied") + f": {imagegen.API_FIX}")))
+        self._last_error_box = box
+        box.open()
+        return box
+
+    def _img_test(self):
+        kind = self.img_kind.currentData()
+        if kind == "none":
+            return
+        b = imagegen.make_backend(kind, self.img_url.text().strip())
+        self.img_test_lbl.setText(tr("Testing…"))
+        wk = CallWorker(b.test)
+        wk.ok.connect(lambda m: (self.img_test_lbl.setText("✅ " + m), self._img_ckpts()))
+        wk.failed.connect(self._img_test_failed)
+        self._keep(wk); wk.start()
+
+    def _img_ckpts(self):
+        kind = self.img_kind.currentData()
+        if kind == "none":
+            return
+        b = imagegen.make_backend(kind, self.img_url.text().strip())
+        wk = CallWorker(b.checkpoints)
+        def ok(lst):
+            cur = self.img_ckpt.currentText(); self.img_ckpt.clear(); self.img_ckpt.addItems(lst or [])
+            self.img_ckpt.setCurrentText(cur or (lst[0] if lst else ""))
+        wk.ok.connect(ok); self._keep(wk); wk.start()
+
+    def _apply_portable(self):
+        want = self.portable.isChecked()
+        if want == paths.is_portable(APP_DIR):
+            self.notify(tr("Already using that mode")); return
+        try:
+            new = paths.set_portable(APP_DIR, want)
+        except OSError as e:
+            self.notify(str(e), error=True); return
+        self.notify(tr("Data will be stored in") + f" {new}. " + tr("Restart PromptMaker to switch."))
+
+    # ------------------------------------------------------------------ updates & tour
+    def check_updates(self, manual=False):
+        wk = CallWorker(updates.check, __version__)
+        def ok(res):
+            if res:
+                tag, url = res
+                self.update_btn.setText(f"⬆ {tr('Update available')}: {tag}"); self.update_btn.setVisible(True)
+                self.update_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+                self.notify(f"{tr('PromptMaker')} {tag} {tr('is available')}")
+            elif manual:
+                self.notify(tr("You're on the latest version") + f" ({__version__})")
+        wk.ok.connect(ok)
+        wk.failed.connect(lambda e: manual and self.notify(tr("Couldn't check for updates") + f": {e[:120]}", error=True))
+        self._keep(wk); wk.start()
+
+    TOUR = [("Create", "Start here: describe an idea in plain words and the AI writes a finished prompt for your target model. Press Ctrl+K anywhere for the quick bar."),
+            ("Builder", "Or build a prompt by clicking preset chips. Pick the target model in the sidebar – the output adapts automatically."),
+            ("Refine", "Chat with the AI to improve a prompt. Apply suggestions with one click and revert any time."),
+            ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),
+            ("Gallery", "Connect ComfyUI or Forge in Settings to generate images – they land here with full metadata."),
+            ("Settings", "Choose your AI provider (Ollama, LM Studio, cloud…), image backend, language and data location. Enjoy!")]
+
+    def start_tour(self):
+        self._tour_i = 0
+        if not hasattr(self, "tour"):
+            self.tour = QFrame(self.centralWidget()); self.tour.setObjectName("card")
+            tl = QVBoxLayout(self.tour); tl.setContentsMargins(20, 16, 20, 16)
+            self.tour_title = label("", "h2"); self.tour_text = label("", wrap=True)
+            tl.addWidget(self.tour_title); tl.addWidget(self.tour_text)
+            self.tour_next = button(tr("Next"), self._tour_step, "primary")
+            tl.addLayout(hrow(button(tr("Skip tour"), self._tour_end, "ghost"), None, self.tour_next))
+        self.tour.setFixedWidth(420)
+        self._tour_show()
+
+    def _tour_show(self):
+        name, text = self.TOUR[self._tour_i]
+        self.go(name)
+        self.tour_title.setText(f"{self._tour_i + 1}/{len(self.TOUR)} · {tr(name)}")
+        self.tour_text.setText(tr(text))
+        self.tour_next.setText(tr("Finish") if self._tour_i == len(self.TOUR) - 1 else tr("Next"))
+        self.tour.adjustSize()
+        cw = self.centralWidget()
+        self.tour.move(cw.width() - self.tour.width() - 30, 80)
+        self.tour.show(); self.tour.raise_()
+
+    def _tour_step(self):
+        self._tour_i += 1
+        if self._tour_i >= len(self.TOUR):
+            self._tour_end()
+        else:
+            self._tour_show()
+
+    def _tour_end(self):
+        self.tour.hide(); self.store.set("tour_done", True); self.go("Create")
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if hasattr(self, "toast") and self.toast.isVisible():
@@ -1428,9 +2313,12 @@ def main(argv=None):
             pass
     app = QApplication(argv)
     app.setApplicationName("PromptMaker")
-    data_dir = os.path.join(APP_DIR, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    win = MainWindow(Store(os.path.join(data_dir, "promptmaker.db")), data_dir)
+    data_dir = paths.data_dir(APP_DIR)
+    store = Store(os.path.join(data_dir, "promptmaker.db"))
+    i18n.set_language(store.get("language", "en"))
+    if "--smoke-test" in argv:
+        os.environ.setdefault("PROMPTMAKER_NO_NET", "1"); os.environ.setdefault("PROMPTMAKER_NO_TOUR", "1")
+    win = MainWindow(store, data_dir)
     win.show()
     if "--smoke-test" in argv:
         def tour():

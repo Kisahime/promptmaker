@@ -1,9 +1,9 @@
 """Reusable widgets: flow layout, chips, cards, toasts, workers."""
+from .i18n import tr
 from PySide6.QtCore import (QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt, QThread, QTimer, Signal)
 from PySide6.QtWidgets import (QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget, QProgressBar)
 
-from . import ollama
 
 
 class FlowLayout(QLayout):
@@ -68,15 +68,57 @@ class FlowLayout(QLayout):
 
 
 def button(text, slot=None, kind=None, tip=None):
-    b = QPushButton(text)
+    b = QPushButton(tr(text))
     b.setCursor(Qt.PointingHandCursor)
     if kind:
         b.setObjectName(kind)
     if slot:
         b.clicked.connect(slot)
     if tip:
-        b.setToolTip(tip)
+        b.setToolTip(tr(tip))
     return b
+
+
+class ConfirmButton(QPushButton):
+    """Destructive button with in-place confirmation: first click arms it ("Confirm clear (4s)", danger style,
+    live countdown), a second click within the window runs the action, otherwise it reverts by itself."""
+
+    def __init__(self, text, action, confirm_text="Confirm", secs=4, kind="ghost", tip=None):
+        super().__init__(tr(text))
+        self._label, self._confirm, self._secs, self._kind, self._action = tr(text), tr(confirm_text), secs, kind, action
+        self.setCursor(Qt.PointingHandCursor)
+        self.setObjectName(kind)
+        if tip:
+            self.setToolTip(tr(tip))
+        self.left = 0
+        self.timer = QTimer(self, interval=1000, timeout=self._tick)
+        self.clicked.connect(self._clicked)
+
+    @property
+    def armed(self):
+        return self.left > 0
+
+    def _restyle(self, name):
+        self.setObjectName(name); self.style().unpolish(self); self.style().polish(self)
+
+    def _clicked(self):
+        if self.armed:
+            self.reset(); self._action()
+        else:
+            self.left = self._secs; self._restyle("dangerArmed"); self._show(); self.timer.start()
+
+    def _show(self):
+        self.setText(f"{self._confirm} ({self.left}s)")
+
+    def _tick(self):
+        self.left -= 1
+        if self.left <= 0:
+            self.reset()
+        else:
+            self._show()
+
+    def reset(self):
+        self.timer.stop(); self.left = 0; self.setText(self._label); self._restyle(self._kind)
 
 
 def chip(text, checked=False, slot=None):
@@ -91,7 +133,7 @@ def chip(text, checked=False, slot=None):
 
 
 def label(text, kind=None, wrap=False):
-    l = QLabel(text)
+    l = QLabel(tr(text))
     if kind:
         l.setObjectName(kind)
     l.setWordWrap(wrap)
@@ -137,6 +179,9 @@ class Toast(QLabel):
         self.setObjectName("toast")
         self.setWordWrap(True)
         self.setMaximumWidth(420)
+        # Toasts are purely informational: never intercept clicks on whatever is underneath.
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setFocusPolicy(Qt.NoFocus)
         self.hide()
         self.effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.effect)
@@ -150,7 +195,8 @@ class Toast(QLabel):
         self.setText(("⚠️  " if error else "✓  ") + text)
         self.adjustSize()
         p = self.parentWidget()
-        self.move(p.width() - self.width() - 24, p.height() - self.height() - 24)
+        # Top-right, clear of the bottom action rows where most buttons live.
+        self.move(p.width() - self.width() - 24, 16)
         self.raise_(); self.show()
         self.anim.stop(); self.anim.setDuration(180)
         self.anim.setStartValue(0.0); self.anim.setEndValue(1.0); self.anim.start()
@@ -192,9 +238,10 @@ class ChatWorker(QThread):
     failed = Signal(str)
     done = Signal(str)
 
-    def __init__(self, model, messages, temperature=0.7, json_mode=False):
+    def __init__(self, provider, model, messages, temperature=0.7, json_mode=False):
         super().__init__()
-        self.model, self.messages, self.temperature, self.json_mode = model, messages, temperature, json_mode
+        self.provider, self.model, self.messages = provider, model, messages
+        self.temperature, self.json_mode = temperature, json_mode
         self._stop = False
 
     def stop(self):
@@ -203,14 +250,99 @@ class ChatWorker(QThread):
     def run(self):
         buf = []
         try:
-            for c in ollama.stream_chat(self.model, self.messages, temperature=self.temperature,
-                                        json_mode=self.json_mode, stop_flag=lambda: self._stop):
+            for c in self.provider.stream_chat(self.model, self.messages, temperature=self.temperature,
+                                               json_mode=self.json_mode, stop_flag=lambda: self._stop):
                 buf.append(c); self.chunk.emit(c)
             self.done.emit("".join(buf))
         except Exception as e:  # noqa: BLE001
             self.failed.emit(str(e))
 
 
+class CallWorker(QThread):
+    """Run any blocking callable off the UI thread."""
+    ok = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, fn, *args):
+        super().__init__()
+        self.fn, self.args = fn, args
+
+    def run(self):
+        try:
+            self.ok.emit(self.fn(*self.args))
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(str(e))
+
+
+class GenQueue(QThread):
+    """Processes image-generation jobs one at a time."""
+    progress = Signal(str, int, str)        # job id, percent (-1 = busy), message
+    finished_job = Signal(object, list)     # job, [png bytes]
+    failed_job = Signal(object, str)
+    idle = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.jobs = []
+        self.backend = None
+        self.workflow = None
+        self._cancel_current = False
+        self.current = None
+
+    def add(self, job, backend, workflow):
+        self.jobs.append((job, backend, workflow))
+        if not self.isRunning():
+            self.start()
+
+    def cancel_current(self):
+        self._cancel_current = True
+
+    def clear(self):
+        self.jobs.clear()
+
+    def run(self):
+        from .imagegen import Cancelled
+        while self.jobs:
+            job, backend, wf = self.jobs.pop(0)
+            self.current, self._cancel_current = job, False
+            self.progress.emit(job.id, -1, "Starting…")
+            try:
+                imgs = backend.generate(job, wf, progress=lambda pct, msg, j=job: self.progress.emit(j.id, pct, msg),
+                                        cancelled=lambda: self._cancel_current)
+                self.finished_job.emit(job, imgs)
+            except Cancelled:
+                self.failed_job.emit(job, "Cancelled")
+            except Exception as e:  # noqa: BLE001
+                self.failed_job.emit(job, str(e))
+        self.current = None
+        self.idle.emit()
+
+
 def expanding(w):
     w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     return w
+
+
+class DropLabel(QLabel):
+    """A label that accepts dropped image files or image data."""
+    from PySide6.QtCore import Signal as _S
+    dropped = _S(object)
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.setAcceptDrops(True)
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(260)
+        self.setObjectName("dropZone")
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasImage() or e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        from PySide6.QtGui import QImage
+        md = e.mimeData()
+        if md.hasImage():
+            self.dropped.emit(QImage(md.imageData()))
+        elif md.hasUrls():
+            self.dropped.emit(QImage(md.urls()[0].toLocalFile()))
