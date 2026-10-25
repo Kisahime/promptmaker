@@ -1649,7 +1649,9 @@ class MainWindow(QMainWindow):
         job.state, job.error = "failed", err
         self.gen_status.setText("⚠️ " + err[:160]); self.gen_bar.setRange(0, 100); self.gen_bar.setValue(0)
         self._render_queue()
-        if err != "Cancelled":
+        if err.startswith(imagegen.API_DISABLED):
+            self.show_api_disabled(err)
+        elif err != "Cancelled":
             self.notify(err, error=True)
 
     # ------------------------------------------------------------------ Gallery page
@@ -2184,6 +2186,29 @@ class MainWindow(QMainWindow):
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
         self.load_gallery(); self.notify(tr("Image generation settings saved"))
 
+    def _img_test_failed(self, e):
+        self.img_test_lbl.setText("⚠️ " + e[:240])
+        if e.startswith(imagegen.API_DISABLED):
+            self.show_api_disabled(e)
+
+    def show_api_disabled(self, e):
+        """Friendly 'Forge API is off' dialog with the exact fix and a Copy button."""
+        box = QMessageBox(self); box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Forge API is switched off"))
+        bat = re.search(r"open (.+?webui-user\.bat)", e)
+        bat = bat.group(1) if bat else "webui-user.bat"
+        box.setText(tr("Forge is running, but its API isn't enabled, so PromptMaker can't send it prompts.") + "\n\n"
+                    + tr("How to fix:") + f"\n1. {tr('Close the Forge window.')}\n2. {tr('Open')} {bat} {tr('in Notepad.')}"
+                    f"\n3. {tr('Change the line')}  set COMMANDLINE_ARGS=  {tr('to')}  {imagegen.API_FIX}"
+                    f"\n    ({tr('keep any other flags after --api')})\n4. {tr('Save, start Forge again, then click Test connection.')}")
+        box.setDetailedText(e)
+        cp = box.addButton(tr("Copy") + f" `{imagegen.API_FIX}`", QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Close)
+        box.buttonClicked.connect(lambda b: b is cp and (copy(imagegen.API_FIX), self.notify(tr("Copied") + f": {imagegen.API_FIX}")))
+        self._last_error_box = box
+        box.open()
+        return box
+
     def _img_test(self):
         kind = self.img_kind.currentData()
         if kind == "none":
@@ -2192,7 +2217,7 @@ class MainWindow(QMainWindow):
         self.img_test_lbl.setText(tr("Testing…"))
         wk = CallWorker(b.test)
         wk.ok.connect(lambda m: (self.img_test_lbl.setText("✅ " + m), self._img_ckpts()))
-        wk.failed.connect(lambda e: self.img_test_lbl.setText("⚠️ " + e[:240]))
+        wk.failed.connect(self._img_test_failed)
         self._keep(wk); wk.start()
 
     def _img_ckpts(self):

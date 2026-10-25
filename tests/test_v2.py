@@ -425,3 +425,104 @@ def test_ollama_version_marks_mllama_unsupported(server):
         p.vision_models(); assert p.notes == {}
     finally:
         Mock.do_GET = orig; srv.__dict__.pop("ollama_version", None)
+
+
+# ---------------------------------------------------------------- Forge API disabled / variant detection
+class ForgeMock(BaseHTTPRequestHandler):
+    """Forge Neo 2.31 as seen on a real install started *without* --api (Gradio 4.40 routes only)."""
+    api = False
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, obj, code=200):
+        b = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(b)
+
+    def do_GET(self):
+        p = self.path.split("?")[0]
+        paths = ["/", "/info", "/config", "/queue/join", "/internal/ping", "/internal/sysinfo"]
+        if self.api:
+            paths += ["/sdapi/v1/sd-models", "/sdapi/v1/options", "/sdapi/v1/txt2img"]
+        if p == "/openapi.json":
+            return self._send({"openapi": "3.1.0", "info": {"title": "FastAPI"}, "paths": {x: {} for x in paths}})
+        if p == "/internal/sysinfo":
+            return self._send({"Version": "neo 2.31", "Script path": "C:\\AI\\sd-webui-forge-classic", "Commandline": ["launch.py"]})
+        if self.api and p == "/sdapi/v1/sd-models":
+            return self._send([{"title": "animaScreenChan.safetensors"}])
+        if self.api and p == "/sdapi/v1/options":
+            return self._send({"sd_model_checkpoint": "animaScreenChan.safetensors"})
+        self._send({"detail": "Not Found"}, 404)
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self._send({"detail": "Not Found"}, 404)
+
+
+@pytest.fixture()
+def forge():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), ForgeMock)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv, f"http://127.0.0.1:{srv.server_address[1]}"
+    ForgeMock.api = False
+    srv.shutdown()
+
+
+def test_forge_api_disabled_detected(forge):
+    _, url = forge
+    b = imagegen.A1111(url)
+    with pytest.raises(imagegen.ApiDisabled) as ei:
+        b.test()
+    e = ei.value
+    assert e.variant == "Forge Neo" and e.version == "2.31"
+    assert str(e).startswith(imagegen.API_DISABLED)
+    assert "C:\\AI\\sd-webui-forge-classic\\webui-user.bat" in str(e) and "set COMMANDLINE_ARGS=--api" in str(e)
+    with pytest.raises(imagegen.ApiDisabled):
+        b.generate(imagegen.Job("x"))
+    assert b.checkpoints() == []
+
+
+def test_forge_api_enabled_reports_variant(forge):
+    _, url = forge
+    ForgeMock.api = True
+    msg = imagegen.A1111(url).test()
+    assert msg.startswith("Connected · Forge Neo 2.31 · 1 checkpoint(s)") and "animaScreenChan" in msg
+
+
+def test_webui_variant_names():
+    v = imagegen.webui_variant
+    assert v("neo 2.31", "C:\\AI\\sd-webui-forge-classic") == ("Forge Neo", "2.31")
+    assert v("classic 1.2", "") [0] == "Forge Classic"
+    assert v("f2.0.1v1.10.1-previous-669", "C:\\stable-diffusion-webui-forge")[0] == "Forge"
+    assert v("v1.10.1", "C:\\stable-diffusion-webui-reForge")[0] == "reForge"
+    assert v("v1.10.1", "C:\\stable-diffusion-webui")[0] == "AUTOMATIC1111"
+
+
+def test_not_forge_comfy_detected(server):
+    _, url = server  # the general mock answers /system_stats like ComfyUI and has no openapi.json
+    with pytest.raises(imagegen.BackendError, match="ComfyUI"):
+        imagegen.A1111(url).diagnose()
+
+
+def test_a1111_override_settings_merge():
+    j = imagegen.Job("x", checkpoint="m.safetensors"); j.clip_skip = 2
+    assert imagegen.A1111("http://x").payload(j)["override_settings"] == {"CLIP_stop_at_last_layers": 2, "sd_model_checkpoint": "m.safetensors"}
+
+
+def test_ui_api_disabled_dialog(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("PROMPTMAKER_NO_NET", "1"); monkeypatch.setenv("PROMPTMAKER_NO_TOUR", "1")
+    from PySide6.QtWidgets import QApplication
+    from promptmaker.app import MainWindow
+    from promptmaker.storage import Store
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow(Store(str(tmp_path / "t.db")), str(tmp_path))
+    err = str(imagegen.ApiDisabled("Forge Neo", "2.31", "C:\\AI\\sd-webui-forge-classic"))
+    w._img_test_failed(err)
+    box = w._last_error_box
+    assert "C:\\AI\\sd-webui-forge-classic\\webui-user.bat" in box.text() and "--api" in box.text()
+    cp = next(b for b in box.buttons() if "COMMANDLINE_ARGS" in b.text())
+    cp.click(); app.processEvents()
+    assert QApplication.clipboard().text() == "set COMMANDLINE_ARGS=--api"
+    box.close(); _dispose(w, app)

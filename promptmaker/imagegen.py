@@ -178,20 +178,104 @@ class ComfyUI:
             pass
 
 
+API_DISABLED = "API not enabled"
+API_FIX = "set COMMANDLINE_ARGS=--api"
+
+
+class ApiDisabled(BackendError):
+    """The WebUI is running (Gradio answers) but /sdapi/v1 is missing – it was started without --api."""
+
+    def __init__(self, variant="Forge / A1111", version="", script_path=""):
+        self.variant, self.version, self.script_path = variant, version, script_path
+        bat = (script_path.rstrip("\\/") + "\\webui-user.bat") if script_path else "webui-user.bat"
+        self.bat = bat
+        super().__init__(
+            f"{API_DISABLED}: {variant}{(' ' + version) if version else ''} is running, but its API is switched off "
+            f"(/sdapi/v1 returns 404). Fix: open {bat}, change the line to  {API_FIX}  (keep any other flags after it, "
+            "e.g. set COMMANDLINE_ARGS=--api --xformers), save, then close the Forge window and start it again.")
+
+
+def webui_variant(version="", script_path="", sdapi=True):
+    """Human name for an A1111-family WebUI from /internal/sysinfo 'Version' and 'Script path'."""
+    v, sp = (version or "").lower(), (script_path or "").lower()
+    if v.startswith("neo") or "forge-neo" in sp:
+        name = "Forge Neo"
+    elif "reforge" in v or "reforge" in sp:
+        name = "reForge"
+    elif "classic" in v or "forge-classic" in sp:
+        name = "Forge Classic"
+    elif v.startswith("f") or "forge" in sp:
+        name = "Forge"
+    elif v:
+        name = "AUTOMATIC1111"
+    else:
+        name = "Forge / A1111"
+    ver = version.split(" ", 1)[1] if v.startswith("neo ") else version
+    return name, ver
+
+
 class A1111:
     name = "Forge / A1111"
 
     def __init__(self, url="http://127.0.0.1:7860"):
         self.url = url.rstrip("/")
 
+    def _sysinfo(self):
+        try:
+            d = _http(self.url + "/internal/sysinfo", timeout=8)
+            return d if isinstance(d, dict) else {}
+        except (BackendError, ValueError):
+            return {}
+
+    def diagnose(self):
+        """Explain why /sdapi/v1 is unavailable. Raises a specific BackendError."""
+        try:
+            oa = _http(self.url + "/openapi.json", timeout=6)
+            paths = list((oa or {}).get("paths", {}))
+        except (BackendError, ValueError):
+            paths = []
+        if any(p.startswith("/sdapi/v1/") for p in paths):
+            raise BackendError("The WebUI lists /sdapi/v1 routes but this one failed – update Forge or check its console")
+        gradio = any(p in paths for p in ("/queue/join", "/info", "/config", "/internal/ping"))
+        if not paths:
+            try:
+                _http(self.url + "/system_stats", timeout=4)
+                raise BackendError("That address is ComfyUI, not Forge/A1111 – choose ComfyUI as the backend in Settings")
+            except BackendError as e:
+                if "ComfyUI" in str(e):
+                    raise
+            try:
+                _http(self.url + "/API/GetNewSession", {}, timeout=4)
+                raise BackendError("That address is SwarmUI, which has its own API – point PromptMaker at SwarmUI's "
+                                   "ComfyUI backend instead (choose ComfyUI as the backend)")
+            except BackendError as e:
+                if "SwarmUI" in str(e):
+                    raise
+        if gradio or "/internal/sysinfo" in paths:
+            si = self._sysinfo()
+            name, ver = webui_variant(si.get("Version", ""), si.get("Script path", ""))
+            raise ApiDisabled(name, ver, si.get("Script path", ""))
+        raise BackendError(f"{self.url} answered, but it doesn't look like Forge/A1111 (no /sdapi/v1 API)")
+
+    def _api(self, path, data=None, timeout=30):
+        try:
+            return _http(self.url + path, data, timeout=timeout)
+        except BackendError as e:
+            if str(e).startswith("HTTP 404"):
+                self.diagnose()
+            raise
+
     def test(self):
-        models = _http(self.url + "/sdapi/v1/sd-models", timeout=6)
-        opts = _http(self.url + "/sdapi/v1/options", timeout=6)
-        return f"Connected · {len(models)} checkpoint(s) · active: {opts.get('sd_model_checkpoint', '?')}"
+        models = self._api("/sdapi/v1/sd-models", timeout=6)
+        opts = self._api("/sdapi/v1/options", timeout=6)
+        si = self._sysinfo()
+        name, ver = webui_variant(si.get("Version", ""), si.get("Script path", ""))
+        return (f"Connected · {name}{(' ' + ver) if ver else ''} · {len(models)} checkpoint(s) · "
+                f"active: {opts.get('sd_model_checkpoint', '?')}")
 
     def checkpoints(self):
         try:
-            return [m.get("title") or m.get("model_name") for m in _http(self.url + "/sdapi/v1/sd-models", timeout=8)]
+            return [m.get("title") or m.get("model_name") for m in self._api("/sdapi/v1/sd-models", timeout=8)]
         except BackendError:
             return []
 
@@ -199,10 +283,13 @@ class A1111:
         p = {"prompt": job.prompt, "negative_prompt": job.negative, "width": job.width, "height": job.height,
              "seed": job.seed, "steps": job.steps, "cfg_scale": job.cfg, "sampler_name": job.sampler or "Euler a",
              "batch_size": 1, "n_iter": 1, "send_images": True, "save_images": False}
+        ov = {}
         if getattr(job, "clip_skip", None):
-            p["override_settings"] = {"CLIP_stop_at_last_layers": int(job.clip_skip)}
+            ov["CLIP_stop_at_last_layers"] = int(job.clip_skip)
         if job.checkpoint:
-            p["override_settings"] = {"sd_model_checkpoint": job.checkpoint}
+            ov["sd_model_checkpoint"] = job.checkpoint
+        if ov:
+            p["override_settings"] = ov
         return p
 
     def generate(self, job, workflow=None, progress=None, cancelled=None, poll=0.8, timeout=1800):
@@ -211,7 +298,7 @@ class A1111:
 
         def run():
             try:
-                result["r"] = _http(self.url + "/sdapi/v1/txt2img", self.payload(job), timeout=timeout)
+                result["r"] = self._api("/sdapi/v1/txt2img", self.payload(job), timeout=timeout)
             except BackendError as e:
                 err["e"] = e
         t = threading.Thread(target=run, daemon=True)
