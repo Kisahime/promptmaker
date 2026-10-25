@@ -1,0 +1,49 @@
+{
+ "name": "Photography Pro",
+ "description": "Camera bodies, film stocks and pro lighting setups.",
+ "version": "1.0",
+ "categories": {
+  "Camera": {
+   "Bodies": [
+    "shot on Sony A7R V",
+    "shot on Canon EOS R5",
+    "shot on Nikon Z8",
+    "shot on Fujifilm X-T5",
+    "shot on Phase One IQ4",
+    "shot on iPhone"
+   ],
+   "Film stocks": [
+    "Kodak Ektar 100",
+    "Kodak Tri-X 400",
+    "CineStill 800T",
+    "Fujifilm Pro 400H",
+    "Lomography Purple",
+    "Agfa Vista 200"
+   ]
+  },
+  "Lighting": {
+   "Pro setups": [
+    "clamshell lighting",
+    "short lighting",
+    "broad lighting",
+    "practical lights",
+    "bounce fill",
+    "hard key with flag",
+    "tungsten interior light",
+    "sodium vapor streetlight"
+   ]
+  },
+  "Style": {
+   "Genres": [
+    "wedding photography",
+    "wildlife photography",
+    "architectural photography",
+    "astrophotography",
+    "sports photography",
+    "real estate photography",
+    "fine art nude silhouette",
+    "underwater photography"
+   ]
+  }
+ }
+}

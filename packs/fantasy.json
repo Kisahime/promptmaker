@@ -1,0 +1,49 @@
+{
+ "name": "Fantasy & Sci-Fi Worlds",
+ "description": "Worldbuilding subjects, settings and creatures.",
+ "version": "1.0",
+ "categories": {
+  "Subject": {
+   "Heroes & villains": [
+    "an elven ranger",
+    "a dwarven warsmith",
+    "an orc warlord",
+    "a necromancer",
+    "a paladin in shining plate",
+    "a rogue in a hooded cloak",
+    "a cyborg mercenary",
+    "a space marine",
+    "an alien diplomat",
+    "a time traveler",
+    "a robot monk",
+    "a starship captain"
+   ]
+  },
+  "Setting": {
+   "Worlds": [
+    "in an elven city of white towers",
+    "in a dwarven mine hall",
+    "in a dragon's lair full of gold",
+    "on a terraformed Mars",
+    "inside a dyson sphere",
+    "on a generation ship",
+    "in a cyberpunk slum",
+    "on a ringworld",
+    "in a haunted marsh",
+    "in a celestial palace"
+   ]
+  },
+  "Style": {
+   "Genre looks": [
+    "high fantasy",
+    "grimdark",
+    "sword and sorcery",
+    "space opera",
+    "hard sci-fi",
+    "cosmic horror",
+    "weird west",
+    "mythpunk"
+   ]
+  }
+ }
+}

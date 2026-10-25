@@ -1,0 +1,569 @@
+{
+ "_comment": "PromptMaker model profiles. Edit or add entries; restart or click Reload in the app. format: natural|tags|hybrid|json; negative: supported|optional|limited|unsupported|param_no; weighting: parens|mj|none; param_style: midjourney|settings|none.",
+ "profiles": [
+  {
+   "id": "generic",
+   "name": "Generic (any model)",
+   "family": "Generic",
+   "format": "natural",
+   "negative": "optional",
+   "weighting": "none",
+   "length": [
+    15,
+    75
+   ],
+   "params": {},
+   "param_style": "none",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "settings": "",
+   "ai_guidance": "Write a clear, comma-separated or sentence-style description: subject first, then setting, style, lighting, camera, mood.",
+   "tips": [
+    "Subject first, then setting, style, lighting, camera."
+   ],
+   "sources": []
+  },
+  {
+   "id": "flux2",
+   "name": "FLUX.2 (pro / max / dev / klein)",
+   "family": "FLUX",
+   "format": "natural",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    30,
+    200
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1920x1088",
+    "9:16": "1088x1920",
+    "4:3": "1536x1152",
+    "3:4": "1152x1536",
+    "3:2": "1536x1024",
+    "2:3": "1024x1536",
+    "21:9": "2048x880",
+    "4:5": "1152x1440"
+   },
+   "settings": "Any size in multiples of 16, ≤4 MP (≤2 MP recommended). prompt_upsampling on by default in the API (disable_pup to turn off).",
+   "ai_guidance": "FLUX.2: write rich natural-language prose, most important element first: subject, action, setting, style, lighting, camera/lens, mood. Put exact text in quotes. No weighting syntax, no negative prompt; describe what you want instead. Hex colours are allowed.",
+   "tips": [
+    "Natural language or structured JSON (scene, subjects, style, color_palette, lighting, mood, background, composition, camera).",
+    "No negative prompt – phrase exclusions positively.",
+    "Hex colour codes are understood."
+   ],
+   "sources": [
+    "https://docs.bfl.ml/guides/prompting_guide_flux2",
+    "https://help.bfl.ai/articles/8916739058-what-aspect-ratios-and-output-dimensions-are-supported"
+   ]
+  },
+  {
+   "id": "flux2_json",
+   "name": "FLUX.2 – JSON structured",
+   "family": "FLUX",
+   "format": "json",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    20,
+    300
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1920x1088",
+    "9:16": "1088x1920",
+    "4:3": "1536x1152",
+    "3:4": "1152x1536",
+    "3:2": "1536x1024",
+    "2:3": "1024x1536",
+    "21:9": "2048x880",
+    "4:5": "1152x1440"
+   },
+   "settings": "Paste the JSON as the prompt string. Multiples of 16, ≤4 MP.",
+   "ai_guidance": "Output a FLUX.2 JSON prompt with keys scene, subjects[{description,position,action}], style, color_palette, lighting, mood, background, composition, camera{angle,lens,depth_of_field}. Output only the JSON.",
+   "tips": [
+    "Best for complex multi-subject scenes and automation."
+   ],
+   "sources": [
+    "https://docs.bfl.ml/guides/usecases_t2i_json_prompting"
+   ]
+  },
+  {
+   "id": "flux1",
+   "name": "FLUX.1 [dev / schnell / pro]",
+   "family": "FLUX",
+   "format": "natural",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    30,
+    150
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x864",
+    "3:4": "864x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "928x1152"
+   },
+   "settings": "dev: ~28 steps, guidance ~3.5; schnell: 1–4 steps. ~1 MP, multiples of 16. T5 encoder ≈512 tokens.",
+   "ai_guidance": "FLUX.1: descriptive natural-language sentences, subject first. No (word:1.2) weighting, no negative prompt, avoid tag soup and 'masterpiece/8k' filler.",
+   "tips": [
+    "Weighting syntax and negative prompts are ignored (guidance-distilled).",
+    "Quality tags like 'masterpiece' add little."
+   ],
+   "sources": [
+    "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+    "https://docs.bfl.ml/guides/prompting_summary"
+   ]
+  },
+  {
+   "id": "flux_kontext",
+   "name": "FLUX.1 Kontext (image editing)",
+   "family": "FLUX",
+   "format": "natural",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    8,
+    80
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x864",
+    "3:4": "864x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "928x1152"
+   },
+   "settings": "Requires an input image. Describe the edit as an instruction.",
+   "ai_guidance": "FLUX.1 Kontext is an instruction-based editor: write a direct edit instruction ('Change X to Y while keeping Z the same'). Name what must be preserved (face, pose, composition). Put exact text in quotes. Be specific rather than using pronouns.",
+   "tips": [
+    "Write instructions, not scene descriptions.",
+    "State explicitly what to keep unchanged.",
+    "Do edits step by step."
+   ],
+   "sources": [
+    "https://docs.bfl.ml/guides/prompting_guide_kontext_i2i"
+   ]
+  },
+  {
+   "id": "sdxl",
+   "name": "Stable Diffusion XL 1.0",
+   "family": "Stable Diffusion",
+   "format": "tags",
+   "negative": "supported",
+   "weighting": "parens",
+   "weight_max": 1.5,
+   "quality_prefix": "",
+   "negative_default": "lowres, blurry, worst quality, low quality, deformed, bad anatomy, extra fingers, watermark, text, signature, jpeg artifacts",
+   "length": [
+    10,
+    75
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "settings": "~1 MP buckets (e.g. 1024x1024, 1216x832). 25–40 steps, CFG 5–8. CLIP limit ≈77 tokens per chunk.",
+   "ai_guidance": "SDXL: comma-separated descriptive phrases, most important first; (term:1.2) weighting allowed up to ~1.5; keep under ~75 tokens; style and quality keywords help.",
+   "tips": [
+    "Use (term:1.2) to emphasise.",
+    "Negative prompt strongly recommended.",
+    "Keep within ~75 tokens per chunk."
+   ],
+   "sources": [
+    "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"
+   ]
+  },
+  {
+   "id": "sd35",
+   "name": "Stable Diffusion 3.5 (Large / Medium)",
+   "family": "Stable Diffusion",
+   "format": "natural",
+   "negative": "supported",
+   "weighting": "none",
+   "negative_default": "blurry, low quality, deformed, watermark, text",
+   "length": [
+    20,
+    200
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "settings": "~1 MP. Large: 28–40 steps, CFG 3.5–4.5. T5 encoder handles long natural prompts.",
+   "ai_guidance": "SD 3.5: natural-language description with style, subject, composition, lighting and quoted text. Negative prompt works but keep it short. Avoid heavy weighting.",
+   "tips": [
+    "Write full sentences; it understands long prompts.",
+    "Quote text you want rendered."
+   ],
+   "sources": [
+    "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+    "https://stability.ai/learning-hub/stable-diffusion-3-5-prompt-guide"
+   ]
+  },
+  {
+   "id": "pony",
+   "name": "Pony Diffusion V6 XL (tags)",
+   "family": "Stable Diffusion",
+   "format": "tags",
+   "negative": "supported",
+   "weighting": "parens",
+   "weight_max": 1.4,
+   "quality_prefix": "score_9, score_8_up, score_7_up",
+   "negative_default": "score_6, score_5, score_4, worst quality, low quality, bad anatomy, watermark",
+   "length": [
+    10,
+    75
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "underscores": false,
+   "settings": "SDXL resolutions. CLIP skip 2. Euler a, ~25 steps, CFG ~7. Add source_anime / source_cartoon / source_furry to steer.",
+   "ai_guidance": "Pony Diffusion V6: start with 'score_9, score_8_up, score_7_up', optionally a source_ tag, then Danbooru-style comma-separated lowercase tags. (tag:1.2) weighting allowed.",
+   "tips": [
+    "Start with score_9, score_8_up, score_7_up.",
+    "Use source_anime / source_cartoon / rating_safe tags."
+   ],
+   "sources": [
+    "https://civitai.com/models/257749/pony-diffusion-v6-xl"
+   ]
+  },
+  {
+   "id": "illustrious",
+   "name": "Illustrious XL / NoobAI (Danbooru tags)",
+   "family": "Stable Diffusion",
+   "format": "tags",
+   "negative": "supported",
+   "weighting": "parens",
+   "weight_max": 1.4,
+   "quality_prefix": "masterpiece, best quality, amazing quality, very aesthetic, absurdres",
+   "negative_default": "worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, watermark, signature",
+   "length": [
+    10,
+    75
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "settings": "SDXL resolutions (1–1.5 MP). Euler a, 20–30 steps, CFG 5–7.",
+   "ai_guidance": "Illustrious/NoobAI: Danbooru tags, comma separated, lowercase: quality tags, count (1girl), character, series, artist, then general tags. Weighting (tag:1.2) allowed.",
+   "tips": [
+    "Use Danbooru tag names (1girl, long hair, looking at viewer).",
+    "Quality tags at the start, artist tags help style."
+   ],
+   "sources": [
+    "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
+    "https://civitai.com/models/795765/illustrious-xl"
+   ]
+  },
+  {
+   "id": "anima",
+   "name": "Anima (CircleStone Labs, anime)",
+   "family": "Anima",
+   "format": "hybrid",
+   "negative": "supported",
+   "weighting": "parens",
+   "weight_max": 1.4,
+   "quality_prefix": "masterpiece, best quality, score_7, safe",
+   "negative_default": "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, bad anatomy, bad hands",
+   "length": [
+    25,
+    180
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x896",
+    "3:4": "896x1152",
+    "3:2": "1216x832",
+    "2:3": "832x1216",
+    "21:9": "1536x640",
+    "4:5": "896x1152"
+   },
+   "settings": "Base/Aesthetic: 30–50 steps, CFG 4–5, er_sde sampler. Turbo: CFG 1, 8–12 steps. ~1 MP.",
+   "ai_guidance": "Anima: anime/illustration only (not photoreal). Lowercase Danbooru tags with spaces not underscores (only score_ tags use underscores), ordered quality/meta/year/safety -> subject count -> character -> series -> @artist -> general tags; then add at least two natural-language sentences describing the scene. Weights like (tag:1.2) may need 1.2–1.4.",
+   "tips": [
+    "Lowercase tags, spaces instead of underscores (except score_ tags).",
+    "Prefix artists with @.",
+    "Combine tags with 2+ sentences of natural language.",
+    "Avoid photorealism."
+   ],
+   "sources": [
+    "https://huggingface.co/circlestone-labs/Anima",
+    "https://civitai.com/articles/35368/the-ultimate-anima-prompting-guidebook-all-you-need"
+   ]
+  },
+  {
+   "id": "moss",
+   "name": "MOSS-Image (OpenMOSS, 5B)",
+   "family": "MOSS",
+   "format": "natural",
+   "negative": "supported",
+   "weighting": "none",
+   "negative_default": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
+   "length": [
+    30,
+    400
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1344x768",
+    "9:16": "768x1344",
+    "4:3": "1152x864",
+    "3:4": "864x1152",
+    "3:2": "1248x832",
+    "2:3": "832x1248",
+    "21:9": "1536x656",
+    "4:5": "912x1136"
+   },
+   "settings": "Official: 50 steps, CFG 3, skip-layer guidance at layer 22. ComfyUI template: 25 steps, CFG 2.5, er_sde. 1–2 MP, multiples of 16. Prompts up to ~4K tokens.",
+   "ai_guidance": "MOSS-Image: write a detailed caption describing the finished image (not a request). English preferred, Chinese supported. Quote exact text to render; use line breaks for text layout. Tags also work in order quality -> score -> meta -> year -> character -> series -> @artist -> general. Keep the negative prompt short.",
+   "tips": [
+    "Describe the finished image, not an instruction.",
+    "Quote rendered text; add \\n for line breaks.",
+    "JSON layout prompts with bounding boxes give precise placement."
+   ],
+   "sources": [
+    "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base",
+    "https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE_ZH.md",
+    "https://docs.comfy.org/tutorials/image/moss-image/moss-image"
+   ]
+  },
+  {
+   "id": "qwen_image",
+   "name": "Qwen-Image (incl. 2512)",
+   "family": "Qwen",
+   "format": "natural",
+   "negative": "limited",
+   "weighting": "none",
+   "negative_default": " ",
+   "length": [
+    30,
+    250
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1328x1328",
+    "16:9": "1664x928",
+    "9:16": "928x1664",
+    "4:3": "1472x1104",
+    "3:4": "1104x1472",
+    "3:2": "1584x1056",
+    "2:3": "1056x1584",
+    "21:9": "1664x704",
+    "4:5": "1104x1380"
+   },
+   "settings": "50 steps, true_cfg_scale 4. Negative prompt has little effect – write exclusions into the main prompt ('no text, no watermark').",
+   "ai_guidance": "Qwen-Image: long, detailed natural-language paragraphs (English or Chinese); excellent text rendering, quote text exactly. Put exclusions in the positive prompt rather than a negative prompt.",
+   "tips": [
+    "Excellent bilingual text rendering – quote it.",
+    "Write exclusions positively in the prompt."
+   ],
+   "sources": [
+    "https://github.com/QwenLM/Qwen-Image",
+    "https://blog.promptmaster.pro/posts/qwen-image-negative-prompts/"
+   ]
+  },
+  {
+   "id": "hidream",
+   "name": "HiDream-I1 (Full / Dev / Fast)",
+   "family": "HiDream",
+   "format": "natural",
+   "negative": "limited",
+   "weighting": "none",
+   "length": [
+    20,
+    150
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1360x768",
+    "9:16": "768x1360",
+    "4:3": "1168x880",
+    "3:4": "880x1168",
+    "3:2": "1248x832",
+    "2:3": "832x1248",
+    "21:9": "1360x768",
+    "4:5": "880x1168"
+   },
+   "settings": "Full: 50 steps, CFG 5, shift 3 (negative prompt works). Dev: 28 steps, CFG 1, shift 6. Fast: 16 steps, CFG 1. Negatives ignored on Dev/Fast.",
+   "ai_guidance": "HiDream-I1: natural-language description; no weighting or brackets; quote text; strong artist/style knowledge so named styles work.",
+   "tips": [
+    "No (term:1.2) weighting or brackets.",
+    "Negative prompt only works on Full."
+   ],
+   "sources": [
+    "https://github.com/HiDream-ai/HiDream-I1"
+   ]
+  },
+  {
+   "id": "mj7",
+   "name": "Midjourney V7",
+   "family": "Midjourney",
+   "format": "natural",
+   "negative": "param_no",
+   "weighting": "mj",
+   "length": [
+    10,
+    60
+   ],
+   "param_style": "midjourney",
+   "params": {
+    "stylize": 100,
+    "chaos": 0,
+    "exp": 0,
+    "raw": false,
+    "draft": false
+   },
+   "resolutions": {
+    "1:1": "1:1",
+    "16:9": "16:9",
+    "9:16": "9:16",
+    "4:3": "4:3",
+    "3:4": "3:4",
+    "3:2": "3:2",
+    "2:3": "2:3",
+    "21:9": "21:9",
+    "4:5": "4:5"
+   },
+   "settings": "Parameters go at the end: --ar, --stylize/--s, --chaos/--c, --exp 0–100 (5–25 when mixing with --stylize), --raw, --draft, --sref, --sw, --no.",
+   "ai_guidance": "Midjourney V7: clear natural-language sentences with the main subject first and specific style details at the end; avoid long keyword lists. Keep any --parameters at the very end, unchanged.",
+   "tips": [
+    "Main subject first; full sentences.",
+    "--exp 5–25 adds detail; --raw for literal adherence.",
+    "--sref for style reference images."
+   ],
+   "sources": [
+    "https://docs.midjourney.com/hc/en-us/articles/32859204029709-Parameter-List",
+    "https://updates.midjourney.com/v7-update-editor-and-exp/"
+   ]
+  },
+  {
+   "id": "gpt_image",
+   "name": "OpenAI GPT Image 2 / 2.5",
+   "family": "OpenAI",
+   "format": "natural",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    20,
+    250
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1536x864",
+    "9:16": "864x1536",
+    "4:3": "1024x768",
+    "3:4": "768x1024",
+    "3:2": "1536x1024",
+    "2:3": "1024x1536",
+    "21:9": "2016x864",
+    "4:5": "1024x1280"
+   },
+   "settings": "model gpt-image-2.5-sunburst (quality) or -flare (speed); quality auto/low/medium/high/xhigh/max; sizes multiples of 16, ≤3840 per edge, ratio ≤3:1. (gpt-image-1 retired 23 Oct 2026.)",
+   "ai_guidance": "GPT Image: write it like a creative brief: the intended use, subject, composition, visible details (materials, lighting, medium), people/actions, exact text in quotes, then constraints such as 'No extra text, no watermarks'. Labelled sections are fine.",
+   "tips": [
+    "State exclusions as constraints in the prompt.",
+    "Quote exact text and say how many times it appears."
+   ],
+   "sources": [
+    "https://developers.openai.com/api/docs/guides/image-prompting"
+   ]
+  },
+  {
+   "id": "imagen4",
+   "name": "Google Imagen 4 (Fast / Standard / Ultra)",
+   "family": "Google",
+   "format": "natural",
+   "negative": "unsupported",
+   "weighting": "none",
+   "length": [
+    15,
+    200
+   ],
+   "param_style": "settings",
+   "resolutions": {
+    "1:1": "1024x1024",
+    "16:9": "1408x768",
+    "9:16": "768x1408",
+    "4:3": "1280x896",
+    "3:4": "896x1280",
+    "3:2": "1408x768",
+    "2:3": "768x1408",
+    "21:9": "1408x768",
+    "4:5": "896x1280"
+   },
+   "settings": "Aspect ratios 1:1, 3:4, 4:3, 9:16, 16:9 only. Standard/Ultra up to 2K (2816x1536); Fast up to 1408x768.",
+   "ai_guidance": "Imagen 4: descriptive natural language – subject, context/background, style; add photography modifiers (lens, lighting) for realism; quote text. No negative prompt.",
+   "tips": [
+    "Only 1:1, 3:4, 4:3, 9:16, 16:9 aspect ratios."
+   ],
+   "sources": [
+    "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/imagen/4-0-generate",
+    "https://cloud.google.com/vertex-ai/generative-ai/docs/image/img-gen-prompt-guide"
+   ]
+  }
+ ]
+}

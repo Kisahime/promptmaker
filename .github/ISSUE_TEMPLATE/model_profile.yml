@@ -1,0 +1,20 @@
+name: Model profile request / correction
+description: Add or fix a target image-model profile
+labels: [model-profile]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Model name
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Prompt format, negative prompt support, weighting, resolutions, settings
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources (official docs / model card links)
+    validations:
+      required: true

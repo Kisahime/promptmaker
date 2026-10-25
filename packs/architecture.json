@@ -1,0 +1,43 @@
+{
+ "name": "Architecture & Interiors",
+ "description": "Buildings, interior styles and design rendering.",
+ "version": "1.0",
+ "categories": {
+  "Subject": {
+   "Architecture": [
+    "a modernist villa",
+    "a glass skyscraper",
+    "a Japanese tea house",
+    "a gothic cathedral facade",
+    "a parametric pavilion",
+    "a tiny house",
+    "a mid-century living room",
+    "a minimalist kitchen",
+    "a luxury hotel lobby",
+    "a library atrium"
+   ]
+  },
+  "Style": {
+   "Design styles": [
+    "Scandinavian interior",
+    "Japandi",
+    "mid-century modern",
+    "industrial loft",
+    "Wabi-sabi",
+    "Art Deco interior",
+    "Bauhaus architecture",
+    "Zaha Hadid style",
+    "biophilic design",
+    "architectural visualization"
+   ]
+  },
+  "Camera": {
+   "Arch photography": [
+    "two-point perspective",
+    "interior wide angle 16mm",
+    "corrected verticals",
+    "dusk exterior shot"
+   ]
+  }
+ }
+}

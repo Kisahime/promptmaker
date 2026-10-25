@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Personal data (created on first run)
+data/
+packs/custom.json
+backup_*/
+index_v1.html
+*.db
+
+# Exports & OS junk
+prompts.txt
+prompts.csv
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

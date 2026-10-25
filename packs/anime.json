@@ -1,0 +1,69 @@
+{
+ "name": "Anime & Manga",
+ "description": "Tags and looks for anime / manga models (Illustrious, Pony, Anima).",
+ "version": "1.0",
+ "categories": {
+  "Subject": {
+   "Anime characters": [
+    "1girl, solo",
+    "1boy, solo",
+    "2girls",
+    "magical girl",
+    "shrine maiden",
+    "schoolgirl in sailor uniform",
+    "idol singer",
+    "mecha pilot",
+    "catgirl",
+    "elf archer",
+    "demon girl",
+    "android girl",
+    "samurai girl",
+    "maid",
+    "butler"
+   ]
+  },
+  "Style": {
+   "Anime looks": [
+    "anime coloring",
+    "cel shading",
+    "90s anime screencap",
+    "shoujo manga",
+    "shounen manga",
+    "seinen manga style",
+    "manga panel, screentone",
+    "light novel cover",
+    "visual novel CG",
+    "gacha game splash art",
+    "official art",
+    "key visual",
+    "watercolor anime",
+    "flat color"
+   ]
+  },
+  "Detail / quality": {
+   "Booru quality tags": [
+    "masterpiece",
+    "best quality",
+    "amazing quality",
+    "very aesthetic",
+    "absurdres",
+    "highres",
+    "newest"
+   ]
+  },
+  "Camera": {
+   "Booru framing": [
+    "upper body",
+    "cowboy shot",
+    "full body",
+    "portrait",
+    "from above",
+    "from below",
+    "from side",
+    "dutch angle",
+    "looking at viewer",
+    "looking back"
+   ]
+  }
+ }
+}

@@ -1,0 +1,30 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: PromptMaker version
+      placeholder: "1.0.0 (shown under the logo)"
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version
+      placeholder: "Windows 11, Python 3.11"
+  - type: input
+    id: model
+    attributes:
+      label: Target model profile / Ollama model (if relevant)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output or screenshots
+      description: Run `.venv\Scripts\python main.py` from a terminal to see errors.
