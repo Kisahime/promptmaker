@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] – Unreleased
+## [2.0.0] – 2026-10-25
 
 ### Added
 - **Image generation:** ComfyUI (API workflows with `{{placeholder}}` injection; SDXL and FLUX workflows included; custom workflows from `data/workflows/`) and Forge / AUTOMATIC1111 (`/sdapi/v1/txt2img`). Connection test, queue, progress and cancel.
