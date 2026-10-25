@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QSplitter, QStackedWidget, QSlider, QFrame, QLabel, QProgressBar, QDoubleSpinBox, QTextBrowser, QVBoxLayout, QWidget,
 )
 
-from . import (__version__, abtest, builder, community, i18n, imagegen, ollama, paths, profiles, providers, scoring,
+from . import (__version__, abtest, builder, civitai, community, i18n, imagegen, ollama, paths, profiles, providers, scoring,
                theme, updates)
 from .gallery import Gallery
 from .i18n import tr
@@ -1406,6 +1406,8 @@ class MainWindow(QMainWindow):
         self.prof_list = QListWidget(); self.prof_list.currentRowChanged.connect(self._prof_selected)
         left.add(self.prof_list, 1)
         left.add(hrow(button("Use as target", self._prof_use, "primary"), button("Duplicate", self._prof_dup)))
+        self.cv_refresh_btn = button("⟳ Refresh from Civitai", self.civitai_refresh, tip="Re-fetch this checkpoint's recommendations")
+        left.add(hrow(button("🌐 Import from Civitai…", self.civitai_import, "primary"), self.cv_refresh_btn))
         row.addWidget(left, 1)
         right = Card("Details")
         self.prof_view = QTextBrowser(); self.prof_view.setOpenExternalLinks(True)
@@ -1442,9 +1444,19 @@ class MainWindow(QMainWindow):
             f"<tr><td><b>Weighting</b></td><td>{p['weighting']}</td></tr><tr><td><b>Length</b></td><td>{lo}–{hi} words</td></tr>"
             f"<tr><td><b>Quality prefix</b></td><td>{html.escape(p.get('quality_prefix') or '–')}</td></tr>"
             f"<tr><td><b>Settings</b></td><td>{html.escape(p.get('settings') or '–')}</td></tr>"
+            + (f"<tr><td><b>Inherits</b></td><td>{html.escape(p['inherits'])}</td></tr>" if p.get("inherits") else "")
+            + (f"<tr><td><b>Civitai</b></td><td>{html.escape(str(p['civitai'].get('model_name')))} · version "
+               f"{html.escape(str(p['civitai'].get('version_name')))} (#{p['civitai'].get('version_id')}) · base "
+               f"{html.escape(str(p['civitai'].get('base_model')))} · fetched {p['civitai'].get('fetched')}"
+               + (f" · trained words: {html.escape(', '.join(p['civitai'].get('trained_words') or []))}" if p['civitai'].get('trained_words') else "")
+               + "</td></tr>" if p.get("civitai") else "") +
+            f"<tr><td><b>Negative default</b></td><td>{html.escape(p.get('negative_default') or '–')}</td></tr>"
             f"<tr><td><b>Resolutions</b></td><td>{html.escape(res)}</td></tr></table>"
             f"<h3>Tips</h3><ul>{tips}</ul><h3>Sources</h3><ul>{src or '<li>–</li>'}</ul>")
-        self.prof_json.setPlainText(json.dumps({k: v for k, v in p.items()}, indent=1, ensure_ascii=False))
+        raw = profiles.raw_profile(self.profiles_path, p["id"]) if p.get("inherits") else None
+        self.prof_json.setPlainText(json.dumps(raw or {k: v for k, v in p.items()}, indent=1, ensure_ascii=False))
+        if hasattr(self, "cv_refresh_btn"):
+            self.cv_refresh_btn.setEnabled(bool(p.get("civitai")))
 
     def _prof_use(self):
         it = self.prof_list.currentItem()
@@ -1579,11 +1591,16 @@ class MainWindow(QMainWindow):
         d = meta.get("defaults", {})
         w, h = self._size_for_profile()
         clean = re.sub(r"\s--\w+(\s+[^-\s][^\s]*)?", "", prompt) if "--" in prompt else prompt
-        job = imagegen.Job(clean, negative, w, h, seed, self.store.get("img_steps") or d.get("steps", 25),
-                           self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
+        g = self.profile.get("gen") or {}  # checkpoint-specific recommendations (e.g. imported from Civitai)
+        a1 = isinstance(backend, imagegen.A1111)
+        job = imagegen.Job(clean, negative, w, h, seed, g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
+                           g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
                            self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""),
-                           wf_name or "a1111", self.store.get("img_sampler") or d.get("sampler", "euler"),
-                           d.get("scheduler", "normal"), tag)
+                           wf_name or "a1111",
+                           (g.get("a1111_sampler") if a1 else g.get("sampler")) or self.store.get("img_sampler") or d.get("sampler", "euler"),
+                           g.get("scheduler") or d.get("scheduler", "normal"), tag)
+        if g.get("clip_skip"):
+            job.clip_skip = g["clip_skip"]
         job.backend_name = backend.name
         self.genq.add(job, backend, wf)
         self.queue_jobs.append(job)
@@ -2054,6 +2071,13 @@ class MainWindow(QMainWindow):
                      "Start ComfyUI normally; for Forge/A1111 launch with --api.", "hint", wrap=True))
         iv.addWidget(im)
         # Community
+        cv = Card("Civitai")
+        self.cv_key = QLineEdit(); self.cv_key.setEchoMode(QLineEdit.Password)
+        self.cv_key.setPlaceholderText(tr("key saved") if self.keys.get("api_key:civitai") else tr("Optional – needed only for NSFW / gated models"))
+        cv.add(hrow(label("API key"), self.cv_key, button("Save key", self._cv_key_save), button("Clear key", self._cv_key_clear, "ghost")))
+        cv.add(label("Used by Model profiles → Import from Civitai. Create a key at civitai.com/user/account (API Keys). "
+                     "Keys are stored in " + self.keys.backend + ". Responses are cached for 24 h in data/cache/civitai.", "hint", wrap=True))
+        iv.addWidget(cv)
         cm = Card("Community gallery")
         self.comm_url = QLineEdit(self.store.get("community_index") or community.DEFAULT_INDEX)
         cm.add(hrow(label("Index URL"), self.comm_url, button("Save", lambda: (self.store.set("community_index", self.comm_url.text().strip()),
@@ -2063,6 +2087,47 @@ class MainWindow(QMainWindow):
         v.addWidget(scroll(inner), 1)
         self._prov_form(); self._img_form()
         return w
+
+    def _cv_key_save(self):
+        k = self.cv_key.text().strip()
+        if k:
+            self.keys.set("api_key:civitai", k); self.cv_key.clear(); self.cv_key.setPlaceholderText(tr("key saved")); self.notify(tr("Key saved"))
+
+    def _cv_key_clear(self):
+        self.keys.delete("api_key:civitai"); self.cv_key.setPlaceholderText(tr("Optional – needed only for NSFW / gated models"))
+        self.notify(tr("Key removed"))
+
+    # ---------------------------------------------------------------- Civitai import
+    def civitai_client(self):
+        return civitai.Client(self.keys.get("api_key:civitai"), os.path.join(self.data_dir, "cache", "civitai"),
+                              base=self.store.get("civitai_api") or civitai.API)
+
+    def civitai_import(self, _=False, ref=None, existing=None):
+        from .civitai_dialog import CivitaiDialog
+        dlg = CivitaiDialog(self, ref or "", existing)
+        self._cv_dialog = dlg
+        dlg.saved.connect(self._civitai_saved)
+        dlg.show()
+        if ref:
+            dlg.fetch(force=existing is not None)
+        return dlg
+
+    def civitai_refresh(self):
+        it = self.prof_list.currentItem()
+        p = self.profiles.get(it.data(Qt.UserRole)) if it else None
+        if not p or not p.get("civitai"):
+            self.notify(tr("Select a profile imported from Civitai"), error=True); return None
+        c = p["civitai"]
+        return self.civitai_import(ref=f"https://civitai.com/models/{c.get('model_id')}?modelVersionId={c.get('version_id')}",
+                                   existing=profiles.raw_profile(self.profiles_path, p["id"]) or p)
+
+    def _civitai_saved(self, prof):
+        profiles.save_profile(self.profiles_path, prof)
+        self._prof_reload(prof["id"])
+        i = self.profile_combo.findData(prof["id"])
+        if i >= 0:
+            self.profile_combo.setCurrentIndex(i)
+        self.notify(tr("Profile saved") + f": {prof['name']}")
 
     def _prov_form(self, *_):
         pid = self.prov_combo.currentData(); p = providers.PRESETS[pid]

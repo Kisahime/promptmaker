@@ -37,6 +37,8 @@ Everything runs on your own computer by default. The AI features are optional an
 | ![Gallery](docs/screenshots/gallery.png) | ![Community](docs/screenshots/community.png) |
 | **Settings** | **Guided tour** |
 | ![Settings](docs/screenshots/settings.png) | ![Tour](docs/screenshots/tour.png) |
+| **Civitai import** | |
+| ![Civitai](docs/screenshots/civitai.png) | |
 | **Preset packs** | **Light theme** |
 | ![Packs](docs/screenshots/packs.png) | ![Light](docs/screenshots/builder_light.png) |
 
@@ -85,6 +87,26 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 - **Forge / AUTOMATIC1111** (default `http://127.0.0.1:7860`). Start it with `--api`. PromptMaker uses `/sdapi/v1/txt2img` and polls `/sdapi/v1/progress`.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
+
+## Civitai checkpoint profiles
+
+Many checkpoints and LoRAs on Civitai list their own quality tags, negative prompt and settings. In **🎯 Model profiles**, click **🌐 Import from Civitai…** and paste:
+
+- a model link from civitai.com, civitai.red or another civitai.* domain (they share the same IDs and API);
+- a model ID (`2087823`), a version ID (`v3338156`), or an AIR (`urn:air:…:civitai:2087823@3338156`).
+
+PromptMaker uses Civitai's public REST API: `/api/v1/model-versions/{id}`, `/api/v1/models/{id}` and `/api/v1/images?modelVersionId=…`.
+
+1. **Parse the description.** It reads the creator's *positive / negative prompts*, *steps*, *CFG*, *sampler*, *clip skip* and *resolution* from the model and version description.
+2. **Mine sample images.** It looks at the generation data on the most-reacted sample images and keeps tags that appear in at least 40% of them. Settings come from the most common or median values. This is used to fill anything the description doesn't give.
+3. **Review.** You see everything before saving: name, which built-in profile to inherit from (picked from the base model, e.g. Anima, Illustrious, Pony or SDXL), prefix, negative, steps, CFG, sampler, clip skip, resolution and trained words.
+4. **Save.** A new profile is created with `"inherits": "<base>"`, so format, weighting, length and resolutions come from the base and only the checkpoint-specific fields are overridden. The source URL and version are stored under `"civitai"`.
+
+The profile is then used everywhere: the Builder prefix and negative prompt, the Create/Refine AI system prompt, Score model-fit, and image generation. Generation uses the profile's steps, CFG, sampler/scheduler and clip skip (clip skip applies to Forge/A1111 only). LoRA trigger words (`trainedWords`) are stored and added to the prefix. **⟳ Refresh from Civitai** fetches the latest data again for the same profile.
+
+An **API key is optional.** Add one in Settings → Civitai if a model is NSFW or gated; it's stored in the OS keyring. Responses are cached for 24 h in `data/cache/civitai/`, requests are spaced out, and HTTP 429 (rate limit) is retried politely.
+
+*Caveats:* Civitai's API and description formats aren't guaranteed. Descriptions are free-form HTML, so always check the review screen. Many sample images don't include generation data when fetched without a key. Respect each model's licence and [Civitai's Terms of Service](https://civitai.com/content/tos). PromptMaker only reads public metadata and never downloads model files.
 
 ## Community packs & profiles
 
@@ -159,7 +181,7 @@ python -m pyflakes promptmaker tests
 QT_QPA_PLATFORM=offscreen python main.py --smoke-test   # headless UI smoke test
 ```
 
-Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
+Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
 
 ## Contributing
 

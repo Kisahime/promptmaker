@@ -11,8 +11,9 @@ PALETTES = {
 
 QSS = """
 * {{ font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", sans-serif; font-size: 10pt; color: {text}; }}
-QMainWindow, QWidget#root {{ background: {bg}; }}
+QMainWindow, QWidget#root, QDialog, QMessageBox {{ background: {bg}; }}
 QWidget {{ background: transparent; }}
+QDialog, QMessageBox {{ background: {bg}; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 6px; border-radius: 6px; }}
 QListWidget#sidebar {{ background: {surface}; border: none; border-right: 1px solid {border}; padding: 10px 8px; outline: 0; }}
 QListWidget#sidebar::item {{ padding: 7px 12px; margin: 1px 0; border-radius: 10px; color: {muted}; }}

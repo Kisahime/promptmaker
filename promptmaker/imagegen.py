@@ -94,6 +94,7 @@ class Job:
         self.steps, self.cfg = int(steps), float(cfg)
         self.profile, self.checkpoint, self.workflow = profile, checkpoint, workflow
         self.sampler, self.scheduler, self.tag = sampler, scheduler, tag
+        self.clip_skip = None
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -198,6 +199,8 @@ class A1111:
         p = {"prompt": job.prompt, "negative_prompt": job.negative, "width": job.width, "height": job.height,
              "seed": job.seed, "steps": job.steps, "cfg_scale": job.cfg, "sampler_name": job.sampler or "Euler a",
              "batch_size": 1, "n_iter": 1, "send_images": True, "save_images": False}
+        if getattr(job, "clip_skip", None):
+            p["override_settings"] = {"CLIP_stop_at_last_layers": int(job.clip_skip)}
         if job.checkpoint:
             p["override_settings"] = {"sd_model_checkpoint": job.checkpoint}
         return p

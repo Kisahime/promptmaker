@@ -18,10 +18,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - **Ollama version check:** PromptMaker reads `/api/version`. On Ollama 0.30+, Llama 3.2 Vision models (architecture `mllama`) are marked as unsupported in the vision model picker (red, sorted last, never auto-selected), with the tooltip "Not supported on Ollama 0.30+ (llama.cpp engine has no mllama support, see ollama/ollama#16547)". The friendly load-error message explains the same thing and points to qwen2.5vl / qwen3-vl.
 
+- **Civitai import** (Model profiles → 🌐 Import from Civitai…) works with civitai.com, civitai.red or any civitai.* link, a model or version ID, or an AIR. Using the public REST API (`/models`, `/model-versions`, `/images`), it reads the creator's recommended positive/negative prompts and settings (steps, CFG, sampler, clip skip, resolution) from the description. It also mines sample-image generation data by tag frequency. A review screen lets you edit everything before saving a profile that **inherits** from the matching base profile (Anima, Illustrious, Pony, SDXL…) with the source URL and version recorded. The profile feeds the Builder, the AI system prompt, Score model-fit and image generation (steps, CFG, sampler, scheduler, clip skip). LoRA trained words are stored. Also adds **⟳ Refresh from Civitai**, an optional API key in the keyring, a 24 h response cache and HTTP 429 back-off.
+- Profiles support `"inherits": "<profile id>"`.
+
 ### Fixed
 - Toasts no longer cover the buttons beneath them. They now appear top-right, away from the bottom action rows, and let clicks pass through (`WA_TransparentForMouseEvents`). Before this fix, the History "Clear all" confirmation toast covered the button it asked you to click again.
 - Two-click confirmations now happen on the button itself instead of in a toast. The first click turns it into a red "Confirm clear (4s)" button with a live countdown, a second click runs the action, and it reverts on its own after 4 s. This applies to History "Clear all", and the same confirmation is now required for every 🗑 Delete button (templates, history item, favourites, packs, gallery) and for Community "Uninstall".
 
+- Dialogs and message boxes now use the app's dark background; before, their labels were unreadable.
 - Closing the window now waits for background workers to finish, so a running request can no longer crash the app when it exits (a Windows `0xC0000409` crash). The test suite also shuts Qt down cleanly.
 
 ### Changed
