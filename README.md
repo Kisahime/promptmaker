@@ -2,7 +2,9 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 2 can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, and turn images back into prompts.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 2 can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+
+**Latest release:** [v2.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v2.0.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -16,33 +18,44 @@ Everything runs on your own computer by default. The AI features are optional an
 - **📋 Templates** with `{subject}`-style placeholders, **🔁 Batch** variations exported to .txt/.csv, searchable **🕘 History**, and **⭐ Favourites**.
 - **📦 Preset packs:** import, export, enable or disable JSON packs. 5 starter packs are included.
 - **🎯 Model profiles:** an editable JSON file that controls format, negative prompts, weighting, length, parameters and resolutions for each model.
-- **🖼 Image generation** *(new in 2.0)*: send any prompt to **ComfyUI** (API workflows with placeholders; SDXL and FLUX workflows included) or **Forge / AUTOMATIC1111**. It has a queue with progress and cancel, and a **Gallery** with thumbnails, full metadata, reuse prompt, same seed again and delete.
-- **👁 Image to Prompt** *(new)*: drop, paste or open an image. A local vision model (Ollama vision models are detected automatically, or LM Studio / OpenAI-compatible) describes it as a prompt for your target model. Then send it to the Builder, Refine, Score or Generate.
-- **⚖ A/B Test** *(new)*: compare two prompts side by side, with heuristic and AI scores and highlighted differences. With a backend connected, it renders both with the same seed. Pick a winner and it goes to History.
-- **🌐 Community** *(new)*: browse, install, update and uninstall packs and model profiles from the community index. Every download is checked with SHA-256.
-- **🔌 Providers** *(new)*: Ollama, LM Studio, llama.cpp, KoboldCpp, vLLM, any OpenAI-compatible URL, and optional OpenAI, Anthropic, Google Gemini and OpenRouter. All AI features stream from the provider you choose.
-- **⚙ Settings, tour and languages** *(new)*: a settings page, a first-run guided tour, an optional update check, portable or AppData data, and English / Español / Deutsch (the translations are machine-made).
-- A polished dark/light theme, toasts, and a **Ctrl+K** quick bar from anywhere.
+- **🖼 Image generation** *(2.0)*: send any prompt to **ComfyUI** (API workflows with placeholders; SDXL and FLUX workflows included) or **Forge / AUTOMATIC1111**. It has a queue with progress and cancel, and a **Gallery** with thumbnails, full metadata, reuse prompt, same seed again and delete.
+- **👁 Image to Prompt** *(2.0)*: drop, paste or open an image. A local vision model (Ollama vision models are detected automatically, or LM Studio / OpenAI-compatible) describes it as a prompt for your target model. Then send it to the Builder, Refine, Score or Generate.
+- **⚖ A/B Test** *(2.0)*: compare two prompts side by side, with heuristic and AI scores and highlighted differences. With a backend connected, it renders both with the same seed. Pick a winner and it goes to History.
+- **🎯 Civitai import** *(2.0)*: paste a Civitai model link (civitai.com, civitai.red …) or ID. PromptMaker reads the creator's recommended quality tags, negative prompt and settings, lets you review and edit them, and saves a profile that **inherits** from the matching base profile (Anima, Illustrious, Pony, SDXL …). It also has **⟳ Refresh from Civitai**. See [Civitai checkpoint profiles](#civitai-checkpoint-profiles).
+- **🌐 Community** *(2.0)*: browse, install, update and uninstall packs and model profiles from the community index. Every download is checked with SHA-256.
+- **🔌 Providers** *(2.0)*: Ollama, LM Studio, llama.cpp, KoboldCpp, vLLM, any OpenAI-compatible URL, and optional OpenAI, Anthropic, Google Gemini and OpenRouter. All AI features stream from the provider you choose.
+- **⚙ Settings, tour and languages** *(2.0)*: a settings page, a first-run guided tour, an optional update check, portable or AppData data, and English / Español / Deutsch (the translations are machine-made).
+- **🩹 Friendly errors** *(2.0)*:
+  - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
+  - When Forge/A1111's API is off, the app shows the exact `--api` fix, and Test connection reports the WebUI variant and version.
+- **Safe by design:** destructive buttons (Clear all, Delete, Uninstall) confirm **in place**: a red *Confirm (4s)* button with a countdown. Toasts appear top-right and never block clicks.
+- A polished dark/light theme and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
 
 | Builder | Refine (chat) |
 |---|---|
-| ![Builder](docs/screenshots/builder.png) | ![Refine](docs/screenshots/refine.png) |
-| **Score** | **Model profiles** |
-| ![Score](docs/screenshots/score.png) | ![Profiles](docs/screenshots/profiles.png) |
-| **Image to Prompt** | **A/B Test** |
-| ![Image to Prompt](docs/screenshots/img2prompt.png) | ![A/B Test](docs/screenshots/abtest.png) |
-| **Gallery** | **Community** |
-| ![Gallery](docs/screenshots/gallery.png) | ![Community](docs/screenshots/community.png) |
+| ![Builder](docs/screenshots/builder.png) | ![Refine (chat)](docs/screenshots/refine.png) |
+| **Analyse** | **Score** |
+| ![Analyse](docs/screenshots/analyse.png) | ![Score](docs/screenshots/score.png) |
+| **Image to Prompt (unsupported models marked)** | **A/B Test** |
+| ![Image to Prompt (unsupported models marked)](docs/screenshots/img2prompt.png) | ![A/B Test](docs/screenshots/abtest.png) |
+| **Gallery** | **History (in-place confirm)** |
+| ![Gallery](docs/screenshots/gallery.png) | ![History (in-place confirm)](docs/screenshots/history.png) |
+| **Templates** | **Batch** |
+| ![Templates](docs/screenshots/templates.png) | ![Batch](docs/screenshots/batch.png) |
+| **Model profiles (Civitai-imported profile)** | **Community** |
+| ![Model profiles (Civitai-imported profile)](docs/screenshots/profiles.png) | ![Community](docs/screenshots/community.png) |
 | **Settings** | **Guided tour** |
-| ![Settings](docs/screenshots/settings.png) | ![Tour](docs/screenshots/tour.png) |
-| **Civitai import** | |
-| ![Civitai](docs/screenshots/civitai.png) | |
+| ![Settings](docs/screenshots/settings.png) | ![Guided tour](docs/screenshots/tour.png) |
 | **Preset packs** | **Light theme** |
-| ![Packs](docs/screenshots/packs.png) | ![Light](docs/screenshots/builder_light.png) |
+| ![Preset packs](docs/screenshots/packs.png) | ![Light theme](docs/screenshots/builder_light.png) |
 
-*The images in the gallery screenshots are abstract placeholders, not real model output.*
+**Civitai import (review before saving)**
+
+![Civitai import](docs/screenshots/civitai.png)
+
+*The images in the Gallery, A/B and Image to Prompt screenshots are abstract placeholders, not real model output. All screenshots use demo data and are regenerated with `QT_QPA_PLATFORM=offscreen python tools/screenshots.py`.*
 
 ## Install
 
@@ -50,8 +63,10 @@ You need **Python 3.10+** ([python.org](https://www.python.org/downloads/); on W
 
 **Windows**
 1. Download or clone this repo.
-2. Double-click **`install.bat`**. It checks Python, creates a `.venv`, installs PySide6, offers to make a desktop shortcut, and checks for Ollama.
-3. Start the app with **`run.bat`** or the desktop shortcut.
+2. Double-click **`install.bat`**. It checks Python, creates a `.venv`, installs PySide6 and keyring, offers to make a desktop shortcut, and checks for Ollama.
+3. Start the app with **`run.bat`** or the desktop shortcut. A short guided tour runs the first time.
+
+**Upgrading from 1.x:** copy or `git pull` the new version over the old folder (your `data/` is kept), then run `install.bat` again to install the new dependencies.
 
 **macOS / Linux** (should work, but is less tested)
 ```bash
@@ -133,9 +148,11 @@ The **🌐 Community** page reads [`community/index.json`](community/index.json)
 | OpenAI GPT Image 2 / 2.5 | natural | unsupported | none | 20–250 words |
 | Google Imagen 4 (Fast / Standard / Ultra) | natural | unsupported | none | 15–200 words |
 
+More profiles can be added from the **🌐 Community** page (e.g. *SDXL-Lightning*) or imported from **Civitai** (checkpoint-specific profiles that inherit from one of the above).
+
 Each profile lists its sources in the app (**🎯 Model profiles**). Profiles live in `data/profiles.json`, which is created on first run. You can edit them there or in the app, or add your own. New built-in profiles are merged in automatically on update.
 
-**Fields:** `format` natural/tags/hybrid/json · `negative` supported/optional/limited/unsupported/param_no · `weighting` parens/mj/none · `quality_prefix` · `negative_default` · `length` [min, max] · `resolutions` {aspect: "WxH"} · `settings` · `param_style` midjourney/settings/none · `ai_guidance` (sent to the LLM) · `tips` · `sources`.
+**Fields:** `format` natural/tags/hybrid/json · `negative` supported/optional/limited/unsupported/param_no · `weighting` parens/mj/none · `quality_prefix` · `negative_default` · `length` [min, max] · `resolutions` {aspect: "WxH"} · `settings` · `param_style` midjourney/settings/none · `ai_guidance` (sent to the LLM) · `tips` · `sources` · `inherits` (id of a parent profile; only the fields you set are overridden) · `gen` (steps / cfg / sampler / scheduler / clip_skip used when generating) · `civitai` (source model, version and trained words).
 
 ## Preset packs
 
@@ -166,11 +183,38 @@ The `data/` folder is git-ignored.
 
 ## Updates & privacy
 
-When it starts, PromptMaker can ask the GitHub releases API whether a newer version exists. Nothing about you is sent, and you can switch this off in Settings. Apart from that, the app only goes online for the community index and any providers or backends you configure.
+When it starts, PromptMaker can ask the GitHub releases API whether a newer version exists. Nothing about you is sent, and you can switch this off in Settings. Apart from that, the app only goes online for the community index, Civitai imports you start, and any providers or backends you configure.
 
 ## Languages
 
 English, Español and Deutsch. Choose one in **Settings → Language** and restart. The Spanish and German translations are **machine-translated**, and corrections are very welcome. Translations live in `promptmaker/i18n/<code>.json`, and any string without a translation falls back to English.
+
+## Troubleshooting
+
+**Forge / A1111: "HTTP 404 from /sdapi/v1/sd-models" or "API not enabled"**
+The WebUI is running, but it was started without its API. PromptMaker detects this and shows the fix:
+1. Close the Forge console window.
+2. Open `webui-user.bat` in the Forge folder (e.g. `C:\AI\sd-webui-forge-classic\webui-user.bat`).
+3. Change `set COMMANDLINE_ARGS=` to `set COMMANDLINE_ARGS=--api`, keeping any other flags after it, e.g. `--api --xformers`.
+4. Start Forge again and click **Settings → Image generation → Test connection**. It should report e.g. *Connected · Forge Neo 2.31 · N checkpoint(s)*.
+
+![Forge API dialog](docs/screenshots/forge_api.png)
+
+**Ollama: `unknown model architecture: 'mllama'` / "error loading model" (HTTP 500)**
+`llama3.2-vision` (architecture *mllama*) isn't supported on **Ollama 0.30+**, because the llama.cpp engine has no mllama support ([ollama/ollama#16547](https://github.com/ollama/ollama/issues/16547)). Re-pulling won't help. Use another vision model, e.g. `ollama pull qwen2.5vl` (or `qwen3-vl`, `gemma3`). PromptMaker marks such models in the picker and offers a one-click switch.
+
+![Model error dialog](docs/screenshots/model_error.png)
+
+**Ollama isn't reachable.** Start Ollama (the Create page has a **▶ Start Ollama** button) or check the URL in **Settings → AI provider**. The **⚡ Offline build** works without any AI.
+
+**Civitai: "refused access (HTTP 401/403)" or missing sample-image data**
+The model is NSFW or gated, or its images hide their generation data from anonymous requests. Add a Civitai API key (create one at civitai.com → *User account → API Keys*) in **Settings → Civitai**. It's stored in your OS keyring. Responses are cached for 24 h; use the ⟳ button in the import dialog to fetch again.
+
+**Community page shows an error.** Check **Settings → Community gallery → Index URL** (the default is `community/index.json` on `main`). Downloads whose SHA-256 doesn't match are refused on purpose.
+
+**API keys saved "in plain text".** No OS keyring was found. Run `install.bat` / `install.sh` again to install `keyring`, or keep `data/secrets.json` private.
+
+**Nothing happens on Linux, or Qt errors.** Install the Qt runtime libraries (`libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` on Debian/Ubuntu).
 
 ## Development
 
@@ -181,7 +225,7 @@ python -m pyflakes promptmaker tests
 QT_QPA_PLATFORM=offscreen python main.py --smoke-test   # headless UI smoke test
 ```
 
-Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
+Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`, `tests/test_civitai.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
 
 ## Contributing
 

@@ -1,66 +1,148 @@
-"""Regenerate README screenshots:  QT_QPA_PLATFORM=offscreen python tools/screenshots.py  (run from repo root; uses ./data)."""
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+"""Regenerate the README screenshots from the current app, using fresh demo data in a temp folder.
+
+    QT_QPA_PLATFORM=offscreen python tools/screenshots.py        (run from the repo root)
+
+Nothing touches the network: AI, image backends and Civitai are faked with fixed demo content.
+Gallery and A/B images are abstract placeholders drawn here, not real model output.
+"""
+import os
+import random
+import shutil
 import sys
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
-from promptmaker.app import MainWindow
-from promptmaker.storage import Store
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "tests"))
+os.chdir(ROOT)
 os.environ["PROMPTMAKER_NO_NET"] = "1"; os.environ["PROMPTMAKER_NO_TOUR"] = "1"
-import os; os.makedirs("data", exist_ok=True); os.makedirs("docs/screenshots", exist_ok=True)
+random.seed(2026)
+
+from PySide6.QtCore import QBuffer, QIODevice, QTimer, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPixmap, QRadialGradient  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from promptmaker import community, imagegen  # noqa: E402
+from promptmaker.app import MainWindow  # noqa: E402
+from promptmaker.storage import Store  # noqa: E402
+
+OUT = os.path.join(ROOT, "docs", "screenshots")
+W, H = 1440, 900
+DATA = tempfile.mkdtemp(prefix="pm-shots-")
+os.makedirs(OUT, exist_ok=True)
+for f in os.listdir(OUT):
+    if f.endswith(".png"):
+        os.remove(os.path.join(OUT, f))
+
 app = QApplication(sys.argv)
-w = MainWindow(Store("data/promptmaker.db"), "data"); w.resize(1440, 900); w.show()
-def g(n): app.processEvents(); w.grab().save(f"docs/screenshots/{n}.png")
-def go():
+store = Store(os.path.join(DATA, "promptmaker.db"))
+w = MainWindow(store, DATA); w.resize(W, H); w.show()
+shots = []
+
+
+def save(widget, name):
+    app.processEvents()
+    pm = widget.grab()
+    pm.save(os.path.join(OUT, name + ".png"), "PNG", 9)
+    shots.append(name)
+
+
+def g(name):
     w.toast.hide()
-    w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
-    w.idea.setPlainText("an anime girl wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
-    w.ollama_banner.hide(); g("create")
-    w.profile_combo.setCurrentIndex(w.profile_combo.findData("flux2"))
-    w.go("Builder"); w.randomise(True); g("builder")
-    w.chat=[{"role":"user","content":"Make it moodier and move the camera lower."},
-            {"role":"assistant","content":"Here's a moodier take with a low-angle camera and heavier atmosphere:\n<prompt>A lone lighthouse keeper stands on a storm-lashed cliff at dusk, seen from a low angle as waves explode against the rocks below. Cinematic still, volumetric fog, cold teal and amber palette, ominous mood.</prompt>"}]
-    w.go("Refine"); w.set_work("A lighthouse keeper on a cliff at dusk, cinematic", "from Builder"); w.render_thread(); w.toast.hide(); g("refine")
-    w.go("Score"); w.score_in.setPlainText("nice cool lighthouse, (keeper:1.4), photorealistic, anime --ar 16:9"); w.quick_score(); g("score")
-    w.go("Model profiles"); w.prof_list.setCurrentRow(list(w.profiles).index("anima")); g("profiles")
-    w.go("Packs"); g("packs")
-    v2_pages()
-    w.toggle_theme(); w.go("Builder"); w.toast.hide(); g("builder_light")
-    app.quit()
+    if hasattr(w, "ollama_banner"):
+        w.ollama_banner.hide()
+    save(w, name)
+
+
 def art(seed, wd=768, ht=1024):
-    """Abstract placeholder 'render' (no real model output is bundled)."""
-    from PySide6.QtGui import QImage, QPainter, QLinearGradient, QRadialGradient, QColor
-    from PySide6.QtCore import QBuffer, QIODevice
-    import random
+    """Abstract placeholder 'render' – deliberately not a real image."""
     r = random.Random(seed); img = QImage(wd, ht, QImage.Format_RGB32); p = QPainter(img)
-    g1 = QLinearGradient(0, 0, 0, ht); g1.setColorAt(0, QColor.fromHsv(r.randint(180, 280), 160, 90)); g1.setColorAt(1, QColor.fromHsv(r.randint(0, 60), 200, 230))
-    p.fillRect(img.rect(), g1)
+    g1 = QLinearGradient(0, 0, 0, ht); g1.setColorAt(0, QColor.fromHsv(r.randint(180, 280), 160, 90))
+    g1.setColorAt(1, QColor.fromHsv(r.randint(0, 60), 200, 230)); p.fillRect(img.rect(), g1)
     for _ in range(14):
         x, y, rad = r.randint(0, wd), r.randint(0, ht), r.randint(40, 260)
-        rg = QRadialGradient(x, y, rad); c = QColor.fromHsv(r.randint(0, 359), 180, 255, 150); rg.setColorAt(0, c); c2 = QColor(c); c2.setAlpha(0); rg.setColorAt(1, c2)
+        rg = QRadialGradient(x, y, rad); c = QColor.fromHsv(r.randint(0, 359), 180, 255, 150); rg.setColorAt(0, c)
+        c2 = QColor(c); c2.setAlpha(0); rg.setColorAt(1, c2)
         p.setPen(Qt.NoPen); p.setBrush(rg); p.drawEllipse(x - rad, y - rad, 2 * rad, 2 * rad)
     p.end(); buf = QBuffer(); buf.open(QIODevice.WriteOnly); img.save(buf, "PNG"); return img, bytes(buf.data())
-def v2_pages():
-    from promptmaker import community
+
+
+def demo_data():
+    for t in ["a lighthouse keeper on a cliff at dusk, cinematic", "1girl, silver hair, glowing orbs, twilight sky",
+              "a cosy reading nook in a treehouse, warm light", "isometric cyberpunk noodle bar at night, neon rain"]:
+        store.add_history(t, "SDXL", "demo")
+    store.add_favourite("Moody lighthouse", "A lone lighthouse on a storm-lashed cliff at dusk, low angle, volumetric fog")
+    for i in range(8):
+        _, data = art(100 + i)
+        w.gallery.save(data, {"prompt": "abstract dreamscape, glowing orbs, twilight gradient", "negative": "lowres",
+                              "seed": 1000 + i, "width": 768, "height": 1024, "profile": "SDXL", "backend": "comfyui",
+                              "steps": 28, "cfg": 6.0})
+
+
+def civitai_profile():
+    """Civitai review screen from a fixed copy of a real API response (no network)."""
+    from test_civitai import MODEL, VERSION
+    from promptmaker.civitai_dialog import CivitaiDialog
+    info = {"model": dict(MODEL), "version": dict(VERSION), "images": [{"id": 1, "meta": None}] * 25,
+            "url": "https://civitai.com/models/2087823?modelVersionId=3338156"}
+    dlg = CivitaiDialog(w, "https://civitai.red/models/2087823/screen-chantv-merge-illustriousoranima?modelVersionId=3338156")
+    dlg.resize(860, 760); dlg.show(); dlg._loaded(info)
+    save(dlg, "civitai")
+    dlg.saved.connect(w._civitai_saved); dlg.save(); app.processEvents()
+
+
+def go():
+    demo_data()
+    w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
+    w.idea.setPlainText("an anime girl wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
+    g("create")
+    w.profile_combo.setCurrentIndex(w.profile_combo.findData("flux2"))
+    w.go("Builder"); w.randomise(True); g("builder")
+    w.chat = [{"role": "user", "content": "Make it moodier and move the camera lower."},
+              {"role": "assistant", "content": "Here's a moodier take with a low-angle camera and heavier atmosphere:\n<prompt>A lone "
+               "lighthouse keeper stands on a storm-lashed cliff at dusk, seen from a low angle as waves explode against the rocks "
+               "below. Cinematic still, volumetric fog, cold teal and amber palette, ominous mood.</prompt>"}]
+    w.go("Refine"); w.set_work("A lighthouse keeper on a cliff at dusk, cinematic", "from Builder"); w.render_thread(); g("refine")
+    w.go("Analyse"); w.an_in.setPlainText("masterpiece, best quality, 1girl, silver hair, kimono, cherry blossoms, "
+                                          "shrine at sunset, soft rim light, watercolor, wide shot"); w.quick_analyse(); g("analyse")
+    w.go("Score"); w.score_in.setPlainText("nice cool lighthouse, (keeper:1.4), photorealistic, anime --ar 16:9"); w.quick_score(); g("score")
+    # Image to Prompt, with an unsupported model marked in the picker
     w.go("Image to Prompt"); img, _ = art(7); w._i2p_set_image(img)
-    w.vision_model.clear(); w.vision_model.addItems(["llava:13b", "qwen2.5vl:7b"])
-    w.i2p_out.setPlainText("1girl, solo, silver hair, floating among glowing orbs, twilight sky gradient, dreamy atmosphere, soft bokeh, "
-                           "masterpiece, best quality, very aesthetic, absurdres")
-    w.toast.hide(); g("img2prompt")
+    w.vision_model.clear(); w.vision_model.addItems(["qwen2.5vl:7b", "gemma3:4b", "llama3.2-vision:latest"])
+    w.provider.notes = {"llama3.2-vision:latest": "Not supported on Ollama 0.30+ (llama.cpp engine has no mllama support, see ollama/ollama#16547)"}
+    w._mark_failed_in_pickers(); w.i2p_hint.setText("3 vision-capable model(s) found.")
+    w.i2p_out.setPlainText("1girl, solo, silver hair, floating among glowing orbs, twilight sky gradient, dreamy atmosphere, "
+                           "soft bokeh, masterpiece, best quality, very aesthetic, absurdres")
+    g("img2prompt")
     w.ab["A"]["edit"].setPlainText("a lighthouse on a cliff at dusk, cinematic")
     w.ab["B"]["edit"].setPlainText("A lone lighthouse on a storm-lashed cliff at dusk, low angle, volumetric fog, teal and amber palette, cinematic still")
     w.ab_compare()
     for side, sd in (("A", 3), ("B", 4)):
-        im, _ = art(sd, 512, 384); w.ab[side]["img"].setPixmap(QPixmap.fromImage(im).scaled(380, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-    w.go("A/B Test"); w.toast.hide(); g("abtest")
-    if not w.gallery.items():
-        for i in range(8):
-            _, data = art(100 + i); w.gallery.save(data, {"prompt": "abstract dreamscape, glowing orbs, twilight gradient", "negative": "lowres",
-                                                          "seed": 1000 + i, "width": 768, "height": 1024, "profile": "sdxl", "backend": "comfyui", "steps": 28, "cfg": 6.0})
-    w.load_gallery(); w.go("Gallery"); w.gal_list.setCurrentRow(0); w.toast.hide(); g("gallery")
+        im, _ = art(sd, 512, 384)
+        w.ab[side]["img"].setPixmap(QPixmap.fromImage(im).scaled(380, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    w.go("A/B Test"); g("abtest")
+    w.load_gallery(); w.go("Gallery"); w.gal_list.setCurrentRow(0); g("gallery")
+    w.go("Templates"); w.tpl_list.setCurrentRow(0); w.tpl_fill(True); g("templates")
+    w.go("Batch"); w.batch_n.setValue(8); w.batch_generate(); g("batch")
+    w.load_history(); w.go("History"); w.hist_clear_btn.click(); g("history"); w.hist_clear_btn.reset()
+    w.go("Packs"); g("packs")
     idx = "file://" + os.path.abspath("community/index.json")
-    w._comm_loaded(community.load_index(idx)); w.comm_status.setText(f"{len(w.comm_items)} item(s)"); w.go("Community"); w.toast.hide(); g("community")
-    w.go("Settings"); w.toast.hide(); g("settings")
+    w._comm_loaded(community.load_index(idx)); w.comm_status.setText(f"{len(w.comm_items)} item(s)"); w.go("Community"); g("community")
+    civitai_profile()
+    w.go("Model profiles"); app.processEvents(); g("profiles")
+    w.go("Settings"); g("settings")
     w.start_tour(); app.processEvents(); g("tour"); w.tour.hide()
-QTimer.singleShot(400, go); app.exec()
+    # troubleshooting dialogs
+    box = w.show_api_disabled(str(imagegen.ApiDisabled("Forge Neo", "2.31", "C:\\AI\\sd-webui-forge-classic")))
+    app.processEvents(); save(box, "forge_api"); box.close()
+    w.go("Image to Prompt")
+    w._ai_error("HTTP 500 from http://localhost:11434/api/chat: {\"error\":\"llama-server process has terminated: exit status 1: "
+                "error loading model: unknown model architecture: 'mllama'\"}", "llama3.2-vision:latest", vision=True)
+    app.processEvents(); save(w._last_error_box, "model_error"); w._last_error_box.close()
+    w.toggle_theme(); w.go("Builder"); g("builder_light")
+    print("saved:", ", ".join(shots))
+    w.close(); app.quit()
+
+
+QTimer.singleShot(400, go)
+app.exec()
+shutil.rmtree(DATA, ignore_errors=True)

@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+### Changed
+- Docs: README refreshed for 2.0 (new Troubleshooting section, full screenshot set including Analyse, Templates, Batch, History and the Civitai review screen). `tools/screenshots.py` now uses fresh demo data in a temp folder and never touches the network.
+
 ## [2.0.0] – 2026-10-25
 
 ### Added
@@ -50,3 +54,7 @@ First public release.
 - Preset packs (import/export/enable/disable) with 5 starter packs.
 - 16 editable model profiles: FLUX.2 (+JSON), FLUX.1, FLUX.1 Kontext, SDXL, SD 3.5, Pony V6, Illustrious/NoobAI, Anima, MOSS-Image, Qwen-Image, HiDream-I1, Midjourney V7, GPT Image 2/2.5, Imagen 4, and Generic.
 - Dark/light custom theme, toasts, and `install.bat` / `run.bat` (plus `install.sh` / `run.sh`).
+
+[Unreleased]: https://github.com/Kisahime/promptmaker/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Kisahime/promptmaker/releases/tag/v2.0.0
+[1.0.0]: https://github.com/Kisahime/promptmaker/releases/tag/v1.0.0
