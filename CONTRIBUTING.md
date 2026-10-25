@@ -13,8 +13,18 @@ Thanks for helping out! Bug reports, preset packs, model profiles and code are a
    ```
 4. Open a pull request that explains what changed and why. Include screenshots for UI changes.
 
+### Screenshots
+README screenshots are generated from the real app with demo data, so they stay consistent:
+```bash
+QT_QPA_PLATFORM=offscreen python tools/screenshots.py   # rewrites docs/screenshots/*.png (1440×900, dark theme)
+```
+If you add a page, add it to `tools/screenshots.py` and the README table. Don't commit screenshots of real model output.
+
+### Tests that touch the network
+Mock every HTTP service with a local server (see `tests/test_v2.py` for Ollama, OpenAI-compatible, ComfyUI and Forge, and `tests/test_civitai.py` for Civitai). CI never calls real services.
+
 ## Adding a model profile
-- Add an entry to `promptmaker/profiles.json` (see the field list in the README).
+- Add an entry to `promptmaker/profiles.json` (see the field list in the README). For a checkpoint that's a variant of an existing model, prefer `"inherits": "<base id>"` and override only what differs. This is what Civitai import does.
 - Include `sources` that link to official docs or model cards, and only add models you can verify exist.
 - Provide a `resolutions` entry for every aspect ratio (`1:1 16:9 9:16 4:3 3:4 3:2 2:3 21:9 4:5`). The tests check this.
 
