@@ -99,18 +99,32 @@ class OllamaProvider(Provider):
         except ProviderError as e:
             raise ProviderError(INSTALL_HINT) from e
 
+    def version(self):
+        """Ollama server version string (e.g. "0.30.1"), or "" if unknown."""
+        try:
+            with _req(self.base_url + "/api/version", timeout=3) as r:
+                return str(json.load(r).get("version", ""))
+        except (ProviderError, ValueError):
+            return ""
+
     def vision_models(self):
-        out = []
+        """Vision-capable models, preferred first; models this Ollama can't run are listed last and
+        explained in self.notes {model: reason}."""
+        out, archs = [], {}
         for m in self.list_models():
             caps = []
             try:
                 with _req(self.base_url + "/api/show", {"model": m}, timeout=5) as r:
-                    caps = json.load(r).get("capabilities") or []
-            except (ProviderError, ValueError):
+                    d = json.load(r)
+                caps = d.get("capabilities") or []
+                archs[m] = str((d.get("model_info") or {}).get("general.architecture") or d.get("details", {}).get("family") or "")
+            except (ProviderError, ValueError, AttributeError):
                 pass
             if "vision" in caps or (not caps and looks_vision(m)):
                 out.append(m)
-        return sort_models(out)
+        ver = self.version()
+        self.notes = {m: r for m in out if (r := unsupported_reason(m, ver, archs.get(m, "")))}
+        return sort_models(out, failed=self.notes)
 
     def stream_chat(self, model, messages, temperature=0.7, json_mode=False, stop_flag=None):
         payload = {"model": model, "messages": messages, "stream": True, "options": {"temperature": temperature}}
@@ -312,8 +326,34 @@ def pick_alternative(models, bad, prefs=VISION_PREFERENCE, failed=()):
     return None
 
 
+MLLAMA_NOTE = "Not supported on Ollama 0.30+ (llama.cpp engine has no mllama support, see ollama/ollama#16547)"
+
+
+def _vtuple(v):
+    import re
+    nums = [int(x) for x in re.findall(r"\d+", str(v))[:3]]
+    return tuple(nums + [0] * (3 - len(nums))) if nums else None
+
+
+def is_mllama(model, arch=""):
+    n = model.lower()
+    return "mllama" in str(arch).lower() or "llama3.2-vision" in n or "llama-3.2-vision" in n
+
+
+def unsupported_reason(model, ollama_version, arch=""):
+    v = _vtuple(ollama_version)
+    if v and v >= (0, 30, 0) and is_mllama(model, arch):
+        return MLLAMA_NOTE
+    return ""
+
+
 def friendly_load_error(model, msg, vision=False, ollama_kind=True):
     what = "vision model" if vision else "model"
-    return (f"The {what} “{model}” can't run on this {'Ollama' if ollama_kind else 'server'} version "
+    extra = ""
+    if is_mllama(model, "mllama" if "mllama" in str(msg).lower() else ""):
+        extra = (" Llama 3.2 Vision (architecture 'mllama') is not supported on Ollama 0.30+ – the llama.cpp engine "
+                 "has no mllama support (see ollama/ollama#16547); use qwen2.5vl or qwen3-vl instead.")
+    return extra and (f"The {what} “{model}” can't run on this Ollama version ({load_error_detail(msg)}). Re-pulling won't fix this."
+                      + extra) or (f"The {what} “{model}” can't run on this {'Ollama' if ollama_kind else 'server'} version "
             f"({load_error_detail(msg)}). Re-pulling won't fix this. Try another {what}"
             + (", or update Ollama from ollama.com/download." if ollama_kind else "."))

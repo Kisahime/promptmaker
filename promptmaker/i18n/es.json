@@ -226,6 +226,11 @@
   "Model couldn't load": "No se pudo cargar el modelo",
   "Switch to": "Cambiar a",
   "Switched to": "Cambiado a",
-  "try again": "inténtalo de nuevo"
+  "try again": "inténtalo de nuevo",
+  "Confirm clear": "Confirmar borrado",
+  "Confirm delete": "Confirmar eliminación",
+  "Confirm uninstall": "Confirmar desinstalación",
+  "History cleared": "Historial borrado",
+  "Delete all history – click twice to confirm": "Borrar todo el historial: haz clic dos veces para confirmar"
  }
 }

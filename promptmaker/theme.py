@@ -41,6 +41,7 @@ QPushButton#primary:hover {{ background: {accent_hover}; }}
 QPushButton#ghost {{ background: transparent; border: none; color: {muted}; }}
 QPushButton#ghost:hover {{ color: {text}; background: {chip_hover}; }}
 QPushButton#danger:hover {{ border-color: {danger}; color: {danger}; }}
+QPushButton#dangerArmed {{ background: {danger}; border: 1px solid {danger}; color: white; font-weight: 600; }}
 QPushButton#chip {{ background: {chip}; border: 1px solid {border}; border-radius: 14px; padding: 5px 12px; }}
 QPushButton#chip:hover {{ background: {chip_hover}; border-color: {accent}; }}
 QPushButton#chip:checked {{ background: {accent}; color: white; border-color: {accent}; }}

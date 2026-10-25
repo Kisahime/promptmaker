@@ -79,6 +79,48 @@ def button(text, slot=None, kind=None, tip=None):
     return b
 
 
+class ConfirmButton(QPushButton):
+    """Destructive button with in-place confirmation: first click arms it ("Confirm clear (4s)", danger style,
+    live countdown), a second click within the window runs the action, otherwise it reverts by itself."""
+
+    def __init__(self, text, action, confirm_text="Confirm", secs=4, kind="ghost", tip=None):
+        super().__init__(tr(text))
+        self._label, self._confirm, self._secs, self._kind, self._action = tr(text), tr(confirm_text), secs, kind, action
+        self.setCursor(Qt.PointingHandCursor)
+        self.setObjectName(kind)
+        if tip:
+            self.setToolTip(tr(tip))
+        self.left = 0
+        self.timer = QTimer(self, interval=1000, timeout=self._tick)
+        self.clicked.connect(self._clicked)
+
+    @property
+    def armed(self):
+        return self.left > 0
+
+    def _restyle(self, name):
+        self.setObjectName(name); self.style().unpolish(self); self.style().polish(self)
+
+    def _clicked(self):
+        if self.armed:
+            self.reset(); self._action()
+        else:
+            self.left = self._secs; self._restyle("dangerArmed"); self._show(); self.timer.start()
+
+    def _show(self):
+        self.setText(f"{self._confirm} ({self.left}s)")
+
+    def _tick(self):
+        self.left -= 1
+        if self.left <= 0:
+            self.reset()
+        else:
+            self._show()
+
+    def reset(self):
+        self.timer.stop(); self.left = 0; self.setText(self._label); self._restyle(self._kind)
+
+
 def chip(text, checked=False, slot=None):
     b = QPushButton(text)
     b.setObjectName("chip")
@@ -137,6 +179,9 @@ class Toast(QLabel):
         self.setObjectName("toast")
         self.setWordWrap(True)
         self.setMaximumWidth(420)
+        # Toasts are purely informational: never intercept clicks on whatever is underneath.
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setFocusPolicy(Qt.NoFocus)
         self.hide()
         self.effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.effect)
@@ -150,7 +195,8 @@ class Toast(QLabel):
         self.setText(("⚠️  " if error else "✓  ") + text)
         self.adjustSize()
         p = self.parentWidget()
-        self.move(p.width() - self.width() - 24, p.height() - self.height() - 24)
+        # Top-right, clear of the bottom action rows where most buttons live.
+        self.move(p.width() - self.width() - 24, 16)
         self.raise_(); self.show()
         self.anim.stop(); self.anim.setDuration(180)
         self.anim.setStartValue(0.0); self.anim.setEndValue(1.0); self.anim.start()

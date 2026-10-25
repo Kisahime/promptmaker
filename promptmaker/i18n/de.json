@@ -226,6 +226,11 @@
   "Model couldn't load": "Modell konnte nicht geladen werden",
   "Switch to": "Wechseln zu",
   "Switched to": "Gewechselt zu",
-  "try again": "bitte erneut versuchen"
+  "try again": "bitte erneut versuchen",
+  "Confirm clear": "Leeren bestätigen",
+  "Confirm delete": "Löschen bestätigen",
+  "Confirm uninstall": "Deinstallation bestätigen",
+  "History cleared": "Verlauf geleert",
+  "Delete all history – click twice to confirm": "Gesamten Verlauf löschen – zum Bestätigen zweimal klicken"
  }
 }

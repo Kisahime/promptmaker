@@ -66,6 +66,8 @@ class Mock(BaseHTTPRequestHandler):
             return self._send({"sd_model_checkpoint": "sdxl.safetensors"})
         if p.startswith("/sdapi/v1/progress"):
             return self._send({"progress": 0.5, "state": {"sampling_step": 5, "sampling_steps": 10}})
+        if p == "/api/version":
+            return self._send({"version": self.server.__dict__.get("ollama_version", "0.30.1")})
         if p == "/releases/latest":
             return self._send({"tag_name": "v9.0.0", "html_url": "https://example/rel", "draft": False, "prerelease": False})
         if p == "/community/index.json":
@@ -86,6 +88,8 @@ class Mock(BaseHTTPRequestHandler):
                 self.wfile.write((json.dumps({"message": {"content": w}, "done": False}) + "\n").encode())
             return self.wfile.write(b'{"done": true}\n')
         if p == "/api/show":
+            if "llama3.2-vision" in body["model"]:
+                return self._send({"capabilities": ["completion", "vision"], "model_info": {"general.architecture": "mllama"}})
             return self._send({"capabilities": ["completion", "vision"] if "llava" in body["model"] else ["completion"]})
         if p == "/v1/chat/completions":
             return self._sse([{"choices": [{"delta": {"content": "Hi"}}]}, {"choices": [{"delta": {"content": " there"}}]}, b"[DONE]"])
@@ -288,6 +292,13 @@ def test_i18n():
     assert i18n.tr("Settings") == "Settings"
 
 
+def _dispose(w, app):
+    """Finish background threads and delete the window so Qt doesn't crash at interpreter exit (Windows)."""
+    app.processEvents()
+    w.close()  # MainWindow.closeEvent waits for its worker threads
+    w.deleteLater(); app.processEvents()
+
+
 # ---------------------------------------------------------------- model load failures
 def test_model_load_error_detection(server):
     _, url = server
@@ -302,7 +313,8 @@ def test_model_load_error_detection(server):
     for m in ("Can't reach http://localhost:11434", "HTTP 404: model 'x' not found, try pulling it first", "timed out"):
         assert not providers.is_model_load_error(m)
     msg = providers.friendly_load_error("llama3.2-vision", err, vision=True)
-    assert "can't run on this Ollama version" in msg and "update Ollama" in msg and "mllama" in msg
+    assert "can't run on this Ollama version" in msg and "mllama" in msg and "ollama/ollama#16547" in msg
+    assert "update Ollama" in providers.friendly_load_error("foo", "error loading model: x")
 
 
 def test_vision_preference_and_alternative():
@@ -351,4 +363,65 @@ def test_ui_friendly_model_error(tmp_path, monkeypatch):
     assert "llama3.2-vision:latest" not in w._failed_models()
     w._ai_error("Can't reach the server", "x")  # ordinary errors: toast only, no dialog change
     assert w._last_error_box is box
-    box.close(); w.close()
+    box.close(); _dispose(w, app)
+
+
+def test_toast_never_blocks_and_inplace_confirm(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("PROMPTMAKER_NO_NET", "1"); monkeypatch.setenv("PROMPTMAKER_NO_TOUR", "1")
+    from PySide6.QtCore import Qt, QPoint
+    from PySide6.QtWidgets import QApplication
+    from promptmaker.app import MainWindow
+    from promptmaker.storage import Store
+    app = QApplication.instance() or QApplication([])
+    st = Store(str(tmp_path / "t.db"))
+    w = MainWindow(st, str(tmp_path)); w.resize(1280, 800); w.show(); w.go("History")
+    st.add_history("a cat", "Generic", "test"); st.add_history("a dog", "Generic", "test"); w.load_history()
+    app.processEvents()
+    btn = w.hist_clear_btn
+    btn.click(); app.processEvents()
+    # in-place confirmation, no data lost yet
+    assert btn.armed and btn.text().startswith("Confirm clear (4s)") and btn.objectName() == "dangerArmed"
+    assert len(st.history()) == 2
+    # any toast shown must not cover the button and must let clicks through
+    w.notify("hello", error=True); app.processEvents()
+    assert w.toast.testAttribute(Qt.WA_TransparentForMouseEvents)
+    cw = w.centralWidget()
+    b_rect = btn.rect().translated(btn.mapTo(cw, QPoint(0, 0)))
+    t_rect = w.toast.geometry() if w.toast.parentWidget() is cw else w.toast.rect().translated(w.toast.mapTo(cw, QPoint(0, 0)))
+    assert not t_rect.intersects(b_rect)
+    btn._tick(); assert btn.text().startswith("Confirm clear (3s)")
+    btn.click(); app.processEvents()
+    assert not btn.armed and btn.text() == "Clear all" and btn.objectName() == "ghost"
+    assert w.hist_list.count() == 0 and len(st.history()) == 0
+    # reverts on its own when not confirmed
+    btn.click(); [btn._tick() for _ in range(4)]
+    assert not btn.armed and btn.text() == "Clear all"
+    _dispose(w, app)
+
+
+def test_ollama_version_marks_mllama_unsupported(server):
+    srv, url = server
+    assert providers.unsupported_reason("llama3.2-vision:latest", "0.30.0") == providers.MLLAMA_NOTE
+    assert providers.unsupported_reason("x", "0.31.2", arch="mllama") == providers.MLLAMA_NOTE
+    assert providers.unsupported_reason("llama3.2-vision", "0.12.6") == ""
+    assert providers.unsupported_reason("llama3.2-vision", "") == ""
+    assert providers.unsupported_reason("qwen2.5vl:7b", "0.30.1") == ""
+    assert "ollama/ollama#16547" in providers.MLLAMA_NOTE and "0.30+" in providers.MLLAMA_NOTE
+    orig = Mock.do_GET
+    def tags_get(self):
+        if self.path == "/api/tags":
+            return self._send({"models": [{"name": "llama3.2-vision:latest"}, {"name": "llava:7b"}]})
+        return orig(self)
+    Mock.do_GET = tags_get
+    try:
+        p = providers.make("ollama", url)
+        assert p.version() == "0.30.1"
+        vm = p.vision_models()
+        assert vm == ["llava:7b", "llama3.2-vision:latest"]
+        assert p.notes == {"llama3.2-vision:latest": providers.MLLAMA_NOTE}
+        srv.ollama_version = "0.12.0"
+        p.vision_models(); assert p.notes == {}
+    finally:
+        Mock.do_GET = orig; srv.__dict__.pop("ollama_version", None)

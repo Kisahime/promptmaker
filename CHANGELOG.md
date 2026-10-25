@@ -16,6 +16,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - **Friendly "model can't load" handling.** Ollama errors such as `unknown model architecture: 'mllama'`, `error loading model` or "llama-server process has terminated" (for example, `llama3.2-vision` on newer Ollama builds) now show a clear message instead of a raw HTTP 500. It explains that the model can't run on this Ollama version and that re-pulling won't help, and suggests another model or updating Ollama. One-click actions switch to another installed model (vision: qwen2.5vl, then gemma3, llava…) or copy `ollama pull qwen2.5vl`. Models that failed are remembered, shown in red with a tooltip in the model pickers, and sorted last. The mark is cleared once the model works again. The same handling covers chat models.
 
+- **Ollama version check:** PromptMaker reads `/api/version`. On Ollama 0.30+, Llama 3.2 Vision models (architecture `mllama`) are marked as unsupported in the vision model picker (red, sorted last, never auto-selected), with the tooltip "Not supported on Ollama 0.30+ (llama.cpp engine has no mllama support, see ollama/ollama#16547)". The friendly load-error message explains the same thing and points to qwen2.5vl / qwen3-vl.
+
+### Fixed
+- Toasts no longer cover the buttons beneath them. They now appear top-right, away from the bottom action rows, and let clicks pass through (`WA_TransparentForMouseEvents`). Before this fix, the History "Clear all" confirmation toast covered the button it asked you to click again.
+- Two-click confirmations now happen on the button itself instead of in a toast. The first click turns it into a red "Confirm clear (4s)" button with a live countdown, a second click runs the action, and it reverts on its own after 4 s. This applies to History "Clear all", and the same confirmation is now required for every 🗑 Delete button (templates, history item, favourites, packs, gallery) and for Community "Uninstall".
+
+- Closing the window now waits for background workers to finish, so a running request can no longer crash the app when it exits (a Windows `0xC0000409` crash). The test suite also shuts Qt down cleanly.
+
 ### Changed
 - The vision model preference order now puts `qwen2.5vl` first, and the "no vision model" hint suggests `ollama pull qwen2.5vl`.
 - User and imported packs now live in `data/packs/`, and the bundled `packs/` folder is read-only. An existing `packs/custom.json` is migrated automatically.

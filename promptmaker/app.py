@@ -23,7 +23,7 @@ from .i18n import tr
 from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
-from .widgets import (CallWorker, Card, ChatWorker, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
+from .widgets import (CallWorker, Card, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -230,14 +230,16 @@ class MainWindow(QMainWindow):
     def _mark_failed_in_pickers(self):
         from PySide6.QtGui import QColor
         failed = self._failed_models()
+        notes = getattr(self.provider, "notes", {}) or {}
         for combo in (self.model, getattr(self, "vision_model", None)):
             if combo is None:
                 continue
             for i in range(combo.count()):
                 name = combo.itemText(i)
-                bad = name in failed
-                combo.setItemData(i, QColor("#ff6b6b") if bad else None, Qt.ForegroundRole)
-                combo.setItemData(i, ("⚠ Failed to load last time: " + failed[name]) if bad else None, Qt.ToolTipRole)
+                tip = ("⚠ " + notes[name]) if name in notes else (
+                    ("⚠ Failed to load last time: " + failed[name]) if name in failed else None)
+                combo.setItemData(i, QColor("#ff6b6b") if tip else None, Qt.ForegroundRole)
+                combo.setItemData(i, tip, Qt.ToolTipRole)
 
     def _ai_error(self, err, model, vision=False):
         if not providers.is_model_load_error(err):
@@ -248,7 +250,7 @@ class MainWindow(QMainWindow):
         combo = self.vision_model if vision and hasattr(self, "vision_model") else self.model
         models = [combo.itemText(i) for i in range(combo.count())]
         prefs = providers.VISION_PREFERENCE if vision else providers.CHAT_PREFERENCE
-        alt = providers.pick_alternative(models, model, prefs, f)
+        alt = providers.pick_alternative(models, model, prefs, {**f, **(getattr(self.provider, "notes", {}) or {})})
         pull = providers.VISION_PULL if vision else providers.CHAT_PULL
         self._mark_failed_in_pickers()
         msg = providers.friendly_load_error(model, err, vision, is_ollama)
@@ -1128,7 +1130,7 @@ class MainWindow(QMainWindow):
         left = Card("Your templates")
         self.tpl_list = QListWidget(); self.tpl_list.currentItemChanged.connect(self._tpl_selected)
         left.add(self.tpl_list, 1)
-        left.add(hrow(button("＋ New", self.tpl_new), button("🗑 Delete", self.tpl_delete, "danger")))
+        left.add(hrow(button("＋ New", self.tpl_new), ConfirmButton("🗑 Delete", self.tpl_delete, "Confirm delete", 4, "danger")))
         row.addWidget(left, 1)
         right = Card("Edit")
         self.tpl_name = QLineEdit(); self.tpl_name.setPlaceholderText("Template name")
@@ -1249,8 +1251,8 @@ class MainWindow(QMainWindow):
         self.hist_list.itemDoubleClicked.connect(lambda it: (copy(it.data(Qt.UserRole)[1]), self.notify("Copied")))
         c.add(self.hist_list, 1)
         c.add(hrow(button("📋 Copy", self.hist_copy, "primary"), button("💬 Refine", self.hist_refine),
-                   button("📊 Score", self.hist_score), None, button("🗑 Delete", self.hist_delete, "danger"),
-                   button("Clear all", self.hist_clear, "ghost")))
+                   button("📊 Score", self.hist_score), None, ConfirmButton("🗑 Delete", self.hist_delete, "Confirm delete", 4, "danger"),
+                   self._hist_clear_btn()))
         v.addWidget(c, 1)
         return w
 
@@ -1283,13 +1285,13 @@ class MainWindow(QMainWindow):
         if h:
             self.store.delete_history(h[0]); self.load_history(); self.notify("Deleted")
 
+    def _hist_clear_btn(self):
+        self.hist_clear_btn = ConfirmButton("Clear all", self.hist_clear, "Confirm clear", 4, "ghost",
+                                            "Delete all history – click twice to confirm")
+        return self.hist_clear_btn
+
     def hist_clear(self):
-        if self.hist_clear_armed:
-            self.store.clear_history(); self.load_history(); self.notify("History cleared"); self.hist_clear_armed = False
-        else:
-            self.hist_clear_armed = True; self.notify("Click 'Clear all' again within 4 s to confirm", error=True)
-            QTimer.singleShot(4000, lambda: setattr(self, "hist_clear_armed", False))
-    hist_clear_armed = False
+        self.store.clear_history(); self.load_history(); self.notify(tr("History cleared"))
 
     def _fav_page(self):
         w, v = page("Favourites", "Saved Builder setups and prompts.")
@@ -1298,7 +1300,7 @@ class MainWindow(QMainWindow):
         self.fav_list.itemDoubleClicked.connect(lambda *_: self.fav_load())
         c.add(self.fav_list, 1)
         c.add(hrow(button("📋 Copy", self.fav_copy, "primary"), button("↩ Load into Builder", self.fav_load), None,
-                   button("🗑 Delete", self.fav_delete, "danger")))
+                   ConfirmButton("🗑 Delete", self.fav_delete, "Confirm delete", 4, "danger")))
         v.addWidget(c, 1)
         return w
 
@@ -1339,7 +1341,7 @@ class MainWindow(QMainWindow):
         c.add(self.pack_list, 1)
         c.add(hrow(button("📥 Import pack…", self.pack_import, "primary"), button("📤 Export selected…", self.pack_export),
                    button("📂 Open packs folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.lib.dir))), None,
-                   button("🗑 Delete", self.pack_delete, "danger")))
+                   ConfirmButton("🗑 Delete", self.pack_delete, "Confirm delete", 4, "danger")))
         c.add(label('Pack format: {"name": "...", "description": "...", "categories": {"Style": {"Group": ["item", ...]}}}', "hint", wrap=True))
         v.addWidget(c, 1)
         self.load_packs()
@@ -1493,10 +1495,25 @@ class MainWindow(QMainWindow):
         return self.provider
 
     def refresh_models_async(self):
+        if getattr(self, "_closing", False):
+            return
         w = CallWorker(self.provider.list_models)
         w.ok.connect(lambda models: self._models_loaded(models, True))
         w.failed.connect(lambda e: self._models_failed(e, True))
         self._keep(w); w.start()
+
+    def closeEvent(self, e):
+        """Let background workers finish so no QThread is destroyed while running (crashes on Windows)."""
+        self._closing = True
+        for x in list(getattr(self, "_workers", [])) + [getattr(self, "worker", None)]:
+            if x is not None and x.isRunning():
+                if hasattr(x, "stop"):
+                    x.stop()
+                x.wait(5000)
+        q = getattr(self, "genq", None)
+        if q is not None and q.isRunning():
+            q.clear(); q.cancel_current(); q.wait(5000)
+        super().closeEvent(e)
 
     def _keep(self, w):
         self._workers = [x for x in getattr(self, "_workers", []) if x.isRunning()] + [w]
@@ -1646,7 +1663,7 @@ class MainWindow(QMainWindow):
         right.add(hrow(button("🔍 Open full size", self._gal_open), button("📋 Copy prompt", self._gal_copy),
                        button("♻ Reuse prompt", self._gal_reuse, "primary")))
         right.add(hrow(button("🎲 Same seed again", self._gal_regen), button("📂 Folder", lambda: QDesktopServices.openUrl(
-            QUrl.fromLocalFile(self.gallery.root))), None, button("🗑 Delete", self._gal_delete, "danger")))
+            QUrl.fromLocalFile(self.gallery.root))), None, ConfirmButton("🗑 Delete", self._gal_delete, "Confirm delete", 4, "danger")))
         row.addWidget(right); row.setSizes([700, 480])
         self.load_gallery()
         return w
@@ -1762,12 +1779,14 @@ class MainWindow(QMainWindow):
         self.i2p_hint.setText(tr("Looking for vision models…"))
         w = CallWorker(self.provider.vision_models)
         def ok(models):
-            failed = self._failed_models()
+            failed = {**self._failed_models(), **(getattr(self.provider, "notes", {}) or {})}
             models = providers.sort_models(models, providers.VISION_PREFERENCE, failed)
             self.vision_model.clear(); self.vision_model.addItems(models)
             saved = self.store.get(f"vision_model:{self.provider.pid}")
             if saved in models and saved not in failed:
                 self.vision_model.setCurrentText(saved)
+            elif models and models[0] not in failed:
+                self.vision_model.setCurrentIndex(0)
             self._mark_failed_in_pickers()
             if models:
                 self.i2p_hint.setText(f"{len(models)} vision-capable model(s) found.")
@@ -1903,7 +1922,7 @@ class MainWindow(QMainWindow):
         c.add(self.comm_list, 1)
         self.comm_status = label("", "hint", wrap=True)
         c.add(hrow(button("⟳ Refresh", self.comm_refresh), button("⬇ Install / update", self.comm_install, "primary"),
-                   button("🗑 Uninstall", self.comm_uninstall, "danger"), None, self.comm_status))
+                   ConfirmButton("🗑 Uninstall", self.comm_uninstall, "Confirm uninstall", 4, "danger"), None, self.comm_status))
         c.add(label("Want to share a pack or profile? See CONTRIBUTING.md – submit it with a pull request.", "hint"))
         v.addWidget(c, 1)
         self.comm_items = []
