@@ -1,0 +1,2 @@
+# Keep JSON byte-identical on every OS so community SHA-256 hashes match
+*.json text eol=lf
