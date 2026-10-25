@@ -15,7 +15,7 @@ QMainWindow, QWidget#root {{ background: {bg}; }}
 QWidget {{ background: transparent; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 6px; border-radius: 6px; }}
 QListWidget#sidebar {{ background: {surface}; border: none; border-right: 1px solid {border}; padding: 10px 8px; outline: 0; }}
-QListWidget#sidebar::item {{ padding: 10px 12px; margin: 2px 0; border-radius: 10px; color: {muted}; }}
+QListWidget#sidebar::item {{ padding: 7px 12px; margin: 1px 0; border-radius: 10px; color: {muted}; }}
 QListWidget#sidebar::item:hover {{ background: {chip_hover}; color: {text}; }}
 QListWidget#sidebar::item:selected {{ background: {accent_soft}; color: {text}; border-left: 3px solid {accent}; }}
 QLabel#brand {{ font-size: 15pt; font-weight: 700; padding: 18px 16px 6px 16px; background: {surface}; }}
@@ -66,6 +66,8 @@ QProgressBar::chunk {{ border-radius: 5px; background: {accent}; }}
 QSlider::groove:horizontal {{ height: 6px; background: {raised}; border-radius: 3px; }}
 QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 3px; }}
 QSlider::handle:horizontal {{ background: white; border: 2px solid {accent}; width: 14px; margin: -6px 0; border-radius: 8px; }}
+QLabel#dropZone {{ border: 2px dashed {border}; border-radius: 14px; color: {muted}; background: {raised}; }}
+QDoubleSpinBox {{ background: {raised}; border: 1px solid {border}; border-radius: 9px; padding: 6px 8px; }}
 QLabel#toast {{ background: {raised}; color: {text}; border: 1px solid {accent}; border-radius: 12px; padding: 10px 16px; }}
 QLabel#toastError {{ background: {raised}; color: {text}; border: 1px solid {danger}; border-radius: 12px; padding: 10px 16px; }}
 QLabel#badge {{ background: {accent_soft}; color: {text}; border-radius: 8px; padding: 2px 8px; font-size: 8.5pt; }}

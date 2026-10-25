@@ -1,0 +1,65 @@
+{
+ "_comment": "PromptMaker community index. Add entries via pull request – see CONTRIBUTING.md. url may be absolute or relative to this file; sha256 is of the exact file bytes.",
+ "version": 1,
+ "packs": [
+  {
+   "id": "starter-anime",
+   "name": "Anime & Manga",
+   "author": "Kisahime",
+   "description": "Tags and looks for anime / manga models (Illustrious, Pony, Anima). (46 presets)",
+   "version": "1.0",
+   "url": "https://raw.githubusercontent.com/Kisahime/promptmaker/main/packs/anime.json",
+   "sha256": "8bdc6822e59aaab8ad545554623456d9b90cd5fd4ec7c17c2b7dd6f6c4a05cba",
+   "tags": [
+    "starter"
+   ]
+  },
+  {
+   "id": "starter-photo",
+   "name": "Photography Pro",
+   "author": "Kisahime",
+   "description": "Camera bodies, film stocks and pro lighting setups. (28 presets)",
+   "version": "1.0",
+   "url": "https://raw.githubusercontent.com/Kisahime/promptmaker/main/packs/photo.json",
+   "sha256": "f3e5c46c93dd8a6d2d999a2812e226797cbf229efc405d0ab3c4c00f2e8c64d2",
+   "tags": [
+    "starter"
+   ]
+  },
+  {
+   "id": "starter-fantasy",
+   "name": "Fantasy & Sci-Fi Worlds",
+   "author": "Kisahime",
+   "description": "Worldbuilding subjects, settings and creatures. (30 presets)",
+   "version": "1.0",
+   "url": "https://raw.githubusercontent.com/Kisahime/promptmaker/main/packs/fantasy.json",
+   "sha256": "3ae8f812b2eca69dfb58e55858abf2fc43161d6cdf398fae97e99fa967441507",
+   "tags": [
+    "starter"
+   ]
+  },
+  {
+   "id": "starter-architecture",
+   "name": "Architecture & Interiors",
+   "author": "Kisahime",
+   "description": "Buildings, interior styles and design rendering. (24 presets)",
+   "version": "1.0",
+   "url": "https://raw.githubusercontent.com/Kisahime/promptmaker/main/packs/architecture.json",
+   "sha256": "c1f0b75f11c6a9003319ae6f08e4b41875ae8256e8e3356cbbdc1150410b10d9",
+   "tags": [
+    "starter"
+   ]
+  }
+ ],
+ "profiles": [
+  {
+   "id": "sdxl-lightning",
+   "name": "SDXL-Lightning profile",
+   "author": "Kisahime",
+   "description": "Few-step SDXL distillation (2/4/8 steps, CFG 0–1).",
+   "version": "1.0",
+   "url": "profiles/sdxl_lightning.json",
+   "sha256": "d4599a0cf128becfb9957c03841d682a015ce7a31c954d01fb4e377f10fa2599"
+  }
+ ]
+}
