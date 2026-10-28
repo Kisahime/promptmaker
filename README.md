@@ -2,9 +2,9 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 2 can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 3 adds a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v2.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v2.0.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v2.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v2.0.0) · **Version 3.0.0** in this branch · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -25,6 +25,11 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🌐 Community** *(2.0)*: browse, install, update and uninstall packs and model profiles from the community index. Every download is checked with SHA-256.
 - **🔌 Providers** *(2.0)*: Ollama, LM Studio, llama.cpp, KoboldCpp, vLLM, any OpenAI-compatible URL, and optional OpenAI, Anthropic, Google Gemini and OpenRouter. All AI features stream from the provider you choose.
 - **⚙ Settings, tour and languages** *(2.0)*: a settings page, a first-run guided tour, an optional update check, portable or AppData data, and English / Español / Deutsch (the translations are machine-made).
+- **🧭 Setup wizard** *(3.0)*: on first launch (and any time from the sidebar or Settings) it checks whether Ollama is installed and running, lists your models, and downloads a recommended text model (`llama3.2`) and vision model (`qwen2.5vl`) with a progress bar. It also looks for Forge/A1111 (and tells you if `--api` is missing) and ComfyUI on their default ports, and saves what it finds.
+- **🔄 Auto-refine** *(3.0)*: generate an image with Forge or ComfyUI, let a vision model score it against your idea (0–100, with what's missing or wrong), have the local AI rewrite the prompt, and repeat for N iterations or until a target score. Every iteration is shown with its image and review. Stop at any time and **Keep best**.
+- **🧩 LoRAs** *(3.0)*: scans your models folder (Forge layout by default: `models\Lora`, `models\LyCORIS`, `embeddings`), hashes each file (SHA256 / AutoV2) and looks it up on Civitai for its name, trigger words, base model and preview. Results are cached. Filter by compatibility with the target model profile and insert `<lora:name:weight>` plus trigger words in one click.
+- **👤 Presets** *(3.0)*: save **characters** (name, appearance tags, outfit, optional LoRA and weight, reference image) and **styles** (tags plus extra negative). Tick several to combine them in any prompt, and Batch can keep them fixed on every variation so a character stays consistent.
+- **🧍 Pose** *(3.0)*: a canvas with draggable OpenPose-style skeletons (8 starter poses) and boxes for other subjects. It turns the sketch into composition tags (framing, pose, facing, positions) in the target model's style, exports an OpenPose PNG, and can generate with **ControlNet** via Forge's `alwayson_scripts` or by adding a ControlNet node to your ComfyUI workflow.
 - **🩹 Friendly errors** *(2.0)*:
   - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
   - When Forge/A1111's API is off, the app shows the exact `--api` fix, and Test connection reports the WebUI variant and version.
@@ -32,6 +37,14 @@ Everything runs on your own computer by default. The AI features are optional an
 - A polished dark/light theme and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
+
+| Setup wizard *(3.0)* | Auto-refine *(3.0)* |
+|---|---|
+| ![Setup wizard](docs/screenshots/setup.png) | ![Auto-refine](docs/screenshots/autorefine.png) |
+| **LoRAs** *(3.0)* | **Presets** *(3.0)* |
+| ![LoRAs](docs/screenshots/loras.png) | ![Presets](docs/screenshots/presets.png) |
+| **Pose** *(3.0)* | |
+| ![Pose](docs/screenshots/pose.png) | |
 
 | Builder | Refine (chat) |
 |---|---|
@@ -55,7 +68,7 @@ Everything runs on your own computer by default. The AI features are optional an
 
 ![Civitai import](docs/screenshots/civitai.png)
 
-*The images in the Gallery, A/B and Image to Prompt screenshots are abstract placeholders, not real model output. All screenshots use demo data and are regenerated with `QT_QPA_PLATFORM=offscreen python tools/screenshots.py`.*
+*The images in the Gallery, A/B, Auto-refine, LoRAs and Image to Prompt screenshots are abstract placeholders, not real model output. All screenshots use demo data and are regenerated with `QT_QPA_PLATFORM=offscreen python tools/screenshots.py`.*
 
 ## Install
 
@@ -100,6 +113,8 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 - **ComfyUI** (default `http://127.0.0.1:8188`). PromptMaker uses ComfyUI's API: it queues a workflow, shows progress, and saves the result. Two API-format workflows are included in `promptmaker/workflows/`: **SDXL txt2img** and **FLUX txt2img** (the FLUX one expects an all-in-one checkpoint such as `flux1-dev-fp8.safetensors`). To use your own workflow, export it from ComfyUI with *Workflow → Export (API)*, replace values with placeholders, and drop it into `data/workflows/`. The placeholders are `{{prompt}}`, `{{negative}}`, `{{width}}`, `{{height}}`, `{{seed}}`, `{{steps}}`, `{{cfg}}`, `{{checkpoint}}`, `{{sampler}}` and `{{scheduler}}`. An optional `"_meta": {"name": …, "defaults": {…}}` key sets the display name and default values.
 - **Forge / Forge Classic / Forge Neo / reForge / AUTOMATIC1111** (default `http://127.0.0.1:7860`). The API must be switched on: in `webui-user.bat` set `set COMMANDLINE_ARGS=--api` (plus any other flags), then restart the WebUI. If it's off, Test connection tells you exactly that. PromptMaker uses `/sdapi/v1/txt2img` and polls `/sdapi/v1/progress`.
+
+**ControlNet (Pose page).** On Forge/A1111 the OpenPose image is sent as a ControlNet unit in `alwayson_scripts` (Forge has ControlNet built in; on AUTOMATIC1111 install *sd-webui-controlnet*). The ⟳ button lists models from `/controlnet/model_list`. On ComfyUI the image is uploaded with `/upload/image`, and `LoadImage → ControlNetLoader → ControlNetApplyAdvanced` nodes are added in front of each KSampler in your workflow. Put an OpenPose ControlNet model (for SDXL, e.g. *xinsir openpose*) in ComfyUI's `models/controlnet` folder.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
 

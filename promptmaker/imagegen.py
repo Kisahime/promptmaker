@@ -95,6 +95,7 @@ class Job:
         self.profile, self.checkpoint, self.workflow = profile, checkpoint, workflow
         self.sampler, self.scheduler, self.tag = sampler, scheduler, tag
         self.clip_skip = None
+        self.controlnet = None  # {"image": png bytes, "model": str, "weight": float} – OpenPose from the sketcher
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -127,8 +128,39 @@ class ComfyUI:
         except (BackendError, KeyError, IndexError, TypeError):
             return []
 
+    def controlnet_models(self):
+        try:
+            info = _http(self.url + "/object_info/ControlNetLoader", timeout=10)
+            return info["ControlNetLoader"]["input"]["required"]["control_net_name"][0]
+        except (BackendError, KeyError, IndexError, TypeError):
+            return []
+
+    def upload_image(self, png, name="promptmaker_pose.png"):
+        """POST /upload/image (multipart). Returns the name ComfyUI stored it under."""
+        boundary = "----PromptMaker" + uuid.uuid4().hex
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{name}\"\r\n"
+                "Content-Type: image/png\r\n\r\n").encode() + png + \
+            (f"\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n--{boundary}--\r\n").encode()
+        req = urllib.request.Request(self.url + "/upload/image", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "User-Agent": "PromptMaker"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                d = json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            raise BackendError(f"HTTP {e.code} uploading the pose image to ComfyUI") from e
+        except (urllib.error.URLError, OSError) as e:
+            raise BackendError(f"Can't reach {self.url} – is ComfyUI running? ({e})") from e
+        return (d.get("subfolder") + "/" if d.get("subfolder") else "") + d.get("name", name)
+
     def generate(self, job, workflow, progress=None, cancelled=None, poll=0.7, timeout=1800):
         wf = inject(workflow, job.values())
+        cn = getattr(job, "controlnet", None)
+        if cn and cn.get("image") and cn.get("model"):
+            from .pose import add_comfy_controlnet
+            try:
+                wf = add_comfy_controlnet(wf, self.upload_image(cn["image"], f"pm_pose_{job.id}.png"), cn["model"], cn.get("weight", 1.0))
+            except ValueError as e:
+                raise BackendError(str(e)) from e
         r = _http(self.url + "/prompt", {"prompt": wf, "client_id": self.client_id})
         if r.get("node_errors"):
             raise BackendError("Workflow error: " + json.dumps(r["node_errors"])[:400])
@@ -290,7 +322,19 @@ class A1111:
             ov["sd_model_checkpoint"] = job.checkpoint
         if ov:
             p["override_settings"] = ov
+        cn = getattr(job, "controlnet", None)
+        if cn and cn.get("image"):
+            from .pose import add_forge_controlnet
+            add_forge_controlnet(p, base64.b64encode(cn["image"]).decode(), cn.get("model", ""), cn.get("weight", 1.0))
         return p
+
+    def controlnet_models(self):
+        """sd-webui-controlnet / Forge: GET /controlnet/model_list (empty if the extension API isn't there)."""
+        try:
+            d = _http(self.url + "/controlnet/model_list", timeout=8)
+            return [m for m in d.get("model_list", []) if m and m != "None"]
+        except (BackendError, AttributeError):
+            return []
 
     def generate(self, job, workflow=None, progress=None, cancelled=None, poll=0.8, timeout=1800):
         import threading

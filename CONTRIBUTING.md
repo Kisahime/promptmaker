@@ -21,7 +21,7 @@ QT_QPA_PLATFORM=offscreen python tools/screenshots.py   # rewrites docs/screensh
 If you add a page, add it to `tools/screenshots.py` and the README table. Don't commit screenshots of real model output.
 
 ### Tests that touch the network
-Mock every HTTP service with a local server (see `tests/test_v2.py` for Ollama, OpenAI-compatible, ComfyUI and Forge, and `tests/test_civitai.py` for Civitai). CI never calls real services.
+Mock every HTTP service with a local server (see `tests/test_v2.py` for Ollama, OpenAI-compatible, ComfyUI and Forge, `tests/test_civitai.py` for Civitai, and `tests/test_v3.py` for Ollama pulls, ControlNet payloads and the LoRA hash lookup). CI never calls real services.
 
 ## Adding a model profile
 - Add an entry to `promptmaker/profiles.json` (see the field list in the README). For a checkpoint that's a variant of an existing model, prefer `"inherits": "<base id>"` and override only what differs. This is what Civitai import does.
@@ -53,6 +53,6 @@ Strings live in `promptmaker/i18n/<code>.json` (`{"_meta": {"name": …, "machin
 
 ## Code style
 - Python 3.10+, standard library plus PySide6 (and the optional `keyring`). No new runtime dependencies without discussion; network code uses `urllib`.
-- Keep logic that doesn't need the UI in `builder.py`, `scoring.py`, `library.py` and `profiles.py`, with unit tests in `tests/`.
+- Keep logic that doesn't need the UI in `builder.py`, `scoring.py`, `library.py`, `profiles.py` and the 3.0 modules (`firstrun.py`, `autorefine.py`, `loras.py`, `presets.py`, `pose.py`), with unit tests in `tests/`.
 - Test network code against a local mock server (see `tests/test_v2.py`), never real services.
 - Never commit `data/`, `.venv/` or `packs/custom.json`.

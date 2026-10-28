@@ -33,6 +33,79 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO templates(name, body) VALUES(?,?)", DEFAULT_TEMPLATES[-1])
             self.set("seeded_v3", True)
         self.db.commit()
+        self.migrate()
+
+    SCHEMA_VERSION = 3
+    MIGRATIONS = {
+        3: """
+        CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY, name TEXT UNIQUE, appearance TEXT DEFAULT '',
+            outfit TEXT DEFAULT '', lora TEXT DEFAULT '', lora_weight REAL DEFAULT 0.8, ref_image TEXT DEFAULT '',
+            notes TEXT DEFAULT '', ts REAL);
+        CREATE TABLE IF NOT EXISTS styles(id INTEGER PRIMARY KEY, name TEXT UNIQUE, tags TEXT DEFAULT '',
+            negative TEXT DEFAULT '', ts REAL);
+        """,
+    }
+
+    def schema_version(self):
+        return int(self.get("schema_version", 2) or 2)
+
+    def migrate(self):
+        """Apply numbered migrations once each (v2 databases start at schema 2)."""
+        cur = self.schema_version()
+        for ver in sorted(self.MIGRATIONS):
+            if ver > cur:
+                self.db.executescript(self.MIGRATIONS[ver])
+                self.set("schema_version", ver)
+        self.db.commit()
+
+    # ---------------------------------------------------------------- characters & styles
+    CHAR_FIELDS = ("name", "appearance", "outfit", "lora", "lora_weight", "ref_image", "notes")
+
+    def characters(self):
+        cur = self.db.execute("SELECT id," + ",".join(self.CHAR_FIELDS) + " FROM characters ORDER BY name COLLATE NOCASE")
+        return [dict(zip(("id",) + self.CHAR_FIELDS, r)) for r in cur.fetchall()]
+
+    def character(self, name_or_id):
+        return next((c for c in self.characters() if name_or_id in (c["id"], c["name"])), None)
+
+    def save_character(self, data, cid=None):
+        vals = [data.get(k, 0.8 if k == "lora_weight" else "") for k in self.CHAR_FIELDS]
+        if not str(vals[0]).strip():
+            raise ValueError("A character needs a name")
+        if cid:
+            self.db.execute("UPDATE characters SET " + ",".join(f"{k}=?" for k in self.CHAR_FIELDS) + ",ts=? WHERE id=?",
+                            (*vals, time.time(), cid))
+        else:
+            self.db.execute("INSERT OR REPLACE INTO characters(" + ",".join(self.CHAR_FIELDS) + ",ts) VALUES(?,?,?,?,?,?,?,?)",
+                            (*vals, time.time()))
+        self.db.commit()
+        return self.character(vals[0])["id"]
+
+    def delete_character(self, cid):
+        self.db.execute("DELETE FROM characters WHERE id=?", (cid,)); self.db.commit()
+
+    def styles(self):
+        cur = self.db.execute("SELECT id,name,tags,negative FROM styles ORDER BY name COLLATE NOCASE")
+        return [dict(zip(("id", "name", "tags", "negative"), r)) for r in cur.fetchall()]
+
+    def style(self, name_or_id):
+        return next((s for s in self.styles() if name_or_id in (s["id"], s["name"])), None)
+
+    def save_style(self, data, sid=None):
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise ValueError("A style needs a name")
+        if sid:
+            self.db.execute("UPDATE styles SET name=?,tags=?,negative=?,ts=? WHERE id=?",
+                            (name, data.get("tags", ""), data.get("negative", ""), time.time(), sid))
+        else:
+            self.db.execute("INSERT OR REPLACE INTO styles(name,tags,negative,ts) VALUES(?,?,?,?)",
+                            (name, data.get("tags", ""), data.get("negative", ""), time.time()))
+        self.db.commit()
+        return self.style(name)["id"]
+
+    def delete_style(self, sid):
+        self.db.execute("DELETE FROM styles WHERE id=?", (sid,)); self.db.commit()
 
     def get(self, key, default=None):
         r = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

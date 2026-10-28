@@ -2,7 +2,23 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.0.0] - unreleased
+### Added
+- **Setup wizard** (`promptmaker/firstrun.py`): opens on first launch, and from the sidebar (🧭 Setup wizard) or Settings. Checks whether Ollama is installed and running, its version and models, and pulls `llama3.2` and `qwen2.5vl` through `/api/pull` with a progress bar and Stop. Detects Forge/A1111 (`/sdapi/v1`, with the `--api` hint) and ComfyUI on their default ports, saves the results to settings, and picks an image backend if none is set.
+- **Auto-refine** page (`promptmaker/autorefine.py`): generate → vision-model judgement (JSON score 0–100 with matches / missing / wrong / advice) → AI rewrite, for N iterations or until a score threshold. Uses the same seed on every iteration for a fair comparison. Each iteration is listed with a thumbnail and saved to the Gallery and History. Stop at any time; **Keep best** sends the best prompt to Refine and Favourites.
+- **LoRAs** page (`promptmaker/loras.py`): scans `models/Lora`, `models/LyCORIS` and `embeddings` (Forge layout, folder configurable), hashes files (SHA256, AutoV2 = first 10 hex chars), looks them up via Civitai `/model-versions/by-hash/{hash}` for name, trigger words, base model and preview, and caches hashes (by path, size and mtime) and lookups in `data/cache/loras.json`. Filters by compatibility with the target profile (follows `inherits`; SDXL/Pony/Illustrious count as one family unless "Exact base model only" is ticked) and inserts `<lora:name:weight>` plus trigger words, or embeddings as `(name:weight)`.
+- **Presets** page (`promptmaker/presets.py`): characters (name, appearance, outfit, optional LoRA and weight, reference image, notes) and styles (tags, extra negative) stored in SQLite. Tick several to combine; duplicates are removed. Batch has a "Keep ticked characters & styles" option so every variation keeps the same character.
+- **Pose** page (`promptmaker/pose.py`, `promptmaker/posecanvas.py`): draggable OpenPose-18 skeletons with 8 starter poses (Standing, Arms up, Waving, T-pose, Hands on hips, Sitting, Walking, Kneeling) and labelled subject boxes. Produces composition tags (solo / 2people, framing, facing, pose, left/center/right, foreground/background) as tags or a sentence depending on the profile format. Exports an OpenPose PNG in the standard colours, and **Generate with ControlNet** sends it as a Forge/A1111 `alwayson_scripts.controlnet` unit, or uploads it to ComfyUI and patches the workflow with `ControlNetApplyAdvanced`.
+- `imagegen`: `Job.controlnet`, `A1111.controlnet_models()`, `ComfyUI.upload_image()` and `ComfyUI.controlnet_models()`.
+- 33 new tests (`tests/test_v3.py`), all against local mock servers or fake clients.
+
+### Changed
+- Database schema version 3: a numbered migration adds the `characters` and `styles` tables. v2 databases upgrade automatically and keep their data.
+- `MainWindow.make_job()` now builds image jobs for every page (Generate, A/B, Auto-refine, Pose).
+- The tour covers Auto-refine and Pose. German and Spanish strings were added for the new pages (machine-translated).
+- Screenshots for the five new pages; `tools/screenshots.py` fills them with demo data.
+
+## [Unreleased before 3.0]
 ### Changed
 - Docs: README refreshed for 2.0 (new Troubleshooting section, full screenshot set including Analyse, Templates, Batch, History and the Civitai review screen). `tools/screenshots.py` now uses fresh demo data in a temp folder and never touches the network.
 
