@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [4.0.0] – 2026-10-29
+### Added
+- **Wildcards** page (`promptmaker/wildcards.py`): sd-dynamic-prompts-compatible syntax. `__name__` (`.txt` one entry per line, sub-folders, globs such as `__places/*__`, and `.yaml` packs flattened to `__file/key__` and `__key__`), `{a|b|c}`, weights `{2::a|b}`, multi-pick `{2$$a|b|c}`, ranges and custom separators `{1-3$$ and $$a|b}`, and nested and recursive expansion with a loop guard. Seeded with `random.Random(seed)`, so results are reproducible. Preview, a batch of N unique variations, unknown-wildcard warnings, "Keep ticked characters & styles", and one image queued per variation. The manager creates, edits and deletes files, and imports a folder, a single file or a Civitai `.zip` (handling a `wildcards/` prefix, zips inside zips, and `__MACOSX` junk) with keep / overwrite / keep-both. **✨ Generate** has Ollama (or any provider) write a list from a description.
+- Wildcards are expanded in `make_job()` with the image seed, so every page (Generate, Batch, Pose, Auto-refine, Inpaint …) supports them. This can be switched off. A lone `{tag}` is never touched.
+- **Inpaint & Regions** page (`promptmaker/regions.py`, `promptmaker/inpaintcanvas.py`): a mask brush, eraser, invert, clear, "mask the selected region", open an image or take the last generated one, or a blank canvas at the profile size. Forge/A1111 inpaint goes through `/sdapi/v1/img2img` (denoise, mask blur, whole picture / only masked, padding, masked content). ComfyUI inpaint uses `LoadImage` (with the mask as alpha) → `VAEEncode` → `GrowMask` → `SetLatentNoiseMask`.
+- **Regional prompts:** draggable, resizable boxes, each with its own prompt and weight. ComfyUI uses `ConditioningSetArea` + `ConditioningCombine` in front of every KSampler. Forge uses **Forge Couple** (Advanced mode, detected via `/sdapi/v1/scripts`), with the main prompt as a full-image background line. Without it, a message names the extension and offers "Send as one prompt instead" with position words. The page has the shared checkpoint picker.
+- **Video** page (`promptmaker/video.py`): profiles for Wan 2.2, Wan 2.1, LTX-Video and HunyuanVideo (fps, valid frame counts 4n+1 / 8n+1, sizes, negative support, word range, prompting guide), 14 camera moves, 10 motion presets and 12 shot sizes. An offline structured builder in each model's preferred order, an AI writer, length and camera checks, default negatives, "Use ticked character", and saved video prompts. Prompt writing only.
+- **Library sync** page (`promptmaker/sync.py`): export/import of history, favourites, templates, versions, characters, styles, video prompts, LoRA metadata, wildcards, model profiles and settings as `.zip` or `.json`. Merge or replace; same-name conflicts can keep mine, take theirs or keep both; content duplicates are skipped. Optional private GitHub gist push / pull / sync with last-modified conflict detection and a Keep this computer / Keep the gist / Merge both choice. The token is stored in the KeyStore. API keys are never exported: the KeyStore isn't read, and secret-looking settings names and values (`sk-…`, `ghp_…` …) are removed.
+- `imagegen`: `Job.inpaint`, `Job.regions`, `A1111.regional_support()` and `ComfyUI.regional_support()`; Forge switches to `/sdapi/v1/img2img` for inpaint jobs.
+- 32 new tests (`tests/test_v4.py`) using local mock servers for Forge, ComfyUI, the GitHub gist API and Ollama.
+
+### Changed
+- Database schema version 4: a migration adds the `video_prompts` and `sync_log` tables. v2 and v3 databases upgrade automatically.
+- The tour covers the four new pages. There are new screenshots (`wildcards`, `inpaint`, `video`, `sync`), and the README has sections on inpaint, regions, wildcards, sync, and troubleshooting.
+- Two v3 tests no longer pin the version number or schema version exactly.
+
 ## [3.0.0] – 2026-10-29
 ### Added
 - **Setup wizard** (`promptmaker/firstrun.py`): opens on first launch, and from the sidebar (🧭 Setup wizard) or Settings. Checks whether Ollama is installed and running, its version and models, and pulls `llama3.2` and `qwen2.5vl` through `/api/pull` with a progress bar and Stop. Detects Forge/A1111 (`/sdapi/v1`, with the `--api` hint) and ComfyUI on their default ports, saves the results to settings, and picks an image backend if none is set.

@@ -144,6 +144,43 @@ def v3_shots():
     w.pose_cn_model.setCurrentText("xinsir_openpose_sdxl"); g("pose")
 
 
+def v4_shots():
+    os.environ["PROMPTMAKER_NO_DIALOGS"] = "1"
+    w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
+    # wildcards
+    lib = w.wc_lib
+    lib.save("hair", ["silver hair", "pink twintails", "short black hair", "long blonde hair", "{light|dark} blue hair"])
+    lib.save("outfit", ["school uniform", "black kimono", "hoodie and jeans", "witch hat and cloak", "sailor dress"])
+    lib.save("places/outdoor", ["cherry blossom park", "rainy neon street", "seaside cliff at dusk", "snowy shrine"])
+    lib.save("places/indoor", ["cosy library", "train carriage", "cafe by the window"])
+    w.go("Wildcards"); w.wc_reload(); w.wc_prompt.setPlainText("1girl, __hair__, __outfit__, {smiling|serious|surprised}, {2::__places/outdoor__|__places/indoor__}")
+    w.wc_seed.setValue(2026); w.wc_n.setValue(8); w.wc_batch(); w.wc_list.setCurrentRow(0)
+    w.wc_desc.setText("fantasy locations"); g("wildcards")
+    # inpaint & regions
+    w.go("Inpaint & Regions"); im, data = art(77, 832, 1216); w.ip_canvas.set_image(data)
+    w.ip_canvas.mode = "brush"; w.ip_canvas.brush = 90
+    from PySide6.QtCore import QPointF
+    for a, b in (((300, 380), (520, 360)), ((520, 360), (560, 520)), ((330, 420), (500, 500))):
+        w.ip_canvas._stroke(QPointF(*a), QPointF(*b))
+    w.ip_canvas.add_region("1girl, silver hair, black kimono", (.05, .1, .45, .85))
+    w.ip_canvas.add_region("1boy, short black hair, school uniform", (.52, .1, .43, .85))
+    w.rg_refresh(); w.ip_prompt.setPlainText("a golden crown with small rubies")
+    w._rg_support_shown(""); g("inpaint")
+    # video
+    w.go("Video"); w.vd_model.setCurrentIndex(w.vd_model.findData("wan22"))
+    w.vd_idea.setPlainText("a fox in the snow at sunrise")
+    for k, val in (("subject", "a red fox with a thick winter coat"), ("action", "trots through fresh snow, breath steaming"),
+                   ("scene", "a quiet birch forest at sunrise"), ("lighting", "soft golden backlight, long shadows"),
+                   ("style", "cinematic, 35mm film, shallow depth of field")):
+        w.vd[k].setText(val)
+    w.vd_camera.setCurrentText("Tracking"); w.vd_motion.setCurrentText("Natural"); w.vd_shot.setCurrentText("Medium shot")
+    w.vd_build(); w.vd_name.setText("Winter fox"); w.vd_save(); g("video")
+    # library sync
+    w.go("Library sync"); w.sy_gist.setText("3f2a9c0d1e7b4a6c8d5e"); w.sy_status.setText("✅ Pushed to gist")
+    w.store.log_sync("export", "promptmaker-library.zip", "ok"); w.store.log_sync("push", "gist:3f2a9c0d1e7b4a6c8d5e", "ok")
+    w.sy_refresh(); g("sync")
+
+
 def go():
     demo_data()
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
@@ -183,6 +220,7 @@ def go():
     w._comm_loaded(community.load_index(idx)); w.comm_status.setText(f"{len(w.comm_items)} item(s)"); w.go("Community"); g("community")
     civitai_profile()
     v3_shots()
+    v4_shots()
     w.go("Model profiles"); app.processEvents(); g("profiles")
     w.go("Settings"); g("settings")
     w.start_tour(); app.processEvents(); g("tour"); w.tour.hide()
