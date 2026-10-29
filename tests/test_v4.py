@@ -563,7 +563,7 @@ def _wait_worker(pred, timeout=5):
 def test_ui_v4_pages_present(win):
     from promptmaker import __version__
     from promptmaker.app import NAV
-    assert __version__ == "4.0.0"
+    assert __version__ == "4.0.1"
     names = [n for _, n in NAV]
     for name in ("Inpaint & Regions", "Wildcards", "Video", "Library sync"):
         win.go(name); assert names[win.stack.currentIndex()] == name
@@ -737,3 +737,20 @@ def test_hires_fix_payload():
 def test_upscalers_on_forge_backend():
     assert hasattr(imagegen.A1111("http://x"), "upscalers")
     assert imagegen.A1111("http://127.0.0.1:9").upscalers()  # fallback list when Forge is offline
+
+
+def test_sampler_scheduler_pickers(win, srv):
+    from promptmaker import imagegen
+    _, url = srv()
+    assert win.img_sampler.currentText() == imagegen.PROFILE_DEFAULT
+    assert win.img_scheduler.findText("Karras") >= 0
+    win.img_sampler.setCurrentText("DPM++ 2M SDE"); win.img_scheduler.setCurrentText("Karras")
+    win._img_save()
+    assert win.store.get("img_sampler") == "DPM++ 2M SDE" and win.store.get("img_scheduler") == "Karras"
+    win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", url)
+    job = win.make_job("a cat")[0]
+    assert job.sampler == "DPM++ 2M SDE" and job.scheduler == "Karras"
+    assert imagegen.A1111(url).payload(job)["scheduler"] == "Karras"
+    win.store.set("img_sampler", None); win.store.set("img_scheduler", None)
+    job = win.make_job("a cat")[0]
+    assert job.sampler != "DPM++ 2M SDE" and job.scheduler != "Karras"

@@ -139,6 +139,8 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 **Wildcards when generating.** `__name__` and `{a|b}` in any prompt you generate are expanded with the image's seed before it's sent, so Forge and ComfyUI don't need the Dynamic Prompts extension. Turn this off on the Wildcards page if you'd rather let the extension do it. A lone `{tag}` without `|` is left alone.
 
+**Sampler and scheduler** *(4.0.1)*. Settings → Image generation has **Sampler** and **Scheduler** pickers next to Steps/CFG. Press ⟳ to load the lists from Forge/A1111 (`/sdapi/v1/samplers`, `/sdapi/v1/schedulers`) or ComfyUI (`KSampler`'s options), or type a name. **Profile default** keeps the model profile's own choice; anything else overrides it for every page. Forge gets the separate `scheduler` field; ComfyUI workflows get `{{sampler}}` / `{{scheduler}}`.
+
 **Hires fix (Forge/A1111).** Tick **Hires fix** in Settings → Image generation and press **Save**. PromptMaker sends `enable_hr` with your scale, upscaler, hires steps and denoise (0.3–0.5 keeps the picture; 1.5× Latent with denoise 0.4 is a good start), and tells Forge Neo to reuse the same VAE and text encoders for the second pass.
 
 **Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
@@ -245,6 +247,9 @@ The WebUI is running, but it was started without its API. PromptMaker detects th
 4. Start Forge again and click **Settings → Image generation → Test connection**. It should report e.g. *Connected · Forge Neo 2.31 · N checkpoint(s)*.
 
 ![Forge API dialog](docs/screenshots/forge_api.png)
+
+**Grey/blank images after switching between Anima and SDXL**
+Anima needs extra modules in Forge's **VAE / Text Encoder** box (`qwen_image_vae` + `qwen_3_06b_base`). If they stay selected when you switch to an SDXL/Illustrious/Pony/SD1.5 checkpoint, Forge outputs flat grey images. Since 4.0.1 PromptMaker sets the right modules with every Forge image automatically (none for SD-family checkpoints, the Qwen VAE + text encoder for Anima). A profile can override this with `"forge_modules": ["file1.safetensors", ...]` in `data/profiles.json`. Manual fix on older versions: clear Forge's **VAE / Text Encoder** box (or restart Forge).
 
 **Ollama: `unknown model architecture: 'mllama'` / "error loading model" (HTTP 500)**
 `llama3.2-vision` (architecture *mllama*) isn't supported on **Ollama 0.30+**, because the llama.cpp engine has no mllama support ([ollama/ollama#16547](https://github.com/ollama/ollama/issues/16547)). Re-pulling won't help. Use another vision model, e.g. `ollama pull qwen2.5vl` (or `qwen3-vl`, `gemma3`). PromptMaker marks such models in the picker and offers a one-click switch.

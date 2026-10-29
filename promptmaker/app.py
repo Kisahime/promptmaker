@@ -2097,7 +2097,11 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
         im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
-        im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        self.img_sampler = self._pick_combo("img_sampler"); self.img_scheduler = self._pick_combo("img_scheduler")
+        im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, label("Sampler"), self.img_sampler,
+                    button("⟳", lambda: self._load_picks("samplers", self.img_sampler), "ghost", "Load samplers from the backend"),
+                    label("Scheduler"), self.img_scheduler,
+                    button("⟳", lambda: self._load_picks("schedulers", self.img_scheduler), "ghost", "Load schedulers from the backend"), None))
         self.hr_on = QCheckBox(tr("Hires fix (Forge / A1111)")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
         self.hr_scale = QDoubleSpinBox(); self.hr_scale.setRange(1.0, 4.0); self.hr_scale.setSingleStep(0.25)
         self.hr_scale.setValue(float(self.store.get("hr_scale", 1.5))); self.hr_scale.setSuffix("×")
@@ -2217,6 +2221,31 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         wk.ok.connect(lambda m: self.prov_test_lbl.setText("✅ " + m)); wk.failed.connect(lambda e: self.prov_test_lbl.setText("⚠️ " + e[:240]))
         self._keep(wk); wk.start()
 
+    def _pick_combo(self, key):
+        c = QComboBox(); c.setEditable(True); c.setMinimumWidth(170)
+        c.addItem(imagegen.PROFILE_DEFAULT)
+        cur = self.store.get(key) or imagegen.PROFILE_DEFAULT
+        if cur != imagegen.PROFILE_DEFAULT:
+            c.addItem(cur)
+        c.setCurrentText(cur)
+        if key == "img_scheduler":
+            c.addItems([x for x in imagegen.DEFAULT_SCHEDULERS if x != cur])
+        return c
+
+    def _load_picks(self, what, combo):
+        b = self.image_backend()
+        fn = getattr(b, what, None)
+        if fn is None:
+            self.notify(tr("This backend has no list to load"), error=True); return None
+        cur = combo.currentText()
+        wk = CallWorker(fn)
+
+        def done(names):
+            combo.clear(); combo.addItem(imagegen.PROFILE_DEFAULT); combo.addItems([n for n in names if n])
+            combo.setCurrentText(cur or imagegen.PROFILE_DEFAULT)
+        wk.ok.connect(done); self._keep(wk); wk.start()
+        return wk
+
     def _hr_upscalers(self):
         b = self.image_backend()
         if not isinstance(b, imagegen.A1111):
@@ -2249,6 +2278,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
         self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
         self.store.set("hr_upscaler", self.hr_up.currentText() or "Latent")
+        for k, c in (("img_sampler", self.img_sampler), ("img_scheduler", self.img_scheduler)):
+            t = c.currentText().strip()
+            self.store.set(k, None if not t or t == imagegen.PROFILE_DEFAULT else t)
         cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
         for c in self._ckpt_combos_list():
             if c is not self.img_ckpt:

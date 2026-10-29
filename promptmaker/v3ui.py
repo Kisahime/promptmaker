@@ -31,6 +31,11 @@ def _pix(png_or_path, size):
 
 
 # ================================================================ workers
+def _pick(v):
+    """Saved Settings sampler/scheduler, or '' for 'Profile default'."""
+    return "" if not v or v == imagegen.PROFILE_DEFAULT else v
+
+
 class PullWorker(QThread):
     progress = Signal(int, str)
     done = Signal(str)
@@ -270,13 +275,22 @@ class V3Pages:
         job = imagegen.Job(clean, negative, w, h, seed, g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
                            g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
                            self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""), wf_name or "a1111",
-                           (g.get("a1111_sampler") if a1 else g.get("sampler")) or self.store.get("img_sampler") or d.get("sampler", "euler"),
-                           g.get("scheduler") or d.get("scheduler", "normal"), tag)
+                           _pick(self.store.get("img_sampler")) or (g.get("a1111_sampler") if a1 else g.get("sampler")) or d.get("sampler", "euler"),
+                           _pick(self.store.get("img_scheduler")) or g.get("scheduler") or d.get("scheduler", "normal"), tag)
+        job.scheduler_set = bool(_pick(self.store.get("img_scheduler")) or g.get("scheduler"))
         if g.get("clip_skip"):
             job.clip_skip = g["clip_skip"]
         if a1 and self.store.get("hr_on", False):
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
+        job.profile_family = self.profile.get("family", "")
+        try:
+            from . import loras as _lo
+            job.profile_base = _lo.base_id_of(self.profile, getattr(self, "profiles", None))
+        except Exception:
+            job.profile_base = self.profile.get("id", "")
+        if isinstance(self.profile.get("forge_modules"), list):
+            job.forge_modules = self.profile["forge_modules"]
         job.backend_name = backend.name
         return job, backend, wf
 
