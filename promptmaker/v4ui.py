@@ -262,7 +262,7 @@ class V4Pages:
         self.ip_mode.currentIndexChanged.connect(lambda _i: setattr(self.ip_canvas, "mode", self.ip_mode.currentData()))
         self.ip_brush = QSpinBox(); self.ip_brush.setRange(2, 400); self.ip_brush.setValue(48); self.ip_brush.setSuffix(" px")
         self.ip_brush.valueChanged.connect(lambda n: setattr(self.ip_canvas, "brush", n))
-        cc.add(hrow(button("📂 Open image…", self.ip_open, "ghost"), button("🗂 Last generated", self.ip_last, "ghost"),
+        cc.add(hrow(button("📂 Open image…", lambda: self.ip_open(), "ghost"), button("🗂 Last generated", self.ip_last, "ghost"),
                     button("⬜ Blank", self.ip_blank, "ghost", "Blank canvas at the target model's size – for regions"), None))
         cc.add(hrow(self.ip_mode, label("Brush"), self.ip_brush, None, button("⇄ Invert", self.ip_canvas.invert_mask, "ghost"),
                     ConfirmButton("Clear mask", self.ip_canvas.clear_mask, "Confirm clear")))
@@ -307,7 +307,7 @@ class V4Pages:
         self.rg_status = label(tr("Forge needs the Forge Couple extension for regions; ComfyUI works as is."), "hint", wrap=True)
         rc.add(self.rg_status)
         rc.add(hrow(button("🔎 Check support", self.rg_check, "ghost"), button("📋 Copy as one prompt", self.rg_copy_plain, "ghost"),
-                    None, button("🗺 Generate with regions", self.rg_generate, "primary")))
+                    None, button("🗺 Generate with regions", lambda: self.rg_generate(), "primary")))
         rv.addWidget(rc, 1)
         split.addWidget(right); split.setSizes([640, 480])
         v.addWidget(split, 1)
@@ -634,7 +634,7 @@ class V4Pages:
         for key, name in (("skip", "Keep mine"), ("overwrite", "Take theirs"), ("rename", "Keep both (rename)")):
             self.sy_policy.addItem(tr(name), key)
         ic.add(hrow(label("Mode"), self.sy_mode, None)); ic.add(hrow(label("Same name, different content"), self.sy_policy, None))
-        ic.add(hrow(button("📥 Import…", self.sy_import, "primary"), None))
+        ic.add(hrow(button("📥 Import…", lambda: self.sy_import(), "primary"), None))
         self.sy_import_res = label("", "hint", wrap=True); ic.add(self.sy_import_res)
         ic.lay.addStretch()
         row.addWidget(ic, 1)
