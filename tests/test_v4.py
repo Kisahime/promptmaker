@@ -731,3 +731,8 @@ def test_hires_fix_payload():
     assert "enable_hr" not in imagegen.A1111("http://x").payload(job)
     job2 = imagegen.Job("a cat", seed=1)
     assert "enable_hr" not in imagegen.A1111("http://x").payload(job2)
+
+
+def test_upscalers_on_forge_backend():
+    assert hasattr(imagegen.A1111("http://x"), "upscalers")
+    assert imagegen.A1111("http://127.0.0.1:9").upscalers()  # fallback list when Forge is offline

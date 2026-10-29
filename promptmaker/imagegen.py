@@ -147,16 +147,6 @@ class ComfyUI:
     def regional_support(self):
         return "comfy"  # ConditioningSetArea is a core node
 
-    def upscalers(self):
-        """Names for the hires-fix upscaler list: latent modes + installed upscalers (ESRGAN etc)."""
-        names = []
-        for path, key in (("/sdapi/v1/latent-upscale-modes", "name"), ("/sdapi/v1/upscalers", "name")):
-            try:
-                names += [u.get(key) for u in _http(self.url + path, timeout=8) if u.get(key) and u.get(key) != "None"]
-            except (BackendError, AttributeError, TypeError):
-                pass
-        return list(dict.fromkeys(names)) or ["Latent", "R-ESRGAN 4x+ Anime6B", "4x-UltraSharp"]
-
     def controlnet_models(self):
         try:
             info = _http(self.url + "/object_info/ControlNetLoader", timeout=10)
@@ -397,6 +387,16 @@ class A1111:
             return _rg.detect_forge_regional(_http(self.url + "/sdapi/v1/scripts", timeout=8))
         except (BackendError, AttributeError):
             return ""
+
+    def upscalers(self):
+        """Names for the hires-fix upscaler list: latent modes + installed upscalers (ESRGAN etc)."""
+        names = []
+        for path, key in (("/sdapi/v1/latent-upscale-modes", "name"), ("/sdapi/v1/upscalers", "name")):
+            try:
+                names += [u.get(key) for u in _http(self.url + path, timeout=8) if u.get(key) and u.get(key) != "None"]
+            except (BackendError, AttributeError, TypeError):
+                pass
+        return list(dict.fromkeys(names)) or ["Latent", "R-ESRGAN 4x+ Anime6B", "4x-UltraSharp"]
 
     def controlnet_models(self):
         """sd-webui-controlnet / Forge: GET /controlnet/model_list (empty if the extension API isn't there)."""
