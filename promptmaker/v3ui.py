@@ -274,6 +274,9 @@ class V3Pages:
                            g.get("scheduler") or d.get("scheduler", "normal"), tag)
         if g.get("clip_skip"):
             job.clip_skip = g["clip_skip"]
+        if a1 and self.store.get("hr_on", False):
+            job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
+                         "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         job.backend_name = backend.name
         return job, backend, wf
 

@@ -719,3 +719,15 @@ def test_unload_ollama_before_image(monkeypatch):
     monkeypatch.setattr(imagegen, "BEFORE_GENERATE", [lambda: hit.append(1), lambda: 1 / 0])
     imagegen._before_generate()
     assert hit == [1]
+
+
+def test_hires_fix_payload():
+    job = imagegen.Job("a cat", seed=1, cfg=5)
+    job.hires = {"scale": 2, "upscaler": "R-ESRGAN 4x+ Anime6B", "steps": 12, "denoise": 0.35}
+    p = imagegen.A1111("http://x").payload(job)
+    assert p["enable_hr"] is True and p["hr_scale"] == 2.0 and p["hr_upscaler"] == "R-ESRGAN 4x+ Anime6B"
+    assert p["hr_second_pass_steps"] == 12 and p["denoising_strength"] == 0.35
+    job.inpaint = {"image": b"x", "mask": b"y"}
+    assert "enable_hr" not in imagegen.A1111("http://x").payload(job)
+    job2 = imagegen.Job("a cat", seed=1)
+    assert "enable_hr" not in imagegen.A1111("http://x").payload(job2)

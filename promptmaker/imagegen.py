@@ -110,6 +110,7 @@ class Job:
         self.controlnet_applied = None  # True/False/None after a Forge run with ControlNet
         self.controlnet = None  # {"image": png bytes, "model": str, "weight": float} – OpenPose from the sketcher
         self.inpaint = None     # {"image": png, "mask": png (white = repaint), "denoise", "mask_blur", "only_masked", "padding", "fill"}
+        self.hires = None       # Forge/A1111 hires fix: {"scale", "upscaler", "steps", "denoise"}
         self.regions = None     # {"regions": [{prompt,x,y,w,h,weight}], "mode": "forge couple"|"plain"|"comfy", "base_weight"}
         self.id = uuid.uuid4().hex[:8]
 
@@ -145,6 +146,16 @@ class ComfyUI:
 
     def regional_support(self):
         return "comfy"  # ConditioningSetArea is a core node
+
+    def upscalers(self):
+        """Names for the hires-fix upscaler list: latent modes + installed upscalers (ESRGAN etc)."""
+        names = []
+        for path, key in (("/sdapi/v1/latent-upscale-modes", "name"), ("/sdapi/v1/upscalers", "name")):
+            try:
+                names += [u.get(key) for u in _http(self.url + path, timeout=8) if u.get(key) and u.get(key) != "None"]
+            except (BackendError, AttributeError, TypeError):
+                pass
+        return list(dict.fromkeys(names)) or ["Latent", "R-ESRGAN 4x+ Anime6B", "4x-UltraSharp"]
 
     def controlnet_models(self):
         try:
@@ -357,6 +368,13 @@ class A1111:
         if cn and cn.get("image"):
             from .pose import add_forge_controlnet
             add_forge_controlnet(p, base64.b64encode(cn["image"]).decode(), cn.get("model", ""), cn.get("weight", 1.0))
+        hr = getattr(job, "hires", None)
+        if hr and not (getattr(job, "inpaint", None) or {}).get("image"):  # hires fix is txt2img only
+            p.update({"enable_hr": True, "hr_scale": float(hr.get("scale", 1.5)), "hr_upscaler": hr.get("upscaler") or "Latent",
+                      "hr_second_pass_steps": int(hr.get("steps", 0)), "denoising_strength": float(hr.get("denoise", 0.4)),
+                      "hr_cfg": job.cfg, "hr_sampler_name": p["sampler_name"]})
+            if job.checkpoint:
+                p["hr_checkpoint_name"] = "Use same checkpoint"
         rg = getattr(job, "regions", None)
         if rg and rg.get("regions"):
             from . import regions as _rg

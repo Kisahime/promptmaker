@@ -2098,6 +2098,19 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
         im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
         im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        self.hr_on = QCheckBox(tr("Hires fix (Forge / A1111)")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
+        self.hr_scale = QDoubleSpinBox(); self.hr_scale.setRange(1.0, 4.0); self.hr_scale.setSingleStep(0.25)
+        self.hr_scale.setValue(float(self.store.get("hr_scale", 1.5))); self.hr_scale.setSuffix("×")
+        self.hr_denoise = QDoubleSpinBox(); self.hr_denoise.setRange(0.0, 1.0); self.hr_denoise.setSingleStep(0.05)
+        self.hr_denoise.setValue(float(self.store.get("hr_denoise", 0.4)))
+        self.hr_steps = QSpinBox(); self.hr_steps.setRange(0, 150); self.hr_steps.setSpecialValueText("same")
+        self.hr_steps.setValue(int(self.store.get("hr_steps", 0) or 0))
+        self.hr_up = QComboBox(); self.hr_up.setEditable(False); self.hr_up.setMinimumWidth(220)
+        self.hr_up.addItem(self.store.get("hr_upscaler", "Latent"))
+        im.add(hrow(self.hr_on, label("Upscale"), self.hr_scale, label("Upscaler"), self.hr_up,
+                    button("⟳", self._hr_upscalers, "ghost", "Load upscalers from Forge"), None))
+        im.add(hrow(label("Hires steps"), self.hr_steps, label("Denoise"), self.hr_denoise,
+                    label("0.3–0.5 keeps the picture, higher adds detail but can change it", "hint"), None))
         self.img_unload = QCheckBox(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
         self.img_unload.setChecked(bool(self.store.get("img_unload_ollama", True)))
         self.img_unload.toggled.connect(lambda on: (self.store.set("img_unload_ollama", bool(on)), self._refresh_unload_cfg()))
@@ -2204,6 +2217,19 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         wk.ok.connect(lambda m: self.prov_test_lbl.setText("✅ " + m)); wk.failed.connect(lambda e: self.prov_test_lbl.setText("⚠️ " + e[:240]))
         self._keep(wk); wk.start()
 
+    def _hr_upscalers(self):
+        b = self.image_backend()
+        if not isinstance(b, imagegen.A1111):
+            self.notify(tr("Hires fix needs the Forge / A1111 backend"), error=True); return None
+        cur = self.hr_up.currentText()
+        wk = CallWorker(b.upscalers)
+
+        def done(names):
+            self.hr_up.clear(); self.hr_up.addItems(names)
+            i = self.hr_up.findText(cur); self.hr_up.setCurrentIndex(max(0, i))
+        wk.ok.connect(done); self._keep(wk); wk.start()
+        return wk
+
     def _img_form(self, *_):
         kind = self.img_kind.currentData()
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
@@ -2220,6 +2246,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.store.set("img_workflow", self.img_wf.currentText())
         self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
+        self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
+        self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
+        self.store.set("hr_upscaler", self.hr_up.currentText() or "Latent")
         cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
         for c in self._ckpt_combos_list():
             if c is not self.img_ckpt:
