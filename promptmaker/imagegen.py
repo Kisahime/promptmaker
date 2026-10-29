@@ -362,7 +362,9 @@ class A1111:
         if hr and not (getattr(job, "inpaint", None) or {}).get("image"):  # hires fix is txt2img only
             p.update({"enable_hr": True, "hr_scale": float(hr.get("scale", 1.5)), "hr_upscaler": hr.get("upscaler") or "Latent",
                       "hr_second_pass_steps": int(hr.get("steps", 0)), "denoising_strength": float(hr.get("denoise", 0.4)),
-                      "hr_cfg": job.cfg, "hr_sampler_name": p["sampler_name"]})
+                      "hr_cfg": job.cfg, "hr_sampler_name": p["sampler_name"],
+                      # Forge Neo: keep the same VAE / text encoders for the hires pass (None crashes modules_change)
+                      "hr_additional_modules": ["Use same choices"]})
             if job.checkpoint:
                 p["hr_checkpoint_name"] = "Use same checkpoint"
         rg = getattr(job, "regions", None)

@@ -727,6 +727,7 @@ def test_hires_fix_payload():
     p = imagegen.A1111("http://x").payload(job)
     assert p["enable_hr"] is True and p["hr_scale"] == 2.0 and p["hr_upscaler"] == "R-ESRGAN 4x+ Anime6B"
     assert p["hr_second_pass_steps"] == 12 and p["denoising_strength"] == 0.35
+    assert p["hr_additional_modules"] == ["Use same choices"]
     job.inpaint = {"image": b"x", "mask": b"y"}
     assert "enable_hr" not in imagegen.A1111("http://x").payload(job)
     job2 = imagegen.Job("a cat", seed=1)
