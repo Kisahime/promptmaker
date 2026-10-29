@@ -256,10 +256,7 @@ class V4Pages:
         split = QSplitter(Qt.Horizontal)
         cc = Card("Canvas")
         self.ip_canvas = InpaintCanvas()
-        self.ip_size = QComboBox()
-        for name, wh in (("Model default", None), ("1024×1024 square", (1024, 1024)), ("1344×768 wide", (1344, 768)),
-                         ("1216×832 landscape", (1216, 832)), ("832×1216 portrait", (832, 1216)), ("768×1344 tall", (768, 1344))):
-            self.ip_size.addItem(tr(name), wh)
+        self.ip_size = self.make_size_combo("ip_size")
         self.ip_size.currentIndexChanged.connect(lambda _i: self.ip_blank() if self.ip_canvas.image is None else None)
         self.ip_mode = QComboBox()
         for key, name in (("brush", "🖌 Paint mask"), ("erase", "🧽 Erase mask"), ("region", "▭ Draw regions")):

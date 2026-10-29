@@ -234,6 +234,22 @@ class V3Pages:
         self.setup_dlg = SetupWizard(self, auto_check); self.setup_dlg.open()
         return self.setup_dlg
 
+    SIZE_CHOICES = (("Model default", None), ("1024×1024 square", (1024, 1024)), ("1344×768 wide", (1344, 768)),
+                    ("1216×832 landscape", (1216, 832)), ("1152×896 landscape", (1152, 896)), ("832×1216 portrait", (832, 1216)),
+                    ("896×1152 portrait", (896, 1152)), ("768×1344 tall", (768, 1344)), ("512×768 portrait (SD1.5)", (512, 768)),
+                    ("512×512 square (SD1.5)", (512, 512)))
+
+    def make_size_combo(self, store_key=None):
+        """Image size picker. 'Model default' = the profile's size for the aspect picked on the main page."""
+        c = QComboBox()
+        for name, wh in self.SIZE_CHOICES:
+            c.addItem(tr(name), wh)
+        if store_key:
+            c.setCurrentIndex(max(0, min(int(self.store.get(store_key, 0) or 0), c.count() - 1)))
+            c.currentIndexChanged.connect(lambda i: self.store.set(store_key, i))
+        c.setToolTip(tr("Model default uses the profile's size for the aspect ratio chosen on the main page"))
+        return c
+
     def make_job(self, prompt, negative="", seed=None, tag=""):
         """Build an imagegen.Job for the current profile/backend. Returns (job, backend, workflow) or None."""
         import re
@@ -301,8 +317,9 @@ class V3Pages:
         self.ar_start = button("▶ Start loop", self.ar_run, "primary")
         self.ar_stop = button("■ Stop", self.ar_stop_loop, "ghost"); self.ar_stop.setEnabled(False)
         self.ar_ckpt = self.make_ckpt_combo()
+        self.ar_size = self.make_size_combo("ar_size")
         top.add(hrow(label("Checkpoint"), self.ar_ckpt, button("⟳", self.load_checkpoints, "ghost", "Reload checkpoint list"),
-                     label("Shared with Settings and Pose", "hint"), None))
+                     label("Shared with Settings and Pose", "hint"), None, label("Size"), self.ar_size))
         top.add(hrow(label("Vision model"), self.ar_vision, label("Iterations"), self.ar_iters, label("Stop at score"), self.ar_thresh,
                      None, self.ar_stop, self.ar_start))
         self.ar_status = label("", "muted", wrap=True); top.add(self.ar_status)
@@ -338,6 +355,9 @@ class V3Pages:
         self.store.set("ar_iters", self.ar_iters.value()); self.store.set("ar_threshold", self.ar_thresh.value())
         neg = self._default_negative()
         tmpl, _, wf = self.make_job("x", neg, None, "autorefine")  # read settings here: SQLite is main-thread only
+        wh = self.ar_size.currentData()
+        if wh:
+            tmpl.width, tmpl.height = wh
 
         def job_for(p, seed):
             import copy as _copy
