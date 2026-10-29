@@ -97,6 +97,8 @@ class Job:
         self.clip_skip = None
         self.controlnet_applied = None  # True/False/None after a Forge run with ControlNet
         self.controlnet = None  # {"image": png bytes, "model": str, "weight": float} – OpenPose from the sketcher
+        self.inpaint = None     # {"image": png, "mask": png (white = repaint), "denoise", "mask_blur", "only_masked", "padding", "fill"}
+        self.regions = None     # {"regions": [{prompt,x,y,w,h,weight}], "mode": "forge couple"|"plain"|"comfy", "base_weight"}
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -129,6 +131,9 @@ class ComfyUI:
         except (BackendError, KeyError, IndexError, TypeError):
             return []
 
+    def regional_support(self):
+        return "comfy"  # ConditioningSetArea is a core node
+
     def controlnet_models(self):
         try:
             info = _http(self.url + "/object_info/ControlNetLoader", timeout=10)
@@ -155,6 +160,18 @@ class ComfyUI:
 
     def generate(self, job, workflow, progress=None, cancelled=None, poll=0.7, timeout=1800):
         wf = inject(workflow, job.values())
+        rg = getattr(job, "regions", None)
+        ip = getattr(job, "inpaint", None)
+        if rg or ip:
+            from . import regions as _rg
+            try:
+                if rg and rg.get("regions"):
+                    wf = _rg.add_comfy_regions(wf, rg["regions"], job.width, job.height)
+                if ip and ip.get("image") and ip.get("mask"):
+                    name = self.upload_image(_rg.comfy_masked_png(ip["image"], ip["mask"]), f"pm_inpaint_{job.id}.png")
+                    wf = _rg.add_comfy_inpaint(wf, name, ip.get("denoise", 0.75), ip.get("mask_blur", 6))
+            except ValueError as e:
+                raise BackendError(str(e)) from e
         cn = getattr(job, "controlnet", None)
         if cn and cn.get("image") and cn.get("model"):
             from .pose import add_comfy_controlnet
@@ -327,7 +344,28 @@ class A1111:
         if cn and cn.get("image"):
             from .pose import add_forge_controlnet
             add_forge_controlnet(p, base64.b64encode(cn["image"]).decode(), cn.get("model", ""), cn.get("weight", 1.0))
+        rg = getattr(job, "regions", None)
+        if rg and rg.get("regions"):
+            from . import regions as _rg
+            if rg.get("mode") == _rg.FORGE_COUPLE:
+                _rg.forge_couple(p, job.prompt, rg["regions"], rg.get("base_weight", 0.5))
+            else:
+                p["prompt"] = _rg.plain_prompt(job.prompt, rg["regions"])
+        ip = getattr(job, "inpaint", None)
+        if ip and ip.get("image") and ip.get("mask"):
+            from . import regions as _rg
+            _rg.forge_inpaint(p, base64.b64encode(ip["image"]).decode(), base64.b64encode(ip["mask"]).decode(),
+                              ip.get("denoise", 0.75), ip.get("mask_blur", 4), ip.get("only_masked", True),
+                              ip.get("padding", 32), ip.get("fill", "original"))
         return p
+
+    def regional_support(self):
+        """'forge couple' if the Forge Couple extension is installed, else '' (Forge has no built-in regional prompting)."""
+        from . import regions as _rg
+        try:
+            return _rg.detect_forge_regional(_http(self.url + "/sdapi/v1/scripts", timeout=8))
+        except (BackendError, AttributeError):
+            return ""
 
     def controlnet_models(self):
         """sd-webui-controlnet / Forge: GET /controlnet/model_list (empty if the extension API isn't there)."""
@@ -356,7 +394,8 @@ class A1111:
 
         def run():
             try:
-                result["r"] = self._api("/sdapi/v1/txt2img", self.payload(job), timeout=timeout)
+                ep = "/sdapi/v1/img2img" if (getattr(job, "inpaint", None) or {}).get("image") else "/sdapi/v1/txt2img"
+                result["r"] = self._api(ep, self.payload(job), timeout=timeout)
             except BackendError as e:
                 err["e"] = e
         t = threading.Thread(target=run, daemon=True)
