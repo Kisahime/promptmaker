@@ -70,3 +70,14 @@ def test_lazy_load_on_open(win, monkeypatch):
     assert w.img_ckpt.count() == 2
     w.pose_ckpt.showPopup(); app.processEvents(); w.pose_ckpt.hidePopup()
     assert calls == [1]  # not reloaded once filled
+
+
+def test_size_pickers(win):
+    w, _st, _app = win
+    assert w.ar_size.itemData(0) is None and w.ar_size.count() >= 8
+    i = [w.ar_size.itemData(k) for k in range(w.ar_size.count())].index((1344, 768))
+    w.ar_size.setCurrentIndex(i)
+    assert w.store.get("ar_size") == i
+    j = [w.ip_size.itemData(k) for k in range(w.ip_size.count())].index((832, 1216))
+    w.ip_size.setCurrentIndex(j)
+    assert w.ip_canvas.img_size() == (832, 1216)

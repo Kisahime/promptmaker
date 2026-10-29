@@ -24,6 +24,7 @@ from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
+from .v4ui import V4Pages
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,9 +37,9 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("👤", "Presets"), ("🧩", "LoRAs"), ("🔍", "Analyse"), ("📊", "Score"),
+NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("🖌", "Inpaint & Regions"), ("👤", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("📊", "Score"),
        ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
-       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("⚙", "Settings")]
+       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("☁", "Library sync"), ("⚙", "Settings")]
 
 
 def copy(text):
@@ -60,7 +61,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(V3Pages, QMainWindow):
+class MainWindow(V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -79,6 +80,8 @@ class MainWindow(V3Pages, QMainWindow):
         self.gallery = Gallery(os.path.join(data_dir, "gallery"))
         self.queue_jobs = []
         self.genq = GenQueue()
+        imagegen.BEFORE_GENERATE[:] = [self._free_ollama_vram]
+        self._refresh_unload_cfg()
         self.genq.progress.connect(self._gen_progress); self.genq.finished_job.connect(self._gen_done)
         self.genq.failed_job.connect(self._gen_failed)
         self.make_provider()
@@ -96,10 +99,10 @@ class MainWindow(V3Pages, QMainWindow):
         h.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
-                           self._presets_page, self._loras_page, self._analyse_page,
+                           self._inpaint_page, self._presets_page, self._wildcards_page, self._loras_page, self._video_page, self._analyse_page,
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
-                           self._packs_page, self._community_page, self._profiles_page, self._settings_page):
+                           self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page):
             self.stack.addWidget(builder_fn())
         self.toast = Toast(root)
         self.nav.currentRowChanged.connect(self._nav_changed)
@@ -163,8 +166,12 @@ class MainWindow(V3Pages, QMainWindow):
             self.score_in.setPlainText(self.current_text())
         elif name == "Refine" and not self.work.toPlainText().strip():
             self.work.setPlainText(self.current_text())
-        if name in ("Settings", "Pose", "Auto-refine"):
+        if name in ("Settings", "Pose", "Auto-refine", "Inpaint & Regions"):
             self._autoload_checkpoints()
+        elif name == "Library sync":
+            self.sy_refresh()
+        elif name == "Wildcards":
+            self.wc_reload()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -216,6 +223,20 @@ class MainWindow(V3Pages, QMainWindow):
         except Exception as e:  # noqa: BLE001
             return self._models_failed(e, quiet)
         return self._models_loaded(models, quiet)
+
+    def _free_ollama_vram(self):
+        """Runs on the generation thread: drop Ollama's loaded text/vision models so the image model gets the VRAM.
+        Only when the setting is on and the AI provider is a local Ollama. Settings are cached on the main thread."""
+        cfg = getattr(self, "_unload_cfg", None)
+        if not cfg or not cfg[0]:
+            return []
+        return ollama.unload_all(cfg[1])
+
+    def _refresh_unload_cfg(self):
+        pid = self.store.get("provider", "ollama")
+        on = bool(self.store.get("img_unload_ollama", True)) and providers.PRESETS.get(pid, {}).get("kind", "ollama") == "ollama"
+        url = self.store.get(f"provider_url:{pid}") or providers.PRESETS.get(pid, {}).get("base_url") or ollama.BASE
+        self._unload_cfg = (on, url)
 
     def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7, model=None, vision=False):
         if self.worker and self.worker.isRunning():
@@ -1524,6 +1545,7 @@ class MainWindow(V3Pages, QMainWindow):
         url = self.store.get(f"provider_url:{pid}") or providers.PRESETS.get(pid, {}).get("base_url")
         key = self.keys.get(f"api_key:{pid}") if providers.PRESETS.get(pid, {}).get("key") else ""
         self.provider = providers.make(pid, url, key)
+        self._refresh_unload_cfg()
         if hasattr(self, "prov_label"):
             self.prov_label.setText(providers.PRESETS.get(pid, providers.PRESETS["ollama"])["label"])
         return self.provider
@@ -2076,6 +2098,23 @@ class MainWindow(V3Pages, QMainWindow):
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
         im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
         im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        self.hr_on = QCheckBox(tr("Hires fix (Forge / A1111)")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
+        self.hr_scale = QDoubleSpinBox(); self.hr_scale.setRange(1.0, 4.0); self.hr_scale.setSingleStep(0.25)
+        self.hr_scale.setValue(float(self.store.get("hr_scale", 1.5))); self.hr_scale.setSuffix("×")
+        self.hr_denoise = QDoubleSpinBox(); self.hr_denoise.setRange(0.0, 1.0); self.hr_denoise.setSingleStep(0.05)
+        self.hr_denoise.setValue(float(self.store.get("hr_denoise", 0.4)))
+        self.hr_steps = QSpinBox(); self.hr_steps.setRange(0, 150); self.hr_steps.setSpecialValueText("same")
+        self.hr_steps.setValue(int(self.store.get("hr_steps", 0) or 0))
+        self.hr_up = QComboBox(); self.hr_up.setEditable(False); self.hr_up.setMinimumWidth(220)
+        self.hr_up.addItem(self.store.get("hr_upscaler", "Latent"))
+        im.add(hrow(self.hr_on, label("Upscale"), self.hr_scale, label("Upscaler"), self.hr_up,
+                    button("⟳", self._hr_upscalers, "ghost", "Load upscalers from Forge"), None))
+        im.add(hrow(label("Hires steps"), self.hr_steps, label("Denoise"), self.hr_denoise,
+                    label("0.3–0.5 keeps the picture, higher adds detail but can change it", "hint"), None))
+        self.img_unload = QCheckBox(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
+        self.img_unload.setChecked(bool(self.store.get("img_unload_ollama", True)))
+        self.img_unload.toggled.connect(lambda on: (self.store.set("img_unload_ollama", bool(on)), self._refresh_unload_cfg()))
+        im.add(self.img_unload)
         self.img_test_lbl = label("", "muted", wrap=True)
         im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
         im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
@@ -2178,6 +2217,19 @@ class MainWindow(V3Pages, QMainWindow):
         wk.ok.connect(lambda m: self.prov_test_lbl.setText("✅ " + m)); wk.failed.connect(lambda e: self.prov_test_lbl.setText("⚠️ " + e[:240]))
         self._keep(wk); wk.start()
 
+    def _hr_upscalers(self):
+        b = self.image_backend()
+        if not isinstance(b, imagegen.A1111):
+            self.notify(tr("Hires fix needs the Forge / A1111 backend"), error=True); return None
+        cur = self.hr_up.currentText()
+        wk = CallWorker(b.upscalers)
+
+        def done(names):
+            self.hr_up.clear(); self.hr_up.addItems(names)
+            i = self.hr_up.findText(cur); self.hr_up.setCurrentIndex(max(0, i))
+        wk.ok.connect(done); self._keep(wk); wk.start()
+        return wk
+
     def _img_form(self, *_):
         kind = self.img_kind.currentData()
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
@@ -2194,6 +2246,9 @@ class MainWindow(V3Pages, QMainWindow):
         self.store.set("img_workflow", self.img_wf.currentText())
         self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
+        self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
+        self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
+        self.store.set("hr_upscaler", self.hr_up.currentText() or "Latent")
         cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
         for c in self._ckpt_combos_list():
             if c is not self.img_ckpt:
@@ -2329,6 +2384,10 @@ class MainWindow(V3Pages, QMainWindow):
             ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),
             ("Auto-refine", "New in 3.0: generate, let a vision model check the image against your idea, and refine the prompt automatically."),
             ("Pose", "Sketch poses and subject boxes – they become composition tags, or an OpenPose image for ControlNet."),
+            ("Inpaint & Regions", "New in 4.0: paint a mask to redraw part of an image, or draw boxes that each get their own prompt."),
+            ("Wildcards", "New in 4.0: __wildcards__ and {a|b|c} turn one prompt into many varied ones – the AI can write lists for you."),
+            ("Video", "New in 4.0: prompts for Wan, LTX-Video and HunyuanVideo with camera moves and the right structure for each."),
+            ("Library sync", "New in 4.0: export or import everything, or sync it to a private GitHub gist."),
             ("Gallery", "Connect ComfyUI or Forge in Settings to generate images – they land here with full metadata."),
             ("Settings", "Choose your AI provider (Ollama, LM Studio, cloud…), image backend, language and data location. Enjoy!")]
 

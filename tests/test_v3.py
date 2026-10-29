@@ -306,7 +306,7 @@ def test_migration_from_v2_database(tmp_path):
                      "INSERT INTO settings VALUES('seeded','true');")
     db.commit(); db.close()
     st = Store(path)
-    assert st.schema_version() == 3 and st.history()[0][2] == "old prompt" and st.characters() == []
+    assert st.schema_version() == Store.SCHEMA_VERSION >= 3 and st.history()[0][2] == "old prompt" and st.characters() == []
     st.save_style({"name": "Ink", "tags": "ink wash"})
     assert Store(path).style("Ink")["tags"] == "ink wash"  # migration runs once; data kept on reopen
 
@@ -431,7 +431,7 @@ def win(tmp_path, monkeypatch):
 def test_ui_v3_pages_present(win):
     from promptmaker import __version__
     from promptmaker.app import NAV
-    assert __version__ == "3.0.0"
+    assert int(__version__.split(".")[0]) >= 3  # v3 pages must survive later versions
     for name in ("Auto-refine", "Pose", "Presets", "LoRAs"):
         win.go(name); assert NAV[win.stack.currentIndex()][1] == name
 

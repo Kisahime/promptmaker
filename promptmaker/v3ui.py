@@ -234,6 +234,22 @@ class V3Pages:
         self.setup_dlg = SetupWizard(self, auto_check); self.setup_dlg.open()
         return self.setup_dlg
 
+    SIZE_CHOICES = (("Model default", None), ("1024×1024 square", (1024, 1024)), ("1344×768 wide", (1344, 768)),
+                    ("1216×832 landscape", (1216, 832)), ("1152×896 landscape", (1152, 896)), ("832×1216 portrait", (832, 1216)),
+                    ("896×1152 portrait", (896, 1152)), ("768×1344 tall", (768, 1344)), ("512×768 portrait (SD1.5)", (512, 768)),
+                    ("512×512 square (SD1.5)", (512, 512)))
+
+    def make_size_combo(self, store_key=None):
+        """Image size picker. 'Model default' = the profile's size for the aspect picked on the main page."""
+        c = QComboBox()
+        for name, wh in self.SIZE_CHOICES:
+            c.addItem(tr(name), wh)
+        if store_key:
+            c.setCurrentIndex(max(0, min(int(self.store.get(store_key, 0) or 0), c.count() - 1)))
+            c.currentIndexChanged.connect(lambda i: self.store.set(store_key, i))
+        c.setToolTip(tr("Model default uses the profile's size for the aspect ratio chosen on the main page"))
+        return c
+
     def make_job(self, prompt, negative="", seed=None, tag=""):
         """Build an imagegen.Job for the current profile/backend. Returns (job, backend, workflow) or None."""
         import re
@@ -241,6 +257,10 @@ class V3Pages:
         backend = self.image_backend()
         if not prompt or not backend:
             return None
+        if seed in (None, "", -1):
+            seed = imagegen.new_seed()
+        if hasattr(self, "expand_wildcards"):  # v4: __wildcards__ / {a|b} use the image seed, so they're reproducible
+            prompt = self.expand_wildcards(prompt, seed)
         a1 = isinstance(backend, imagegen.A1111)
         wf, meta, wf_name = (None, {}, "") if a1 else self._workflow()
         d = meta.get("defaults", {})
@@ -254,6 +274,9 @@ class V3Pages:
                            g.get("scheduler") or d.get("scheduler", "normal"), tag)
         if g.get("clip_skip"):
             job.clip_skip = g["clip_skip"]
+        if a1 and self.store.get("hr_on", False):
+            job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
+                         "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         job.backend_name = backend.name
         return job, backend, wf
 
@@ -297,8 +320,9 @@ class V3Pages:
         self.ar_start = button("▶ Start loop", self.ar_run, "primary")
         self.ar_stop = button("■ Stop", self.ar_stop_loop, "ghost"); self.ar_stop.setEnabled(False)
         self.ar_ckpt = self.make_ckpt_combo()
+        self.ar_size = self.make_size_combo("ar_size")
         top.add(hrow(label("Checkpoint"), self.ar_ckpt, button("⟳", self.load_checkpoints, "ghost", "Reload checkpoint list"),
-                     label("Shared with Settings and Pose", "hint"), None))
+                     label("Shared with Settings and Pose", "hint"), None, label("Size"), self.ar_size))
         top.add(hrow(label("Vision model"), self.ar_vision, label("Iterations"), self.ar_iters, label("Stop at score"), self.ar_thresh,
                      None, self.ar_stop, self.ar_start))
         self.ar_status = label("", "muted", wrap=True); top.add(self.ar_status)
@@ -334,6 +358,9 @@ class V3Pages:
         self.store.set("ar_iters", self.ar_iters.value()); self.store.set("ar_threshold", self.ar_thresh.value())
         neg = self._default_negative()
         tmpl, _, wf = self.make_job("x", neg, None, "autorefine")  # read settings here: SQLite is main-thread only
+        wh = self.ar_size.currentData()
+        if wh:
+            tmpl.width, tmpl.height = wh
 
         def job_for(p, seed):
             import copy as _copy

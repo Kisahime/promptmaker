@@ -4,9 +4,9 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 3 adds a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 4 adds wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v3.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v3.0.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v4.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v4.0.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -33,6 +33,13 @@ Everything runs on your own computer by default. The AI features are optional an
 - **👤 Presets** *(3.0)*: save **characters** (name, appearance tags, outfit, optional LoRA and weight, reference image) and **styles** (tags plus extra negative). Tick several to combine them in any prompt, and Batch can keep them fixed on every variation so a character stays consistent.
 - **🧍 Pose** *(3.0)*: a canvas with draggable OpenPose-style skeletons (8 starter poses) and boxes for other subjects. It turns the sketch into composition tags (framing, pose, facing, positions) in the target model's style, exports an OpenPose PNG, and can generate with **ControlNet** via Forge's `alwayson_scripts` or by adding a ControlNet node to your ComfyUI workflow. Pick the ControlNet model from a dropdown filled from Forge; the page warns if it doesn't match your checkpoint (Anima needs an Anima ControlNet-LLLite model) and tells you whether the pose was actually applied.
 - **🗂 Checkpoint picker** *(3.0)*: choose the Forge/ComfyUI checkpoint in Settings, on the Pose page or on the Auto-refine page. All three are the same setting.
+- **🎲 Wildcards** *(4.0)*: write `__hair__` to pick a random line from `wildcards/hair.txt`, `{a|b|c}` to pick one option, `{2::a|b}` for weights, `{2$$a|b|c}` or `{1-3$$ and $$a|b|c}` to pick several. Folders (`__people/job__`), globs (`__places/*__`), YAML packs and nesting all work, using the same syntax as **sd-dynamic-prompts**. Results are seeded, so the same seed always gives the same prompt. Preview one expansion or a batch of N different variations, keep your ticked characters and styles fixed while everything else changes, and queue one image per variation. The page also creates, edits and deletes wildcard files, imports a folder or a Civitai zip pack (including zips inside zips), and has the local AI **write a new list** from a description such as "50 fantasy locations". Wildcards in prompts sent to Forge or ComfyUI are expanded with the image's seed, wherever the prompt comes from.
+- **🖌 Inpaint & Regions** *(4.0)*: open an image (or take the last generated one), paint a mask and send it to **img2img inpaint**, with denoise, mask blur, *whole picture / only masked* and padding. Or draw boxes that each get their own prompt (**regional prompting**). ComfyUI needs nothing extra (`ConditioningSetArea` + `ConditioningCombine`). Forge has no built-in regional prompting, so PromptMaker uses the free **Forge Couple** extension when it's installed. If it isn't, the page says which extension to install, and you can send everything as one prompt with position words instead. The page uses the same checkpoint picker as Settings, Pose and Auto-refine.
+- **🎬 Video** *(4.0)*: prompt writing for **Wan 2.2 / 2.1**, **LTX-Video** and **HunyuanVideo**. Fill in the subject, action and scene, and pick a camera move (14 presets: push in, orbit, tracking, FPV drone …), a motion preset, the shot size, lighting and style. The duration shows the frame count each model accepts (4n+1 or 8n+1 at its fps). **Build** writes the prompt offline in the structure that model prefers. **Write with AI** has your local LLM write it to the model's own prompting guide. You also get a word-count/camera check, the model's default negative prompt (where it has one), and saved video prompts. PromptMaker doesn't render video.
+- **☁ Library sync** *(4.0)*: export everything (history, favourites, templates, versions, characters, styles, video prompts, LoRA metadata, wildcards, model profiles and settings) as one `.zip` or `.json`, and import it with **merge** or **replace**. When the same name has different content you choose *keep mine*, *take theirs* or *keep both*. Optional **private GitHub gist** sync with your own token (kept in the OS keyring) can push, pull or sync, deciding by last-modified time and asking you on a conflict. **API keys and tokens are never exported.**
+- **🔍 Hires fix** *(4.0)*: switch on Forge/A1111's hires fix in **Settings → Image generation**, with the upscale factor, upscaler (loaded from your Forge), hires steps and denoise. It applies to every image PromptMaker generates (except inpaint).
+- **🧹 Frees VRAM for images** *(4.0)*: right before each image goes to Forge or ComfyUI, PromptMaker tells Ollama to unload its text and vision models so the image model gets the GPU memory. On by default; you can turn it off in Settings → Image generation.
+- **📐 Size picker** *(4.0)*: Auto-refine and Inpaint & Regions have their own image-size choice (square, wide, landscape, portrait, tall, SD1.5). *Model default* uses the profile's aspect ratio.
 - **🎨 App icon** *(3.0)*: PromptMaker has its own icon on the window, taskbar and desktop shortcut.
 - **🩹 Friendly errors** *(2.0)*:
   - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
@@ -41,6 +48,12 @@ Everything runs on your own computer by default. The AI features are optional an
 - A polished dark/light theme and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
+
+| Wildcards *(4.0)* | Inpaint & Regions *(4.0)* |
+|---|---|
+| ![Wildcards](docs/screenshots/wildcards.png) | ![Inpaint & Regions](docs/screenshots/inpaint.png) |
+| **Video prompts** *(4.0)* | **Library sync** *(4.0)* |
+| ![Video prompts](docs/screenshots/video.png) | ![Library sync](docs/screenshots/sync.png) |
 
 | Setup wizard *(3.0)* | Auto-refine *(3.0)* |
 |---|---|
@@ -120,6 +133,16 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 **ControlNet (Pose page).** On Forge/A1111 the OpenPose image is sent as a ControlNet unit in `alwayson_scripts` (Forge has ControlNet built in; on AUTOMATIC1111 install *sd-webui-controlnet*). The ⟳ button lists models from `/controlnet/model_list`. On ComfyUI the image is uploaded with `/upload/image`, and `LoadImage → ControlNetLoader → ControlNetApplyAdvanced` nodes are added in front of each KSampler in your workflow. Put an OpenPose ControlNet model (for SDXL, e.g. *xinsir openpose*) in ComfyUI's `models/controlnet` folder.
 
+**Inpaint (Inpaint & Regions page).** Forge/A1111: `/sdapi/v1/img2img` with `init_images`, `mask` (white = repaint), `denoising_strength`, `mask_blur`, `inpaint_full_res` (*Only masked*) and `inpaint_full_res_padding`. Nothing to install. ComfyUI: the picture is uploaded with the mask in its alpha channel, and `LoadImage → VAEEncode → GrowMask → SetLatentNoiseMask` replaces the empty latent in your workflow, with the KSampler's denoise set from the page.
+
+**Regional prompts.** ComfyUI: one `CLIPTextEncode → ConditioningSetArea` per box, combined with your main prompt by `ConditioningCombine`, which is all built in. Forge has no built-in regional prompting, so install **Forge Couple**: in Forge go to *Extensions → Install from URL* and enter `https://github.com/Haoming02/sd-forge-couple`, then restart. PromptMaker detects it through `/sdapi/v1/scripts` (**🔎 Check support**) and sends the boxes in its *Advanced* mode, with the main prompt as a full-image background whose strength you set as *Base weight* (default 0.2). **Repeat main prompt in every region** (on by default) also adds the main prompt to each box. Put the shared scene and the count (`2girls, sitting on a beach`) in the main prompt and only each character's own details in their box. For two characters, two side-by-side boxes on a wide canvas (e.g. 1344×768) work best. Without it you get that message, and can choose **Send as one prompt instead** (for example `(a cat) on the left, (a dog) on the right`).
+
+**Wildcards when generating.** `__name__` and `{a|b}` in any prompt you generate are expanded with the image's seed before it's sent, so Forge and ComfyUI don't need the Dynamic Prompts extension. Turn this off on the Wildcards page if you'd rather let the extension do it. A lone `{tag}` without `|` is left alone.
+
+**Hires fix (Forge/A1111).** Tick **Hires fix** in Settings → Image generation and press **Save**. PromptMaker sends `enable_hr` with your scale, upscaler, hires steps and denoise (0.3–0.5 keeps the picture; 1.5× Latent with denoise 0.4 is a good start), and tells Forge Neo to reuse the same VAE and text encoders for the second pass.
+
+**Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
+
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
 
 ## Civitai checkpoint profiles
@@ -198,6 +221,10 @@ History, templates, favourites, versions and settings are stored in `data/prompt
 - **Portable mode** (the default) keeps everything in `data/` next to the app, so you can copy the whole folder anywhere.
 - Turn portable mode off in **Settings** to use `%APPDATA%\PromptMaker` on Windows (`~/.local/share/PromptMaker` or `~/Library/Application Support/PromptMaker` elsewhere). Your data is copied over the first time and the change takes effect after a restart. The choice is remembered by a `use_appdata.flag` file next to the app.
 
+Wildcard files live in `data/wildcards/` (`.txt`, one entry per line, `#` for comments; or `.yaml`). Subfolders become `__folder/name__`. You can also drop sd-dynamic-prompts packs straight in.
+
+**Library sync** (*☁ Library sync* page): **Export .zip** keeps wildcards as normal files, and **.json** is a single file. Machine-specific settings (folder paths, the gist ID, setup results) and anything that looks like a secret are left out, and API keys are never read at all, because they live in the keyring or `secrets.json`. For gist sync, create a token at <https://github.com/settings/tokens>: a classic token with the **gist** scope, or a fine-grained one with *Gists: read & write*. Paste it and press **Save token**; it's stored like your API keys. The first push creates a **private** (secret) gist. On another computer, paste the same token and the gist ID, then press **Sync**. Sync compares last-modified times with the last successful sync. If only one side changed, it pushes or pulls. If both did, you choose **Keep this computer**, **Keep the gist** or **Merge both**.
+
 The `data/` folder is git-ignored.
 
 ## Updates & privacy
@@ -238,6 +265,18 @@ The model is NSFW or gated, or its images hide their generation data from anonym
 **Community page shows an error.** Check **Settings → Community gallery → Index URL** (the default is `community/index.json` on `main`). Downloads whose SHA-256 doesn't match are refused on purpose.
 
 **API keys saved "in plain text".** No OS keyring was found. Run `install.bat` / `install.sh` again to install `keyring`, or keep `data/secrets.json` private.
+
+**Regions: "Regional prompts on Forge need the free Forge Couple extension".** Forge (including Forge Neo) has no regional prompting built in. Install *sd-forge-couple* (see [Image generation](#image-generation-optional)), restart Forge and press **🔎 Check support**. If Forge Couple reports *"Image must contain weights on all pixels"*, raise **Base weight** above 0. Forge Couple and sd-dynamic-prompts can clash, but PromptMaker expands wildcards itself, so you can disable Dynamic Prompts.
+
+**Inpaint changes the whole picture / nothing changes.** Lower **Denoise** (0.4–0.6 keeps more of the original) and use *Only masked* for small areas. For big changes, raise it to 0.8–1.0 and set *Masked content* to *latent noise*. On ComfyUI, inpainting works best with an inpaint checkpoint, though normal ones work at lower denoise.
+
+**Wildcard shows up as `__name__` in the result.** There's no file with that name. The Wildcards page lists unknown names under **Try it**. Names are case-insensitive and folders use `/` (`__people/job__`).
+
+**Gist sync: 401 / 403 / 404.** 401 means the token is wrong or expired. 403 means it lacks the *gist* scope (or *Gists: read & write* on a fine-grained token). 404 means the gist ID is wrong, or the token belongs to another account. Clear the Gist box to create a new one on the next push.
+
+**Regions: only one character appears.** Keep **Repeat main prompt in every region** ticked, put the count (`2girls`) in the main prompt, use a wide size from the **Size** picker, make the boxes side by side, and give each character clearly different details (hair colour, outfit). Delete any box that covers the whole canvas.
+
+**Hires fix: `TypeError: 'NoneType' object is not iterable` in Forge's `modules_change`.** This came from PromptMaker versions before 4.0.0's final build; update. 4.0.0 sends `hr_additional_modules`, which Forge Neo needs.
 
 **Nothing happens on Linux, or Qt errors.** Install the Qt runtime libraries (`libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` on Debian/Ubuntu).
 
