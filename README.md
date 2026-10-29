@@ -6,7 +6,7 @@
 
 Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 3 adds a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v2.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v2.0.0) · **Version 3.0.0** in this branch · [Changelog](CHANGELOG.md)
+**Latest release:** [v3.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v3.0.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -31,7 +31,9 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🔄 Auto-refine** *(3.0)*: generate an image with Forge or ComfyUI, let a vision model score it against your idea (0–100, with what's missing or wrong), have the local AI rewrite the prompt, and repeat for N iterations or until a target score. Every iteration is shown with its image and review. Stop at any time and **Keep best**.
 - **🧩 LoRAs** *(3.0)*: scans your models folder (Forge layout by default: `models\Lora`, `models\LyCORIS`, `embeddings`), hashes each file (SHA256 / AutoV2) and looks it up on Civitai for its name, trigger words, base model and preview. Results are cached. Filter by compatibility with the target model profile and insert `<lora:name:weight>` plus trigger words in one click.
 - **👤 Presets** *(3.0)*: save **characters** (name, appearance tags, outfit, optional LoRA and weight, reference image) and **styles** (tags plus extra negative). Tick several to combine them in any prompt, and Batch can keep them fixed on every variation so a character stays consistent.
-- **🧍 Pose** *(3.0)*: a canvas with draggable OpenPose-style skeletons (8 starter poses) and boxes for other subjects. It turns the sketch into composition tags (framing, pose, facing, positions) in the target model's style, exports an OpenPose PNG, and can generate with **ControlNet** via Forge's `alwayson_scripts` or by adding a ControlNet node to your ComfyUI workflow.
+- **🧍 Pose** *(3.0)*: a canvas with draggable OpenPose-style skeletons (8 starter poses) and boxes for other subjects. It turns the sketch into composition tags (framing, pose, facing, positions) in the target model's style, exports an OpenPose PNG, and can generate with **ControlNet** via Forge's `alwayson_scripts` or by adding a ControlNet node to your ComfyUI workflow. Pick the ControlNet model from a dropdown filled from Forge; the page warns if it doesn't match your checkpoint (Anima needs an Anima ControlNet-LLLite model) and tells you whether the pose was actually applied.
+- **🗂 Checkpoint picker** *(3.0)*: choose the Forge/ComfyUI checkpoint in Settings, on the Pose page or on the Auto-refine page. All three are the same setting.
+- **🎨 App icon** *(3.0)*: PromptMaker has its own icon on the window, taskbar and desktop shortcut.
 - **🩹 Friendly errors** *(2.0)*:
   - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
   - When Forge/A1111's API is off, the app shows the exact `--api` fix, and Test connection reports the WebUI variant and version.
@@ -45,8 +47,8 @@ Everything runs on your own computer by default. The AI features are optional an
 | ![Setup wizard](docs/screenshots/setup.png) | ![Auto-refine](docs/screenshots/autorefine.png) |
 | **LoRAs** *(3.0)* | **Presets** *(3.0)* |
 | ![LoRAs](docs/screenshots/loras.png) | ![Presets](docs/screenshots/presets.png) |
-| **Pose** *(3.0)* | |
-| ![Pose](docs/screenshots/pose.png) | |
+| **Pose** *(3.0)* | **App icon** *(3.0)* |
+| ![Pose](docs/screenshots/pose.png) | <img src="docs/screenshots/icon.png" width="128" alt="App icon"> |
 
 | Builder | Refine (chat) |
 |---|---|
@@ -81,7 +83,7 @@ You need **Python 3.10+** ([python.org](https://www.python.org/downloads/); on W
 2. Double-click **`install.bat`**. It checks Python, creates a `.venv`, installs PySide6 and keyring, offers to make a desktop shortcut, and checks for Ollama.
 3. Start the app with **`run.bat`** or the desktop shortcut. A short guided tour runs the first time.
 
-**Upgrading from 1.x:** copy or `git pull` the new version over the old folder (your `data/` is kept), then run `install.bat` again to install the new dependencies.
+**Upgrading from 2.x (or 1.x):** copy or `git pull` the new version over the old folder (your `data/` is kept), then run `install.bat` again. That installs any new dependencies and recreates the desktop shortcut with the new icon. Your database is upgraded automatically the first time 3.0 starts (schema v3 adds the `characters` and `styles` tables); history, favourites, templates and settings are kept. Making a copy of `data/` first doesn't hurt.
 
 **macOS / Linux** (should work, but is less tested)
 ```bash
@@ -222,6 +224,12 @@ The WebUI is running, but it was started without its API. PromptMaker detects th
 
 ![Model error dialog](docs/screenshots/model_error.png)
 
+**Pose / ControlNet with Anima: errors or the pose is ignored**
+Anima isn't SD or SDXL based, so ordinary SD 1.5/SDXL OpenPose ControlNets don't work with it. Use an Anima **ControlNet-LLLite** model: download `anima-lllite-pose-1.safetensors` from [kohya-ss/Anima-LLLite](https://huggingface.co/kohya-ss/Anima-LLLite), put it in your Forge `models/ControlNet` folder (e.g. `C:\AI\sd-webui-forge-classic\models\ControlNet`) and restart Forge. It needs a **Forge Neo** build with Anima LLLite support (added May 2026); if the model doesn't appear in the Pose page's ControlNet dropdown, update Forge. It's a fairly soft pose guide. If the dropdown is empty, no ControlNet models are installed and PromptMaker won't send a pose.
+
+**Forge uses the wrong checkpoint**
+If the Checkpoint box is empty, PromptMaker doesn't name one and Forge uses whatever it last loaded. Pick a checkpoint in **Settings → Image generation → Checkpoint**, or on the **Pose** or **Auto-refine** page (⟳ reloads the list). It's one shared setting, so changing it in any of the three changes it everywhere.
+
 **Ollama isn't reachable.** Start Ollama (the Create page has a **▶ Start Ollama** button) or check the URL in **Settings → AI provider**. The **⚡ Offline build** works without any AI.
 
 **Civitai: "refused access (HTTP 401/403)" or missing sample-image data**
@@ -242,7 +250,7 @@ python -m pyflakes promptmaker tests
 QT_QPA_PLATFORM=offscreen python main.py --smoke-test   # headless UI smoke test
 ```
 
-Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`, `tests/test_civitai.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
+Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `firstrun.py` (setup wizard), `autorefine.py`, `loras.py`, `presets.py`, `pose.py` / `posecanvas.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`, `tests/test_civitai.py`, `tests/test_v3.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
 
 ## Contributing
 
