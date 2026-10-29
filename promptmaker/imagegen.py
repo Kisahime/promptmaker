@@ -15,6 +15,18 @@ PLACEHOLDERS = ("prompt", "negative", "width", "height", "seed", "steps", "cfg",
 NUMERIC = {"width", "height", "seed", "steps", "cfg"}
 
 
+# Called (no args) right before any image is sent to a backend, e.g. to free VRAM held by Ollama.
+BEFORE_GENERATE = []
+
+
+def _before_generate():
+    for fn in list(BEFORE_GENERATE):
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 - a hook must never block generation
+            pass
+
+
 class BackendError(Exception):
     pass
 
@@ -159,6 +171,7 @@ class ComfyUI:
         return (d.get("subfolder") + "/" if d.get("subfolder") else "") + d.get("name", name)
 
     def generate(self, job, workflow, progress=None, cancelled=None, poll=0.7, timeout=1800):
+        _before_generate()
         wf = inject(workflow, job.values())
         rg = getattr(job, "regions", None)
         ip = getattr(job, "inpaint", None)
@@ -389,6 +402,7 @@ class A1111:
         return {"models": [], "known": False}
 
     def generate(self, job, workflow=None, progress=None, cancelled=None, poll=0.8, timeout=1800):
+        _before_generate()
         import threading
         result, err = {}, {}
 

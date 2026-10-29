@@ -688,3 +688,34 @@ def test_ui_library_sync(win, srv, tmp_path):
     assert win.sy_run("sync", wait=True) == {"action": "conflict"} and "Conflict" in win.sy_status.text()
     assert win.sy_run("sync", "merge", wait=True)["action"] == "merged" and win.store.style("Remote") and win.store.style("Local")
     assert win.sy_log.count() >= 3
+
+
+def test_unload_ollama_before_image(monkeypatch):
+    import json as _j
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from promptmaker import ollama
+    calls = []
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            body = _j.dumps({"models": [{"name": "qwen3:8b"}, {"name": "llava:7b"}]}).encode()
+            self.send_response(200); self.end_headers(); self.wfile.write(body)
+
+        def do_POST(self):
+            d = _j.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            calls.append(d); self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    assert ollama.unload_all(base) == ["qwen3:8b", "llava:7b"]
+    assert calls == [{"model": "qwen3:8b", "keep_alive": 0}, {"model": "llava:7b", "keep_alive": 0}]
+    assert ollama.unload_all("http://127.0.0.1:9") == []
+    srv.shutdown()
+    hit = []
+    monkeypatch.setattr(imagegen, "BEFORE_GENERATE", [lambda: hit.append(1), lambda: 1 / 0])
+    imagegen._before_generate()
+    assert hit == [1]

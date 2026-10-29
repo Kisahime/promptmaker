@@ -158,3 +158,25 @@ def start_ollama():
         subprocess.Popen([exe, "serve"], creationflags=flags | (0x08000000 if os.name == "nt" else 0),
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
     return exe
+
+
+def unload_all(base=BASE, timeout=5):
+    """Ask Ollama to drop every loaded model from VRAM (keep_alive=0). Returns the names unloaded. Never raises."""
+    import json as _json
+    import urllib.request as _ur
+    base = (base or BASE).rstrip("/")
+    try:
+        with _ur.urlopen(base + "/api/ps", timeout=timeout) as r:
+            loaded = [m.get("name") or m.get("model") for m in (_json.loads(r.read() or b"{}").get("models") or [])]
+    except Exception:  # noqa: BLE001 - Ollama not running: nothing to free
+        return []
+    done = []
+    for name in filter(None, loaded):
+        try:
+            req = _ur.Request(base + "/api/generate", data=_json.dumps({"model": name, "keep_alive": 0}).encode(),
+                              headers={"Content-Type": "application/json"})
+            _ur.urlopen(req, timeout=max(timeout, 15)).read()
+            done.append(name)
+        except Exception:  # noqa: BLE001
+            pass
+    return done

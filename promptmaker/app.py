@@ -80,6 +80,8 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.gallery = Gallery(os.path.join(data_dir, "gallery"))
         self.queue_jobs = []
         self.genq = GenQueue()
+        imagegen.BEFORE_GENERATE[:] = [self._free_ollama_vram]
+        self._refresh_unload_cfg()
         self.genq.progress.connect(self._gen_progress); self.genq.finished_job.connect(self._gen_done)
         self.genq.failed_job.connect(self._gen_failed)
         self.make_provider()
@@ -221,6 +223,20 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         except Exception as e:  # noqa: BLE001
             return self._models_failed(e, quiet)
         return self._models_loaded(models, quiet)
+
+    def _free_ollama_vram(self):
+        """Runs on the generation thread: drop Ollama's loaded text/vision models so the image model gets the VRAM.
+        Only when the setting is on and the AI provider is a local Ollama. Settings are cached on the main thread."""
+        cfg = getattr(self, "_unload_cfg", None)
+        if not cfg or not cfg[0]:
+            return []
+        return ollama.unload_all(cfg[1])
+
+    def _refresh_unload_cfg(self):
+        pid = self.store.get("provider", "ollama")
+        on = bool(self.store.get("img_unload_ollama", True)) and providers.PRESETS.get(pid, {}).get("kind", "ollama") == "ollama"
+        url = self.store.get(f"provider_url:{pid}") or providers.PRESETS.get(pid, {}).get("base_url") or ollama.BASE
+        self._unload_cfg = (on, url)
 
     def run_ai(self, messages, on_chunk, on_done, json_mode=False, temperature=0.7, model=None, vision=False):
         if self.worker and self.worker.isRunning():
@@ -1529,6 +1545,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         url = self.store.get(f"provider_url:{pid}") or providers.PRESETS.get(pid, {}).get("base_url")
         key = self.keys.get(f"api_key:{pid}") if providers.PRESETS.get(pid, {}).get("key") else ""
         self.provider = providers.make(pid, url, key)
+        self._refresh_unload_cfg()
         if hasattr(self, "prov_label"):
             self.prov_label.setText(providers.PRESETS.get(pid, providers.PRESETS["ollama"])["label"])
         return self.provider
@@ -2081,6 +2098,10 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
         im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
         im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        self.img_unload = QCheckBox(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
+        self.img_unload.setChecked(bool(self.store.get("img_unload_ollama", True)))
+        self.img_unload.toggled.connect(lambda on: (self.store.set("img_unload_ollama", bool(on)), self._refresh_unload_cfg()))
+        im.add(self.img_unload)
         self.img_test_lbl = label("", "muted", wrap=True)
         im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
         im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
