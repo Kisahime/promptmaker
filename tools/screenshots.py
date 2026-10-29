@@ -90,6 +90,60 @@ def civitai_profile():
     dlg.saved.connect(w._civitai_saved); dlg.save(); app.processEvents()
 
 
+def v3_shots():
+    """3.0 pages, filled with fixed demo data (no Ollama / Forge / Civitai needed)."""
+    from promptmaker import firstrun
+    # setup wizard with a typical first-run result
+    dlg = w.open_setup(auto_check=False); dlg.resize(720, 600)
+    dlg.show_results({"ollama": {"installed": True, "running": True, "version": "0.40.11", "models": ["llama3.2:latest"],
+                                 "has_text": True, "has_vision": False, "error": ""},
+                      "forge": {"found": True, "api": False, "message": "", "hint": imagegen.API_FIX},
+                      "comfyui": {"found": False, "message": ""}})
+    dlg.pull_bar.setVisible(True); dlg.pull_bar.setRange(0, 100); dlg.pull_bar.setValue(62)
+    dlg.pull_lbl.setText(f"pulling {firstrun.RECOMMENDED_VISION} · 3.6 GB / 5.9 GB")
+    save(dlg, "setup"); dlg.reject()
+    # auto-refine with three iterations
+    w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
+    w.go("Auto-refine"); w.ar_idea.setPlainText("a lighthouse keeper holding a lantern on a cliff at dusk")
+    w.ar_prompt.setPlainText("1girl, lighthouse keeper, cliff, dusk"); w.ar_vision.setCurrentText("qwen2.5vl:7b")
+    demo = [(52, "1girl, lighthouse keeper, cliff, dusk", ["lantern", "sea"], "Add the lantern and the sea below."),
+            (74, "1girl, lighthouse keeper, holding lantern, cliff edge, stormy sea below, dusk", ["warm lantern glow"], "Make the lantern the light source."),
+            (88, "1girl, lighthouse keeper, holding glowing lantern, cliff edge, stormy sea below, dusk, rim light, lantern light, "
+                 "masterpiece, best quality", [], "Matches the idea well.")]
+    for i, (sc, pr, miss, adv) in enumerate(demo):
+        _, data = art(300 + i, 512, 640)
+        w._ar_step({"i": i + 1, "prompt": pr, "image": data, "score": sc,
+                    "judgement": {"score": sc, "matches": ["lighthouse keeper", "cliff", "dusk"], "missing": miss, "wrong": [], "advice": adv}})
+    w._ar_done({"steps": [], "best": {"i": 3, "score": 88}, "reason": "threshold"}); g("autorefine")
+    # LoRA manager
+    words = {"Aiko Character": (["aiko", "silver hair"], "Illustrious"), "Ink Wash Style": (["inkwash"], "Illustrious"),
+             "Detail Tweaker XL": ([], "SDXL 1.0"), "Flux Realism": (["realism"], "Flux.1 D")}
+    items = []
+    for n, (name, (tw, base)) in enumerate(words.items()):
+        prev = os.path.join(DATA, f"prev{n}.png"); im, _ = art(400 + n, 256, 320); im.save(prev)
+        items.append({"name": name.lower().replace(" ", "_"), "kind": "lora", "path": f"C:\\AI\\sd-webui-forge-classic\\models\\Lora\\{name.lower().replace(' ', '_')}.safetensors",
+                      "sha256": f"{n:02d}" * 32, "autov2": (f"{n:02d}" * 5).upper(), "preview_file": prev,
+                      "info": {"found": True, "name": name, "version": "v1.0", "trained_words": tw, "base_model": base,
+                               "url": f"https://civitai.com/models/{1000 + n}?modelVersionId={2000 + n}"}})
+    items.append({"name": "easynegative", "kind": "embedding", "path": "C:\\AI\\sd-webui-forge-classic\\embeddings\\easynegative.pt",
+                  "sha256": "AB" * 32, "autov2": "ABABABABAB", "info": {"found": False}})
+    w.go("LoRAs"); w._lora_loaded(items); w.lora_list.setCurrentRow(0); g("loras")
+    # presets
+    st = w.store
+    a = st.save_character({"name": "Aiko", "appearance": "silver hair, long hair, red eyes, small freckles",
+                           "outfit": "black kimono, red obi, hair ribbon", "lora": "aiko_character", "lora_weight": 0.8})
+    st.save_character({"name": "Ren", "appearance": "short black hair, green eyes", "outfit": "school uniform, scarf"})
+    s1 = st.save_style({"name": "Ink wash", "tags": "ink wash painting, muted colours, paper texture", "negative": "photo, 3d"})
+    st.save_style({"name": "Neon noir", "tags": "neon lighting, rain, cinematic, high contrast"})
+    st.set("presets_active_chars", [a]); st.set("presets_active_styles", [s1])
+    w.go("Presets"); w.load_presets(); w.ch_list.setCurrentRow(0); w.st_list.setCurrentRow(0)
+    w.pr_in.setPlainText("standing on a bridge over a koi pond, cherry blossoms"); w.pr_combine(); g("presets")
+    # pose
+    w.go("Pose"); c = w.pose_canvas; c.clear(); c.add_figure("Waving"); c.add_figure("Hands on hips")
+    c.add_box("torii gate", (.30, .04, .40, .30)); c.selected = ("fig", 0); c.update(); w.pose_update()
+    w.pose_cn_model.setCurrentText("xinsir_openpose_sdxl"); g("pose")
+
+
 def go():
     demo_data()
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
@@ -128,6 +182,7 @@ def go():
     idx = "file://" + os.path.abspath("community/index.json")
     w._comm_loaded(community.load_index(idx)); w.comm_status.setText(f"{len(w.comm_items)} item(s)"); w.go("Community"); g("community")
     civitai_profile()
+    v3_shots()
     w.go("Model profiles"); app.processEvents(); g("profiles")
     w.go("Settings"); g("settings")
     w.start_tour(); app.processEvents(); g("tour"); w.tour.hide()
@@ -139,6 +194,9 @@ def go():
                 "error loading model: unknown model architecture: 'mllama'\"}", "llama3.2-vision:latest", vision=True)
     app.processEvents(); save(w._last_error_box, "model_error"); w._last_error_box.close()
     w.toggle_theme(); w.go("Builder"); g("builder_light")
+    # App icon as shown on the window, taskbar and desktop shortcut
+    from promptmaker.app import app_icon
+    app_icon().pixmap(256, 256).save(os.path.join(OUT, "icon.png"), "PNG", 9); shots.append("icon")
     print("saved:", ", ".join(shots))
     w.close(); app.quit()
 

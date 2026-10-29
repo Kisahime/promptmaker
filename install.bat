@@ -41,7 +41,7 @@ if /i not "%~1"=="/noshortcut" (
   set "ANS=Y"
   if /i not "%~1"=="/yes" set /p "ANS=  Create a desktop shortcut? [Y/n] "
   if /i not "!ANS!"=="n" (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\PromptMaker.lnk'); $s.TargetPath='%~dp0run.bat'; $s.WorkingDirectory='%~dp0'; $s.WindowStyle=7; $s.Save()" && echo  [OK] Desktop shortcut created
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\PromptMaker.lnk'); $s.TargetPath='%~dp0run.bat'; $s.WorkingDirectory='%~dp0'; $s.WindowStyle=7; $s.IconLocation='%~dp0promptmaker\assets\icon.ico,0'; $s.Save()" && echo  [OK] Desktop shortcut created
   )
 )
 

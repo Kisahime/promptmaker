@@ -23,7 +23,8 @@ from .i18n import tr
 from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
-from .widgets import (CallWorker, Card, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
+from .v3ui import V3Pages
+from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -35,7 +36,7 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔍", "Analyse"), ("📊", "Score"),
+NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("👤", "Presets"), ("🧩", "LoRAs"), ("🔍", "Analyse"), ("📊", "Score"),
        ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
        ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("⚙", "Settings")]
 
@@ -59,7 +60,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(QMainWindow):
+class MainWindow(V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         self.profiles_path = profiles.ensure_user_file(os.path.join(data_dir, "profiles.json"))
         self.profiles = profiles.load(self.profiles_path)
         self.setWindowTitle("PromptMaker — AI Image Prompt Studio")
+        self.setWindowIcon(app_icon())
         self.resize(1440, 900)
         self.setMinimumSize(1100, 700)
 
@@ -93,7 +95,8 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
         self.setCentralWidget(root)
-        for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._analyse_page,
+        for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
+                           self._presets_page, self._loras_page, self._analyse_page,
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._settings_page):
@@ -110,7 +113,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(50, self.refresh_models_async)
         if self.store.get("check_updates", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
             QTimer.singleShot(3000, self.check_updates)
-        if not self.store.get("tour_done") and not os.environ.get("PROMPTMAKER_NO_TOUR"):
+        if not self.store.get("setup_done") and not os.environ.get("PROMPTMAKER_NO_TOUR") and not os.environ.get("PROMPTMAKER_NO_SETUP"):
+            QTimer.singleShot(400, self.open_setup)
+        elif not self.store.get("tour_done") and not os.environ.get("PROMPTMAKER_NO_TOUR"):
             QTimer.singleShot(600, self.start_tour)
 
     # ------------------------------------------------------------------ chrome
@@ -141,6 +146,7 @@ class MainWindow(QMainWindow):
         self.ai_dot = label("○ checking…", "hint", wrap=True)
         f.addLayout(hrow(self.ai_dot, None, button("⟳", self.refresh_models, "ghost", "Refresh Ollama models")))
         self.update_btn = button("", None, "ghost"); self.update_btn.setVisible(False); f.addWidget(self.update_btn)
+        f.addWidget(button("🧭  Setup wizard", lambda: self.open_setup(), "ghost", "Check Ollama, download models, find Forge / ComfyUI"))
         self.theme_btn = button("🌙  Dark mode", self.toggle_theme, "ghost")
         f.addWidget(self.theme_btn)
         v.addWidget(foot)
@@ -157,6 +163,8 @@ class MainWindow(QMainWindow):
             self.score_in.setPlainText(self.current_text())
         elif name == "Refine" and not self.work.toPlainText().strip():
             self.work.setPlainText(self.current_text())
+        if name in ("Settings", "Pose", "Auto-refine"):
+            self._autoload_checkpoints()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -196,6 +204,10 @@ class MainWindow(QMainWindow):
         self._create_profile_refresh()
         if hasattr(self, "score_in"):
             self.quick_score()
+        if hasattr(self, "lora_list"):
+            self.lora_render()
+        if hasattr(self, "pose_canvas"):
+            w_, h_ = self._pose_size(); self.pose_canvas.set_aspect(w_ / h_); self.pose_update()
 
     # ------------------------------------------------------------------ AI plumbing
     def refresh_models(self, quiet=False):
@@ -1196,7 +1208,10 @@ class MainWindow(QMainWindow):
         self.batch_rand = QRadioButton("From presets"); self.batch_rand.setChecked(True)
         self.batch_ai = QRadioButton("AI variations")
         self.batch_n = QSpinBox(); self.batch_n.setRange(1, 200); self.batch_n.setValue(10); self.batch_n.setPrefix("× ")
-        opts.add(hrow(self.batch_rand, self.batch_ai, self.batch_n, None, self.stop_btn(),
+        self.batch_presets = QCheckBox(tr("Keep ticked characters & styles (Presets) on every variation"))
+        self.batch_presets.setChecked(self.store.get("batch_presets", False))
+        self.batch_presets.toggled.connect(lambda on: self.store.set("batch_presets", on))
+        opts.add(hrow(self.batch_rand, self.batch_ai, self.batch_n, self.batch_presets, None, self.stop_btn(),
                       self.ai_btn("🔁 Generate", self.batch_generate, "primary")))
         v.addWidget(opts)
         res = Card("Results · double-click to copy")
@@ -1209,6 +1224,13 @@ class MainWindow(QMainWindow):
         v.addWidget(res, 1)
         return w
 
+    def _batch_presets(self, items):
+        if not self.batch_presets.isChecked():
+            return items
+        from . import presets
+        chars, styles = self.active_presets()
+        return presets.apply_to_batch(items, chars, styles, self.profile) if (chars or styles) else items
+
     def batch_items(self):
         return [self.batch_list.item(i).text() for i in range(self.batch_list.count())]
 
@@ -1218,14 +1240,14 @@ class MainWindow(QMainWindow):
         if self.batch_rand.isChecked():
             cats = [c for c, b in self.batch_cats.items() if b.isChecked()]
             kw = self.build_kwargs()
-            items = builder.batch_variations(self.sel, cats, n, self.lib.all_items(), self.profile, kw, seed=time.time_ns())
+            items = self._batch_presets(builder.batch_variations(self.sel, cats, n, self.lib.all_items(), self.profile, kw, seed=time.time_ns()))
             for p in items:
                 self.batch_list.addItem(p); self.store.add_history(p, self.profile["name"], "batch")
             self.notify(f"Generated {len(items)} variations"); return
         base = self.build_result()["prompt"] or self.work.toPlainText()
 
         def done(t):
-            for p in builder.parse_ai_list(t)[:n]:
+            for p in self._batch_presets(builder.parse_ai_list(t)[:n]):
                 self.batch_list.addItem(p); self.store.add_history(p, self.profile["name"], "batch:ai")
             self.notify(f"{self.batch_list.count()} AI variations ready")
         self.run_ai(ollama.action_messages("Variations", base, self.profile, n), lambda c: None, done, temperature=0.9)
@@ -1587,21 +1609,7 @@ class MainWindow(QMainWindow):
         backend = self.image_backend()
         if not backend:
             self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); self.go("Settings"); return None
-        wf, meta, wf_name = (None, {}, "") if isinstance(backend, imagegen.A1111) else self._workflow()
-        d = meta.get("defaults", {})
-        w, h = self._size_for_profile()
-        clean = re.sub(r"\s--\w+(\s+[^-\s][^\s]*)?", "", prompt) if "--" in prompt else prompt
-        g = self.profile.get("gen") or {}  # checkpoint-specific recommendations (e.g. imported from Civitai)
-        a1 = isinstance(backend, imagegen.A1111)
-        job = imagegen.Job(clean, negative, w, h, seed, g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
-                           g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
-                           self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""),
-                           wf_name or "a1111",
-                           (g.get("a1111_sampler") if a1 else g.get("sampler")) or self.store.get("img_sampler") or d.get("sampler", "euler"),
-                           g.get("scheduler") or d.get("scheduler", "normal"), tag)
-        if g.get("clip_skip"):
-            job.clip_skip = g["clip_skip"]
-        job.backend_name = backend.name
+        job, backend, wf = self.make_job(prompt, negative, seed, tag)
         self.genq.add(job, backend, wf)
         self.queue_jobs.append(job)
         self._render_queue()
@@ -2022,7 +2030,7 @@ class MainWindow(QMainWindow):
         g.add(hrow(self.portable, button("Apply", self._apply_portable), None))
         g.add(label(f"{tr('Data folder')}: {self.data_dir}", "hint", wrap=True))
         g.add(hrow(button("📂 Open data folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.data_dir))),
-                   button("🧭 Show the tour again", self.start_tour), None))
+                   button("🧭 Show the tour again", self.start_tour), button("🛠 Run setup wizard", lambda: self.open_setup()), None))
         iv.addWidget(g)
         # AI provider
         a = Card("AI provider")
@@ -2056,7 +2064,9 @@ class MainWindow(QMainWindow):
         for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
             self.img_wf.addItem(name)
         self.img_wf.setCurrentText(self.store.get("img_workflow", "sdxl_txt2img"))
-        self.img_ckpt = QComboBox(); self.img_ckpt.setEditable(True); self.img_ckpt.setMinimumWidth(260)
+        self.img_ckpt = CheckpointCombo(loader=self._img_ckpts)
+        self.img_ckpt.currentTextChanged.connect(lambda _t: self.set_checkpoint(self.img_ckpt.name(), self.img_ckpt, self._settings_ckpt_key()))
+        self._ckpt_combos_list().append(self.img_ckpt)
         self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
         wl.addWidget(label("Workflow")); wl.addWidget(self.img_wf); wl.addStretch()
         im.add(self.wf_row)
@@ -2064,8 +2074,8 @@ class MainWindow(QMainWindow):
         self.img_steps.setValue(self.store.get("img_steps") or 0)
         self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
-        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Load checkpoint list"),
-                    label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
+        im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
         self.img_test_lbl = label("", "muted", wrap=True)
         im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
         im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
@@ -2173,8 +2183,8 @@ class MainWindow(QMainWindow):
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
         self.img_url.setText(self.store.get(f"img_url:{kind}", default) if kind != "none" else "")
         self.img_url.setEnabled(kind != "none"); self.wf_row.setVisible(kind == "comfyui")
-        key = self.img_wf.currentText() if kind == "comfyui" else "a1111"
-        self.img_ckpt.setCurrentText(self.store.get(f"img_checkpoint:{key}", ""))
+        self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{self._settings_ckpt_key()}", ""))
+        self.img_ckpt.set_items([])
 
     def _img_save(self):
         kind = self.img_kind.currentData()
@@ -2182,8 +2192,12 @@ class MainWindow(QMainWindow):
         if kind != "none":
             self.store.set(f"img_url:{kind}", self.img_url.text().strip())
         self.store.set("img_workflow", self.img_wf.currentText())
-        self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.currentText().strip())
+        self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
+        cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
+        for c in self._ckpt_combos_list():
+            if c is not self.img_ckpt:
+                c.set_name(cur)
         self.load_gallery(); self.notify(tr("Image generation settings saved"))
 
     def _img_test_failed(self, e):
@@ -2220,16 +2234,69 @@ class MainWindow(QMainWindow):
         wk.failed.connect(self._img_test_failed)
         self._keep(wk); wk.start()
 
+    def _settings_ckpt_key(self):
+        kind = self.img_kind.currentData()
+        return self.img_wf.currentText() if kind == "comfyui" else "a1111"
+
     def _img_ckpts(self):
         kind = self.img_kind.currentData()
         if kind == "none":
             return
-        b = imagegen.make_backend(kind, self.img_url.text().strip())
-        wk = CallWorker(b.checkpoints)
+        same = kind == self.store.get("img_backend", "none") and self.img_url.text().strip() == self.store.get(f"img_url:{kind}", self.img_url.text().strip())
+        self.load_checkpoints(imagegen.make_backend(kind, self.img_url.text().strip()),
+                              None if same else [self.img_ckpt])
+
+    # ------------------------------------------------- shared checkpoint pickers (Settings / Pose / Auto-refine)
+    def _ckpt_combos_list(self):
+        if not hasattr(self, "_ckpt_combos"):
+            self._ckpt_combos = []
+        return self._ckpt_combos
+
+    def ckpt_key(self):
+        """Store key suffix for the active backend: 'a1111' or the ComfyUI workflow name."""
+        return self.store.get("img_workflow", "sdxl_txt2img") if self.store.get("img_backend", "none") == "comfyui" else "a1111"
+
+    def make_ckpt_combo(self):
+        c = CheckpointCombo(loader=self.load_checkpoints)
+        c.set_name(self.store.get(f"img_checkpoint:{self.ckpt_key()}", ""))
+        c.currentTextChanged.connect(lambda _t, c=c: self.set_checkpoint(c.name(), c))
+        self._ckpt_combos_list().append(c)
+        return c
+
+    def set_checkpoint(self, name, source=None, key=None):
+        """Store the checkpoint and mirror it into every other picker using the same key."""
+        key = key or self.ckpt_key()
+        self.store.set(f"img_checkpoint:{key}", name)
+        if key != self.ckpt_key():
+            return
+        for c in self._ckpt_combos_list():
+            if c is source:
+                continue
+            if c is getattr(self, "img_ckpt", None) and self._settings_ckpt_key() != key:
+                continue
+            if c.name() != name:
+                c.set_name(name)
+
+    def load_checkpoints(self, backend=None, combos=None):
+        """Ask the backend for its checkpoints (in a worker) and fill the pickers."""
+        backend = backend or self.image_backend()
+        if not backend or getattr(self, "_ckpt_loading", False):
+            return
+        self._ckpt_loading = True
+        wk = CallWorker(backend.checkpoints)
         def ok(lst):
-            cur = self.img_ckpt.currentText(); self.img_ckpt.clear(); self.img_ckpt.addItems(lst or [])
-            self.img_ckpt.setCurrentText(cur or (lst[0] if lst else ""))
-        wk.ok.connect(ok); self._keep(wk); wk.start()
+            self._ckpt_loading = False
+            for c in combos or self._ckpt_combos_list():
+                c.set_items(lst or [])
+        def failed(_e):
+            self._ckpt_loading = False
+        wk.ok.connect(ok); wk.failed.connect(failed); self._keep(wk); wk.start()
+
+    def _autoload_checkpoints(self):
+        if os.environ.get("PROMPTMAKER_NO_NET") or self.store.get("img_backend", "none") == "none":
+            return
+        if any(c.count() == 0 for c in self._ckpt_combos_list()):
+            self.load_checkpoints()
 
     def _apply_portable(self):
         want = self.portable.isChecked()
@@ -2260,6 +2327,8 @@ class MainWindow(QMainWindow):
             ("Builder", "Or build a prompt by clicking preset chips. Pick the target model in the sidebar – the output adapts automatically."),
             ("Refine", "Chat with the AI to improve a prompt. Apply suggestions with one click and revert any time."),
             ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),
+            ("Auto-refine", "New in 3.0: generate, let a vision model check the image against your idea, and refine the prompt automatically."),
+            ("Pose", "Sketch poses and subject boxes – they become composition tags, or an OpenPose image for ControlNet."),
             ("Gallery", "Connect ComfyUI or Forge in Settings to generate images – they land here with full metadata."),
             ("Settings", "Choose your AI provider (Ollama, LM Studio, cloud…), image backend, language and data location. Enjoy!")]
 
@@ -2303,16 +2372,30 @@ class MainWindow(QMainWindow):
             self.toast.move(p.width() - self.toast.width() - 24, p.height() - self.toast.height() - 24)
 
 
+ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
+
+def app_icon():
+    from PySide6.QtGui import QIcon
+    ico = QIcon()
+    for name in ("icon.ico", "icon_256.png"):
+        f = os.path.join(ICON_DIR, name)
+        if os.path.exists(f):
+            ico.addFile(f)
+    return ico
+
+
 def main(argv=None):
     argv = argv if argv is not None else sys.argv
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PromptMaker.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Kisahime.PromptMaker")
         except Exception:  # noqa: BLE001
             pass
     app = QApplication(argv)
     app.setApplicationName("PromptMaker")
+    app.setWindowIcon(app_icon())
     data_dir = paths.data_dir(APP_DIR)
     store = Store(os.path.join(data_dir, "promptmaker.db"))
     i18n.set_language(store.get("language", "en"))

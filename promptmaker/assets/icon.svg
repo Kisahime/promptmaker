@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9b7dff"/><stop offset="0.55" stop-color="#7c5cff"/><stop offset="1" stop-color="#4f2fd6"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
+  <rect x="8" y="8" width="240" height="120" rx="56" fill="url(#gloss)"/>
+  <!-- prompt text lines -->
+  <rect x="48" y="150" width="104" height="16" rx="8" fill="#ffffff" fill-opacity="0.92"/>
+  <rect x="48" y="184" width="70" height="16" rx="8" fill="#ffffff" fill-opacity="0.6"/>
+  <!-- text cursor -->
+  <rect x="132" y="178" width="12" height="28" rx="4" fill="#ffffff"/>
+  <!-- big sparkle -->
+  <path d="M150 40 C156 82 166 92 208 98 C166 104 156 114 150 156 C144 114 134 104 92 98 C134 92 144 82 150 40 Z" fill="#ffffff"/>
+  <!-- small sparkle -->
+  <path d="M78 50 C80 66 84 70 100 72 C84 74 80 78 78 94 C76 78 72 74 56 72 C72 70 76 66 78 50 Z" fill="#ffffff" fill-opacity="0.85"/>
+</svg>
