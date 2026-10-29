@@ -35,7 +35,7 @@ class Store:
         self.db.commit()
         self.migrate()
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
     MIGRATIONS = {
         3: """
         CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY, name TEXT UNIQUE, appearance TEXT DEFAULT '',
@@ -43,6 +43,12 @@ class Store:
             notes TEXT DEFAULT '', ts REAL);
         CREATE TABLE IF NOT EXISTS styles(id INTEGER PRIMARY KEY, name TEXT UNIQUE, tags TEXT DEFAULT '',
             negative TEXT DEFAULT '', ts REAL);
+        """,
+        4: """
+        CREATE TABLE IF NOT EXISTS video_prompts(id INTEGER PRIMARY KEY, ts REAL, name TEXT, model TEXT, prompt TEXT,
+            negative TEXT DEFAULT '', settings TEXT DEFAULT '{}');
+        CREATE TABLE IF NOT EXISTS sync_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, target TEXT, status TEXT,
+            detail TEXT DEFAULT '');
         """,
     }
 
@@ -106,6 +112,31 @@ class Store:
 
     def delete_style(self, sid):
         self.db.execute("DELETE FROM styles WHERE id=?", (sid,)); self.db.commit()
+
+    # ---------------------------------------------------------------- v4: video prompts & sync log
+    def save_video_prompt(self, name, model, prompt, negative="", settings=None):
+        cur = self.db.execute("INSERT INTO video_prompts(ts,name,model,prompt,negative,settings) VALUES(?,?,?,?,?,?)",
+                              (time.time(), name or "Untitled", model, prompt, negative, json.dumps(settings or {})))
+        self.db.commit()
+        return cur.lastrowid
+
+    def video_prompts(self):
+        cur = self.db.execute("SELECT id,ts,name,model,prompt,negative,settings FROM video_prompts ORDER BY id DESC")
+        out = []
+        for r in cur.fetchall():
+            d = dict(zip(("id", "ts", "name", "model", "prompt", "negative", "settings"), r))
+            d["settings"] = json.loads(d["settings"] or "{}"); out.append(d)
+        return out
+
+    def delete_video_prompt(self, vid):
+        self.db.execute("DELETE FROM video_prompts WHERE id=?", (vid,)); self.db.commit()
+
+    def log_sync(self, direction, target, status, detail=""):
+        self.db.execute("INSERT INTO sync_log(ts,direction,target,status,detail) VALUES(?,?,?,?,?)",
+                        (time.time(), direction, target, status, detail)); self.db.commit()
+
+    def sync_log(self, limit=50):
+        return self.db.execute("SELECT ts,direction,target,status,detail FROM sync_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
     def get(self, key, default=None):
         r = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
