@@ -1,7 +1,7 @@
 """Reusable widgets: flow layout, chips, cards, toasts, workers."""
 from .i18n import tr
 from PySide6.QtCore import (QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt, QThread, QTimer, Signal)
-from PySide6.QtWidgets import (QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QPushButton,
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget, QProgressBar)
 
 
@@ -346,3 +346,71 @@ class DropLabel(QLabel):
             self.dropped.emit(QImage(md.imageData()))
         elif md.hasUrls():
             self.dropped.emit(QImage(md.urls()[0].toLocalFile()))
+
+
+def strip_ckpt_hash(name):
+    """'model.safetensors [fa486caafc]' -> 'model.safetensors' (Forge accepts the plain name)."""
+    import re
+    return re.sub(r"\s*\[[0-9a-fA-F]{6,}\]\s*$", "", (name or "").strip())
+
+
+class CheckpointCombo(QComboBox):
+    """Editable, wide checkpoint picker. Shows the start of long names, the full name as tooltip, and
+    asks for the list (``loader``) the first time it is opened while empty."""
+    def __init__(self, loader=None, parent=None):
+        super().__init__(parent)
+        self.loader = loader
+        self.setEditable(True); self.setInsertPolicy(QComboBox.NoInsert)
+        self.setMinimumWidth(360); self.setMinimumContentsLength(34)
+        self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.lineEdit().setPlaceholderText(tr("Backend default (whatever is loaded)"))
+        self.view().setMinimumWidth(460); self.view().setTextElideMode(Qt.ElideMiddle)
+        self.currentTextChanged.connect(self._tip)
+        self.lineEdit().installEventFilter(self)
+
+    def _tip(self, t):
+        self.setToolTip(t or "")
+        le = self.lineEdit()
+        if le and not le.hasFocus():
+            le.setCursorPosition(0)
+
+    def set_name(self, name):
+        name = strip_ckpt_hash(name)
+        self.blockSignals(True); self.setCurrentText(name); self.blockSignals(False)
+        self._tip(name)
+
+    def name(self):
+        return strip_ckpt_hash(self.currentText())
+
+    def set_items(self, names):
+        cur = self.name()
+        seen, clean = set(), []
+        for n in names or []:
+            n = strip_ckpt_hash(n)
+            if n and n not in seen:
+                seen.add(n); clean.append(n)
+        self.blockSignals(True); self.clear(); self.addItems(clean)
+        for i, n in enumerate(clean):
+            self.setItemData(i, n, Qt.ToolTipRole)
+        self.setCurrentText(cur); self.blockSignals(False); self._tip(cur)
+
+    def _maybe_load(self):
+        if self.count() == 0 and self.loader:
+            self.loader()
+
+    def showPopup(self):
+        self._maybe_load()
+        super().showPopup()
+
+    def mousePressEvent(self, e):
+        self._maybe_load(); super().mousePressEvent(e)
+
+    def eventFilter(self, obj, e):
+        from PySide6.QtCore import QEvent
+        if obj is self.lineEdit():
+            if e.type() == QEvent.FocusOut:
+                obj.setCursorPosition(0)
+            elif e.type() == QEvent.MouseButtonPress:
+                self._maybe_load()
+        return super().eventFilter(obj, e)

@@ -31,7 +31,12 @@ QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox {{
     background: {raised}; border: 1px solid {border}; border-radius: 9px; padding: 6px 8px;
     selection-background-color: {accent}; }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {accent}; }}
-QComboBox::drop-down {{ border: none; width: 22px; }}
+QComboBox {{ padding-right: 30px; }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 26px;
+    border: none; border-left: 1px solid {border}; border-top-right-radius: 9px; border-bottom-right-radius: 9px; }}
+QComboBox::drop-down:hover {{ background: {chip_hover}; }}
+QComboBox::down-arrow {{ image: url("{arrow}"); width: 10px; height: 6px; }}
+QComboBox::down-arrow:on {{ top: 1px; }}
 QComboBox QAbstractItemView {{ background: {card}; border: 1px solid {border}; selection-background-color: {accent}; outline: 0; }}
 QPushButton {{ background: {chip}; border: 1px solid {border}; border-radius: 9px; padding: 7px 14px; }}
 QPushButton:hover {{ background: {chip_hover}; border-color: {accent}; }}
@@ -77,8 +82,23 @@ QLabel#scoreBig {{ font-size: 28pt; font-weight: 800; color: {accent}; }}
 """
 
 
+def arrow_png(name):
+    """Draw the combo-box arrow as a small PNG (no SVG plugin needed). Qt hides the native arrow as soon as
+    ::drop-down is styled, so without an explicit image editable combos showed no arrow at all."""
+    import os, tempfile
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QColor, QImage, QPainter, QPolygonF
+    path = os.path.join(tempfile.gettempdir(), f"promptmaker_arrow_{name}.png").replace(os.sep, "/")
+    img = QImage(20, 12, QImage.Format_ARGB32); img.fill(Qt.transparent)
+    p = QPainter(img); p.setRenderHint(QPainter.Antialiasing); p.setPen(Qt.NoPen)
+    p.setBrush(QColor(PALETTES[name]["text"]))
+    p.drawPolygon(QPolygonF([QPointF(1, 1), QPointF(19, 1), QPointF(10, 11)])); p.end()
+    img.save(path, "PNG")
+    return path
+
+
 def stylesheet(name):
-    return QSS.format(**PALETTES[name])
+    return QSS.format(arrow=arrow_png(name), **PALETTES[name])
 
 
 def colors(name):

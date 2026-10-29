@@ -296,6 +296,9 @@ class V3Pages:
         self.ar_thresh.setValue(self.store.get("ar_threshold", 85))
         self.ar_start = button("▶ Start loop", self.ar_run, "primary")
         self.ar_stop = button("■ Stop", self.ar_stop_loop, "ghost"); self.ar_stop.setEnabled(False)
+        self.ar_ckpt = self.make_ckpt_combo()
+        top.add(hrow(label("Checkpoint"), self.ar_ckpt, button("⟳", self.load_checkpoints, "ghost", "Reload checkpoint list"),
+                     label("Shared with Settings and Pose", "hint"), None))
         top.add(hrow(label("Vision model"), self.ar_vision, label("Iterations"), self.ar_iters, label("Stop at score"), self.ar_thresh,
                      None, self.ar_stop, self.ar_start))
         self.ar_status = label("", "muted", wrap=True); top.add(self.ar_status)
@@ -685,6 +688,8 @@ class V3Pages:
         self.pose_cn_model.setCurrentText(self.store.get("pose_cn_model", ""))
         self.pose_cn_weight = QDoubleSpinBox(); self.pose_cn_weight.setRange(0, 2); self.pose_cn_weight.setSingleStep(0.05)
         self.pose_cn_weight.setValue(self.store.get("pose_cn_weight", 1.0))
+        self.pose_ckpt = self.make_ckpt_combo(); self.pose_ckpt.setMinimumWidth(300)
+        oc.add(hrow(label("Checkpoint"), self.pose_ckpt, button("⟳", self.load_checkpoints, "ghost", "Reload checkpoint list")))
         oc.add(hrow(label("Model"), self.pose_cn_model, button("⟳", self.pose_cn_models, "ghost", "Load ControlNet models from the backend")))
         oc.add(hrow(label("Weight"), self.pose_cn_weight, None))
         self.pose_cn_status = label("", "hint", wrap=True); oc.add(self.pose_cn_status)

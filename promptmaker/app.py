@@ -24,7 +24,7 @@ from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
-from .widgets import (CallWorker, Card, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
+from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -162,6 +162,8 @@ class MainWindow(V3Pages, QMainWindow):
             self.score_in.setPlainText(self.current_text())
         elif name == "Refine" and not self.work.toPlainText().strip():
             self.work.setPlainText(self.current_text())
+        if name in ("Settings", "Pose", "Auto-refine"):
+            self._autoload_checkpoints()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -2061,7 +2063,9 @@ class MainWindow(V3Pages, QMainWindow):
         for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
             self.img_wf.addItem(name)
         self.img_wf.setCurrentText(self.store.get("img_workflow", "sdxl_txt2img"))
-        self.img_ckpt = QComboBox(); self.img_ckpt.setEditable(True); self.img_ckpt.setMinimumWidth(260)
+        self.img_ckpt = CheckpointCombo(loader=self._img_ckpts)
+        self.img_ckpt.currentTextChanged.connect(lambda _t: self.set_checkpoint(self.img_ckpt.name(), self.img_ckpt, self._settings_ckpt_key()))
+        self._ckpt_combos_list().append(self.img_ckpt)
         self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
         wl.addWidget(label("Workflow")); wl.addWidget(self.img_wf); wl.addStretch()
         im.add(self.wf_row)
@@ -2069,8 +2073,8 @@ class MainWindow(V3Pages, QMainWindow):
         self.img_steps.setValue(self.store.get("img_steps") or 0)
         self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
-        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Load checkpoint list"),
-                    label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
+        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
+        im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, None))
         self.img_test_lbl = label("", "muted", wrap=True)
         im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
         im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
@@ -2178,8 +2182,8 @@ class MainWindow(V3Pages, QMainWindow):
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
         self.img_url.setText(self.store.get(f"img_url:{kind}", default) if kind != "none" else "")
         self.img_url.setEnabled(kind != "none"); self.wf_row.setVisible(kind == "comfyui")
-        key = self.img_wf.currentText() if kind == "comfyui" else "a1111"
-        self.img_ckpt.setCurrentText(self.store.get(f"img_checkpoint:{key}", ""))
+        self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{self._settings_ckpt_key()}", ""))
+        self.img_ckpt.set_items([])
 
     def _img_save(self):
         kind = self.img_kind.currentData()
@@ -2187,8 +2191,12 @@ class MainWindow(V3Pages, QMainWindow):
         if kind != "none":
             self.store.set(f"img_url:{kind}", self.img_url.text().strip())
         self.store.set("img_workflow", self.img_wf.currentText())
-        self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.currentText().strip())
+        self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
+        cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
+        for c in self._ckpt_combos_list():
+            if c is not self.img_ckpt:
+                c.set_name(cur)
         self.load_gallery(); self.notify(tr("Image generation settings saved"))
 
     def _img_test_failed(self, e):
@@ -2225,16 +2233,69 @@ class MainWindow(V3Pages, QMainWindow):
         wk.failed.connect(self._img_test_failed)
         self._keep(wk); wk.start()
 
+    def _settings_ckpt_key(self):
+        kind = self.img_kind.currentData()
+        return self.img_wf.currentText() if kind == "comfyui" else "a1111"
+
     def _img_ckpts(self):
         kind = self.img_kind.currentData()
         if kind == "none":
             return
-        b = imagegen.make_backend(kind, self.img_url.text().strip())
-        wk = CallWorker(b.checkpoints)
+        same = kind == self.store.get("img_backend", "none") and self.img_url.text().strip() == self.store.get(f"img_url:{kind}", self.img_url.text().strip())
+        self.load_checkpoints(imagegen.make_backend(kind, self.img_url.text().strip()),
+                              None if same else [self.img_ckpt])
+
+    # ------------------------------------------------- shared checkpoint pickers (Settings / Pose / Auto-refine)
+    def _ckpt_combos_list(self):
+        if not hasattr(self, "_ckpt_combos"):
+            self._ckpt_combos = []
+        return self._ckpt_combos
+
+    def ckpt_key(self):
+        """Store key suffix for the active backend: 'a1111' or the ComfyUI workflow name."""
+        return self.store.get("img_workflow", "sdxl_txt2img") if self.store.get("img_backend", "none") == "comfyui" else "a1111"
+
+    def make_ckpt_combo(self):
+        c = CheckpointCombo(loader=self.load_checkpoints)
+        c.set_name(self.store.get(f"img_checkpoint:{self.ckpt_key()}", ""))
+        c.currentTextChanged.connect(lambda _t, c=c: self.set_checkpoint(c.name(), c))
+        self._ckpt_combos_list().append(c)
+        return c
+
+    def set_checkpoint(self, name, source=None, key=None):
+        """Store the checkpoint and mirror it into every other picker using the same key."""
+        key = key or self.ckpt_key()
+        self.store.set(f"img_checkpoint:{key}", name)
+        if key != self.ckpt_key():
+            return
+        for c in self._ckpt_combos_list():
+            if c is source:
+                continue
+            if c is getattr(self, "img_ckpt", None) and self._settings_ckpt_key() != key:
+                continue
+            if c.name() != name:
+                c.set_name(name)
+
+    def load_checkpoints(self, backend=None, combos=None):
+        """Ask the backend for its checkpoints (in a worker) and fill the pickers."""
+        backend = backend or self.image_backend()
+        if not backend or getattr(self, "_ckpt_loading", False):
+            return
+        self._ckpt_loading = True
+        wk = CallWorker(backend.checkpoints)
         def ok(lst):
-            cur = self.img_ckpt.currentText(); self.img_ckpt.clear(); self.img_ckpt.addItems(lst or [])
-            self.img_ckpt.setCurrentText(cur or (lst[0] if lst else ""))
-        wk.ok.connect(ok); self._keep(wk); wk.start()
+            self._ckpt_loading = False
+            for c in combos or self._ckpt_combos_list():
+                c.set_items(lst or [])
+        def failed(_e):
+            self._ckpt_loading = False
+        wk.ok.connect(ok); wk.failed.connect(failed); self._keep(wk); wk.start()
+
+    def _autoload_checkpoints(self):
+        if os.environ.get("PROMPTMAKER_NO_NET") or self.store.get("img_backend", "none") == "none":
+            return
+        if any(c.count() == 0 for c in self._ckpt_combos_list()):
+            self.load_checkpoints()
 
     def _apply_portable(self):
         want = self.portable.isChecked()
