@@ -241,6 +241,10 @@ class V3Pages:
         backend = self.image_backend()
         if not prompt or not backend:
             return None
+        if seed in (None, "", -1):
+            seed = imagegen.new_seed()
+        if hasattr(self, "expand_wildcards"):  # v4: __wildcards__ / {a|b} use the image seed, so they're reproducible
+            prompt = self.expand_wildcards(prompt, seed)
         a1 = isinstance(backend, imagegen.A1111)
         wf, meta, wf_name = (None, {}, "") if a1 else self._workflow()
         d = meta.get("defaults", {})

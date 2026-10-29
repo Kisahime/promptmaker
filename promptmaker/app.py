@@ -24,6 +24,7 @@ from .keystore import KeyStore
 from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
+from .v4ui import V4Pages
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -36,9 +37,9 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("👤", "Presets"), ("🧩", "LoRAs"), ("🔍", "Analyse"), ("📊", "Score"),
+NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("🖌", "Inpaint & Regions"), ("👤", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("📊", "Score"),
        ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
-       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("⚙", "Settings")]
+       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("☁", "Library sync"), ("⚙", "Settings")]
 
 
 def copy(text):
@@ -60,7 +61,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(V3Pages, QMainWindow):
+class MainWindow(V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -96,10 +97,10 @@ class MainWindow(V3Pages, QMainWindow):
         h.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
-                           self._presets_page, self._loras_page, self._analyse_page,
+                           self._inpaint_page, self._presets_page, self._wildcards_page, self._loras_page, self._video_page, self._analyse_page,
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
-                           self._packs_page, self._community_page, self._profiles_page, self._settings_page):
+                           self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page):
             self.stack.addWidget(builder_fn())
         self.toast = Toast(root)
         self.nav.currentRowChanged.connect(self._nav_changed)
@@ -163,8 +164,12 @@ class MainWindow(V3Pages, QMainWindow):
             self.score_in.setPlainText(self.current_text())
         elif name == "Refine" and not self.work.toPlainText().strip():
             self.work.setPlainText(self.current_text())
-        if name in ("Settings", "Pose", "Auto-refine"):
+        if name in ("Settings", "Pose", "Auto-refine", "Inpaint & Regions"):
             self._autoload_checkpoints()
+        elif name == "Library sync":
+            self.sy_refresh()
+        elif name == "Wildcards":
+            self.wc_reload()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -2329,6 +2334,10 @@ class MainWindow(V3Pages, QMainWindow):
             ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),
             ("Auto-refine", "New in 3.0: generate, let a vision model check the image against your idea, and refine the prompt automatically."),
             ("Pose", "Sketch poses and subject boxes – they become composition tags, or an OpenPose image for ControlNet."),
+            ("Inpaint & Regions", "New in 4.0: paint a mask to redraw part of an image, or draw boxes that each get their own prompt."),
+            ("Wildcards", "New in 4.0: __wildcards__ and {a|b|c} turn one prompt into many varied ones – the AI can write lists for you."),
+            ("Video", "New in 4.0: prompts for Wan, LTX-Video and HunyuanVideo with camera moves and the right structure for each."),
+            ("Library sync", "New in 4.0: export or import everything, or sync it to a private GitHub gist."),
             ("Gallery", "Connect ComfyUI or Forge in Settings to generate images – they land here with full metadata."),
             ("Settings", "Choose your AI provider (Ollama, LM Studio, cloud…), image backend, language and data location. Enjoy!")]
 
