@@ -11,12 +11,19 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Video** page (`promptmaker/video.py`): profiles for Wan 2.2, Wan 2.1, LTX-Video and HunyuanVideo (fps, valid frame counts 4n+1 / 8n+1, sizes, negative support, word range, prompting guide), 14 camera moves, 10 motion presets and 12 shot sizes. An offline structured builder in each model's preferred order, an AI writer, length and camera checks, default negatives, "Use ticked character", and saved video prompts. Prompt writing only.
 - **Library sync** page (`promptmaker/sync.py`): export/import of history, favourites, templates, versions, characters, styles, video prompts, LoRA metadata, wildcards, model profiles and settings as `.zip` or `.json`. Merge or replace; same-name conflicts can keep mine, take theirs or keep both; content duplicates are skipped. Optional private GitHub gist push / pull / sync with last-modified conflict detection and a Keep this computer / Keep the gist / Merge both choice. The token is stored in the KeyStore. API keys are never exported: the KeyStore isn't read, and secret-looking settings names and values (`sk-…`, `ghp_…` …) are removed.
 - `imagegen`: `Job.inpaint`, `Job.regions`, `A1111.regional_support()` and `ComfyUI.regional_support()`; Forge switches to `/sdapi/v1/img2img` for inpaint jobs.
-- 32 new tests (`tests/test_v4.py`) using local mock servers for Forge, ComfyUI, the GitHub gist API and Ollama.
+- **Hires fix** for Forge/A1111 (Settings → Image generation): on/off, upscale factor, an upscaler list loaded from Forge (latent modes plus installed upscalers), hires steps and denoise. Applied to every txt2img job (Generate, Batch, Auto-refine, Pose, Regions) and skipped for inpaint. Sends `hr_additional_modules: ["Use same choices"]`, which Forge Neo requires.
+- **Free VRAM for images:** Ollama's loaded text and vision models are unloaded (`keep_alive: 0`) right before each image is sent to Forge or ComfyUI, so the image model gets the GPU memory. On by default when the AI provider is Ollama; there's a checkbox in Settings → Image generation.
+- **Size picker** on Auto-refine and Inpaint & Regions: Model default, 1024², 1344×768, 1216×832, 1152×896, 832×1216, 896×1152, 768×1344, and SD1.5 sizes. The choice is remembered for each page.
+- Regions: **Repeat main prompt in every region** (on by default) puts the shared scene and count tags (e.g. `2girls, beach`) on every Forge Couple line, which is what makes multi-character splits work, including on Anima. The default base weight is now 0.2.
+- 36 new tests (`tests/test_v4.py`, plus a size-picker UI test) using local mock servers for Forge, ComfyUI, the GitHub gist API and Ollama.
 
 ### Changed
 - Database schema version 4: a migration adds the `video_prompts` and `sync_log` tables. v2 and v3 databases upgrade automatically.
 - The tour covers the four new pages. There are new screenshots (`wildcards`, `inpaint`, `video`, `sync`), and the README has sections on inpaint, regions, wildcards, sync, and troubleshooting.
 - Two v3 tests no longer pin the version number or schema version exactly.
+
+### Fixed
+- **Generate with regions** always said "Forge Couple not found". Qt's `clicked(False)` was passed in as the regional mode; the same issue affected **Open image…** and sync **Import…**.
 
 ## [3.0.0] – 2026-10-29
 ### Added
