@@ -50,7 +50,15 @@ class Mock(BaseHTTPRequestHandler):
         if p == "/openapi.json":
             return self._send({"paths": {"/queue/join": {}, "/internal/sysinfo": {}}} if mode == "forge_noapi" else {"paths": {}})
         if p == "/controlnet/model_list":
+            if mode == "forge_nocnapi":
+                return self._send({"detail": "Not Found"}, 404)
+            if mode == "forge_nocn":
+                return self._send({"model_list": ["None"]})
+            if mode == "forge_anima":
+                return self._send({"model_list": ["None", "anima-lllite-pose-1 [a1b2c3d4]", "xinsir_openpose_sdxl"]})
             return self._send({"model_list": ["None", "control_v11p_sd15_openpose", "xinsir_openpose_sdxl"]})
+        if p == "/sdapi/v1/scripts":
+            return self._send({"txt2img": ["controlnet", "refiner"], "img2img": []})
         if p == "/system_stats":
             if mode != "comfy":
                 return self._send({}, 404)
@@ -81,7 +89,10 @@ class Mock(BaseHTTPRequestHandler):
             return self._send(b"".join(json.dumps(x).encode() + b"\n" for x in lines), ctype="application/x-ndjson")
         if p == "/sdapi/v1/txt2img":
             self.server.last_payload = json.loads(body)
-            return self._send({"images": [base64.b64encode(PNG).decode()], "info": json.dumps({"seed": 7})})
+            info = {"seed": 7, "extra_generation_params": {}, "infotexts": ["a knight\nSteps: 20, Seed: 7"]}
+            if self.server.mode == "forge_anima":  # ControlNet ran → it shows up in the generation params
+                info["extra_generation_params"]["ControlNet 0"] = "Module: None, Model: anima-lllite-pose-1"
+            return self._send({"images": [base64.b64encode(PNG).decode()], "info": json.dumps(info)})
         if p == "/upload/image":
             assert b'filename="pm_pose_' in body and PNG in body
             return self._send({"name": "pm_pose.png", "subfolder": "", "type": "input"})
@@ -566,3 +577,105 @@ def test_ui_autorefine_loop(win, srv):
     assert win.work.toPlainText() == "a lighthouse keeper holding a lantern at dusk"
     assert win.store.favourites()[0][3] == win.work.toPlainText()
     assert len(win.gallery.items()) == 2
+
+
+# ---------------------------------------------------------------- ControlNet model checks
+def test_cn_family_and_profile_family():
+    assert pose.cn_family("control_v11p_sd15_openpose [cab727d4]") == "SD1.5"
+    assert pose.cn_family("xinsir_openpose_sdxl") == "SDXL"
+    assert pose.cn_family("anima-lllite-pose-1") == "Anima"
+    assert pose.cn_family("flux-controlnet-union") == "FLUX"
+    assert pose.cn_family("mystery") == "" and pose.cn_family("mystery", "Illustrious") == "SDXL"
+    assert pose.profile_family({"name": "Anima (CircleStone Labs, anime)", "family": "Anima"}) == "Anima"
+    assert pose.profile_family({"name": "Illustrious XL / NoobAI", "family": "Stable Diffusion"}) == "SDXL"
+    assert pose.profile_family({"name": "Midjourney V7", "family": "Midjourney"}) == ""
+
+
+def test_cn_compat_warning_anima():
+    anima = {"name": "Anima (CircleStone Labs, anime)", "family": "Anima"}
+    assert "Anima" in pose.cn_compat_warning("xinsir_openpose_sdxl", anima)
+    assert "Anima" in pose.cn_compat_warning("mystery_model", anima)
+    assert pose.cn_compat_warning("anima-lllite-pose-1", anima) == ""
+    sdxl = {"name": "Stable Diffusion XL 1.0", "family": "Stable Diffusion"}
+    assert "SD1.5" in pose.cn_compat_warning("control_v11p_sd15_openpose", sdxl)
+    assert pose.cn_compat_warning("xinsir_openpose_sdxl", sdxl) == ""
+
+
+def test_resolve_and_pick_cn_model():
+    models = ["control_v11p_sd15_openpose [cab727d4]", "anima-lllite-pose-1 [a1b2c3d4]"]
+    assert pose.resolve_cn_model("control_v11p_sd15_openpose", models) == models[0]
+    assert pose.resolve_cn_model("Anima-LLLite-Pose-1.safetensors", models) == models[1]
+    assert pose.resolve_cn_model("nope", models) == ""
+    assert pose.pick_default_cn(models, {"name": "Anima", "family": "Anima"}) == models[1]
+    assert pose.pick_default_cn([], None) == ""
+
+
+def test_controlnet_applied_from_info():
+    assert pose.controlnet_applied({"extra_generation_params": {"ControlNet 0": "Model: x"}}) is True
+    assert pose.controlnet_applied(json.dumps({"infotexts": ["..., ControlNet 0: \"Module: none\""]})) is True
+    assert pose.controlnet_applied({"seed": 1, "extra_generation_params": {}}) is False
+    assert pose.controlnet_applied({"seed": 1}) is None and pose.controlnet_applied("not json") is None
+
+
+def test_forge_cn_model_info_fallbacks(srv):
+    _, url = srv("forge_nocn")
+    assert imagegen.A1111(url).controlnet_model_info() == {"models": [], "known": True}
+    _, url = srv("forge_nocnapi")
+    assert imagegen.A1111(url).controlnet_model_info()["known"] is False  # can't tell → user may type a name
+    assert imagegen.A1111(DEAD).controlnet_model_info()["known"] is False
+
+
+def test_forge_records_controlnet_applied(srv):
+    _, url = srv("forge_anima")
+    job = imagegen.Job("x"); job.controlnet = {"image": PNG, "model": "anima-lllite-pose-1 [a1b2c3d4]"}
+    imagegen.A1111(url).generate(job)
+    assert job.controlnet_applied is True
+    _, url = srv("forge")
+    job = imagegen.Job("x"); job.controlnet = {"image": PNG, "model": "xinsir_openpose_sdxl"}
+    imagegen.A1111(url).generate(job)
+    assert job.controlnet_applied is False
+
+
+def _wait(win):
+    import time
+    from PySide6.QtWidgets import QApplication
+    t = time.time()
+    time.sleep(0.05)
+    while win.genq.isRunning() and time.time() - t < 5:
+        QApplication.processEvents(); time.sleep(0.02)
+    for _ in range(20):
+        QApplication.processEvents(); time.sleep(0.01)
+
+
+def test_ui_pose_blocks_when_no_controlnet_models(win, srv):
+    s, url = srv("forge_nocn")
+    win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", url)
+    win.go("Pose"); win.work.setPlainText("a knight"); s.last_payload = None
+    assert win.pose_generate() is None
+    assert s.last_payload is None and "kohya-ss/Anima-LLLite" in win.pose_cn_status.text()
+
+
+def test_ui_pose_anima_uses_exact_name_and_reports_applied(win, srv):
+    s, url = srv("forge_anima")
+    win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", url)
+    win.profile_combo.setCurrentIndex(next(i for i in range(win.profile_combo.count()) if "anima" in str(win.profile_combo.itemData(i)).lower()))
+    assert win.profile["family"] == "Anima"
+    win.go("Pose"); win.work.setPlainText("a knight")
+    job = win.pose_generate()
+    assert job and job.controlnet["model"] == "anima-lllite-pose-1 [a1b2c3d4]"
+    assert not win.pose_cn_model.isEditable() and win.pose_cn_model.count() == 2
+    _wait(win)
+    assert s.last_payload["alwayson_scripts"]["controlnet"]["args"][0]["model"] == "anima-lllite-pose-1 [a1b2c3d4]"
+    assert "applied" in win.pose_cn_status.text()
+    win.pose_cn_model.setCurrentText("xinsir_openpose_sdxl")
+    assert "Anima" in win.pose_cn_status.text()
+
+
+def test_ui_pose_warns_when_not_applied(win, srv):
+    s, url = srv("forge")
+    win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", url)
+    win.go("Pose"); win.work.setPlainText("a knight")
+    job = win.pose_generate()
+    assert job
+    _wait(win)
+    assert job.controlnet_applied is False and "may not have been applied" in win.pose_cn_status.text()

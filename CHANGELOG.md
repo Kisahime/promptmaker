@@ -2,6 +2,9 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## Unreleased (v3)
+- Pose page: ControlNet model dropdown filled from Forge (exact names), blocks sending when none are installed, warns on architecture mismatch (incl. Anima → needs Anima ControlNet-LLLite), and reports if Forge did not record ControlNet in the result.
+
 ## [3.0.0] - unreleased
 ### Added
 - **Setup wizard** (`promptmaker/firstrun.py`): opens on first launch, and from the sidebar (🧭 Setup wizard) or Settings. Checks whether Ollama is installed and running, its version and models, and pulls `llama3.2` and `qwen2.5vl` through `/api/pull` with a progress bar and Stop. Detects Forge/A1111 (`/sdapi/v1`, with the `--api` hint) and ComfyUI on their default ports, saves the results to settings, and picks an image backend if none is set.

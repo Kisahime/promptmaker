@@ -687,6 +687,8 @@ class V3Pages:
         self.pose_cn_weight.setValue(self.store.get("pose_cn_weight", 1.0))
         oc.add(hrow(label("Model"), self.pose_cn_model, button("⟳", self.pose_cn_models, "ghost", "Load ControlNet models from the backend")))
         oc.add(hrow(label("Weight"), self.pose_cn_weight, None))
+        self.pose_cn_status = label("", "hint", wrap=True); oc.add(self.pose_cn_status)
+        self.pose_cn_model.currentTextChanged.connect(lambda _t: self.pose_cn_check())
         self.pose_preview = label(""); self.pose_preview.setAlignment(Qt.AlignCenter); self.pose_preview.setMinimumHeight(180)
         oc.add(self.pose_preview, 1)
         oc.add(hrow(button("💾 Export OpenPose PNG", self.pose_export), None,
@@ -734,27 +736,79 @@ class V3Pages:
                 fh.write(png)
             self.notify(tr("Saved"))
 
+    CN_HELP = ("No ControlNet models found in Forge's models\\ControlNet folder. Download one that matches your checkpoint "
+               "(SD1.5 / SDXL OpenPose, or for Anima an Anima ControlNet-LLLite model from huggingface.co/kohya-ss/Anima-LLLite), "
+               "put it in models\\ControlNet and restart Forge.")
+
+    def _apply_cn_list(self, info):
+        """Fill the dropdown with the exact names the backend returned. Returns the list."""
+        models, known = info.get("models", []), info.get("known", True)
+        cur = self.pose_cn_model.currentText().strip() or self.store.get("pose_cn_model", "")
+        self.pose_cn_model.blockSignals(True)
+        self.pose_cn_model.clear(); self.pose_cn_model.addItems(models)
+        self.pose_cn_model.setEditable(not known)  # only free text when the WebUI can't list its models
+        pick = pose.resolve_cn_model(cur, models) or pose.pick_default_cn(models, self.profile)
+        if known:
+            self.pose_cn_model.setCurrentIndex(max(0, self.pose_cn_model.findText(pick)) if models else -1)
+        else:
+            self.pose_cn_model.setCurrentText(cur)
+        self.pose_cn_model.blockSignals(False)
+        self._pose_cn_info = info
+        self.pose_cn_check()
+        return models
+
+    def pose_cn_check(self):
+        """Show a status/warning line for the chosen ControlNet model. Returns the warning text ('' = fine)."""
+        info = getattr(self, "_pose_cn_info", None)
+        name = self.pose_cn_model.currentText().strip()
+        if info and info.get("known") and not info.get("models"):
+            msg = tr("Forge has no ControlNet extension enabled.") if info.get("no_extension") else tr(self.CN_HELP)
+        else:
+            msg = pose.cn_compat_warning(name, self.profile) if name else ""
+            if msg:
+                msg = "⚠️ " + tr(msg)
+        if hasattr(self, "pose_cn_status"):
+            self.pose_cn_status.setText(msg)
+        return msg
+
     def pose_cn_models(self):
         backend = self.image_backend()
         if not backend:
             self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); return
         from .widgets import CallWorker
-        wk = CallWorker(backend.controlnet_models)
-        def ok(models):
-            cur = self.pose_cn_model.currentText(); self.pose_cn_model.clear(); self.pose_cn_model.addItems(models)
-            pref = next((m for m in models if "openpose" in m.lower()), cur)
-            self.pose_cn_model.setCurrentText(pref or cur)
-            self.notify(f"{len(models)} ControlNet model(s)" if models else tr("No ControlNet models found – type the name"), error=not models)
+        fetch = backend.controlnet_model_info if hasattr(backend, "controlnet_model_info") else \
+            (lambda: (lambda m: {"models": m, "known": bool(m)})(backend.controlnet_models()))
+        wk = CallWorker(fetch)
+        def ok(info):
+            models = self._apply_cn_list(info)
+            self.notify(f"{len(models)} ControlNet model(s)" if models else
+                        tr("No ControlNet models found") if info.get("known") else
+                        tr("This WebUI can't list ControlNet models – type the name"), error=not models)
         wk.ok.connect(ok); self._keep(wk); wk.start()
 
     def pose_generate(self):
         png = self.pose_png()
         if not png:
             self.notify(tr("Add a figure first"), error=True); return
-        model = self.pose_cn_model.currentText().strip()
         backend = self.image_backend()
-        if isinstance(backend, imagegen.ComfyUI) and not model:
+        if not backend:
+            self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); return
+        # Ask the backend what it actually has before sending anything, so the unit carries its exact model name.
+        try:
+            info = backend.controlnet_model_info() if hasattr(backend, "controlnet_model_info") else \
+                (lambda m: {"models": m, "known": bool(m)})(backend.controlnet_models())
+        except Exception:  # noqa: BLE001 – fall back to whatever the user typed
+            info = {"models": [], "known": False}
+        models = self._apply_cn_list(info)
+        if info.get("known") and not models:
+            self.notify(tr("Forge has no ControlNet extension enabled.") if info.get("no_extension") else
+                        tr("No ControlNet models installed – nothing sent. See the note on the Pose page."), error=True)
+            return
+        typed = self.pose_cn_model.currentText().strip()
+        model = pose.resolve_cn_model(typed, models) if models else typed
+        if not model:
             self.notify(tr("Choose a ControlNet model first"), error=True); return
+        warn = self.pose_cn_check()
         self.store.set("pose_cn_model", model); self.store.set("pose_cn_weight", self.pose_cn_weight.value())
         base = self.work.toPlainText().strip() or self.c_prompt.toPlainText().strip()
         prompt = loras.insert_into(base, self.pose_tags.toPlainText().strip())
@@ -763,6 +817,18 @@ class V3Pages:
             self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); return
         job, backend, wf = made
         job.controlnet = {"image": png, "model": model, "weight": self.pose_cn_weight.value()}
+        self._job_callbacks = getattr(self, "_job_callbacks", {})
+        self._job_callbacks.setdefault(job.id, []).append(self._pose_job_done)
         self.genq.add(job, backend, wf); self.queue_jobs.append(job); self._render_queue()
-        self.notify(tr("Queued with ControlNet") + f" · seed {job.seed}")
+        self.notify((tr("Queued with ControlNet") + f" · seed {job.seed}") + (" · ⚠️ " + tr("model mismatch, see Pose page") if warn else ""),
+                    error=bool(warn))
         return job
+
+    def _pose_job_done(self, job):
+        applied = getattr(job, "controlnet_applied", None)
+        if applied is False:
+            msg = tr("Forge didn't record ControlNet for this image, so the pose may not have been applied. "
+                     "Check the Forge console and that the ControlNet model matches your checkpoint.")
+            self.pose_cn_status.setText("⚠️ " + msg); self.notify(msg, error=True)
+        elif applied is True:
+            self.pose_cn_status.setText("✅ " + tr("ControlNet was applied") + f" ({job.controlnet['model']})")

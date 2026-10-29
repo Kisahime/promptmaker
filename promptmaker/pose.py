@@ -1,6 +1,7 @@
 """Pose & composition sketcher logic: OpenPose-18 skeletons + subject boxes → composition tags, OpenPose image,
 ControlNet payloads for Forge (alwayson_scripts) and ComfyUI (workflow patch). Coordinates are normalised 0..1."""
 import copy
+import json
 import math
 
 NAMES = ["nose", "neck", "r_shoulder", "r_elbow", "r_wrist", "l_shoulder", "l_elbow", "l_wrist", "r_hip", "r_knee",
@@ -220,3 +221,103 @@ def add_comfy_controlnet(workflow, image_name, model, strength=1.0):
                              "image": [img_id, 0], "strength": float(strength), "start_percent": 0.0, "end_percent": 1.0}}
         ins["positive"], ins["negative"] = [ap, 0], [ap, 1]
     return wf
+
+
+# ---------------------------------------------------------------- ControlNet model checks
+# Base family a ControlNet was trained for, guessed from its file name. Order matters: specific before generic.
+_CN_FAMILIES = [
+    ("Anima", ("anima",)),
+    ("FLUX", ("flux", "f1-", "_f1_", "xlabs", "instantx", "shakker")),
+    ("SD3", ("sd3", "sd35", "sd3.5")),
+    ("Qwen", ("qwen",)),
+    ("SDXL", ("sdxl", "xl", "xinsir", "illustrious", "noob", "pony", "t2i-adapter-xl", "kohya_controllllite", "controllllite",
+              "diffusers_xl", "thibaud_xl", "mistoline", "union")),
+    ("SD1.5", ("sd15", "sd1.5", "sd_15", "v11p", "v11e", "v11f1", "control_v1", "control_sd15", "t2iadapter", "t2i-adapter")),
+]
+
+
+def cn_family(name, civitai_base=""):
+    """'SD1.5' / 'SDXL' / 'FLUX' / 'SD3' / 'Qwen' / 'Anima', or '' if unknown. Civitai's baseModel wins if given."""
+    if civitai_base:
+        b = civitai_base.lower()
+        for fam, keys in (("Anima", ("anima",)), ("FLUX", ("flux",)), ("SD3", ("sd 3",)), ("Qwen", ("qwen",)),
+                          ("SDXL", ("sdxl", "pony", "illustrious", "noobai")), ("SD1.5", ("sd 1.",))):
+            if any(k in b for k in keys):
+                return fam
+    n = (name or "").lower().split(" [")[0]
+    for fam, keys in _CN_FAMILIES:
+        if any(k in n for k in keys):
+            return fam
+    return ""
+
+
+def profile_family(profile):
+    """The ControlNet family a model profile needs, e.g. Illustrious → SDXL, Anima → Anima. '' = not a local model."""
+    if not profile:
+        return ""
+    text = f"{profile.get('id', '')} {profile.get('name', '')} {profile.get('family', '')}".lower()
+    for fam, keys in (("Anima", ("anima",)), ("FLUX", ("flux",)), ("SD3", ("stable diffusion 3", "sd3")),
+                      ("Qwen", ("qwen",)), ("SDXL", ("xl", "pony", "illustrious", "noob")), ("SD1.5", ("1.5", "sd15"))):
+        if any(k in text for k in keys):
+            return fam
+    return ""
+
+
+def cn_compat_warning(cn_name, profile, civitai_base=""):
+    """A user-facing warning if the ControlNet and the active model profile look like different architectures."""
+    need, have = profile_family(profile), cn_family(cn_name, civitai_base)
+    if need == "Anima" and have != "Anima":
+        return (f"Anima isn't SD1.5/SDXL, so regular ControlNets don't work with it. Use an Anima ControlNet-LLLite model "
+                f"(e.g. kohya-ss/Anima-LLLite on Hugging Face) – '{cn_name}' looks like "
+                f"{have or 'an unknown type'}, so the pose will probably be ignored.")
+    if need and have and need != have:
+        return f"'{cn_name}' looks like a {have} ControlNet, but the active profile is {need}. The pose will probably be ignored."
+    return ""
+
+
+def resolve_cn_model(name, models):
+    """Return the exact string Forge listed for `name` (case-insensitive, with or without the ' [hash]' suffix
+    and file extension), or '' if it isn't in the list."""
+    if not name:
+        return ""
+    if name in models:
+        return name
+
+    def key(s):
+        s = s.split(" [")[0].strip().lower()
+        for ext in (".safetensors", ".pth", ".ckpt", ".bin"):
+            if s.endswith(ext):
+                s = s[: -len(ext)]
+        return s
+    k = key(name)
+    return next((m for m in models if key(m) == k), "")
+
+
+def pick_default_cn(models, profile=None):
+    """Best guess from Forge's list: a pose model of the right family, then any of the right family, then any pose."""
+    fam = profile_family(profile)
+    is_pose = lambda m: any(k in m.lower() for k in ("openpose", "pose", "dwpose"))
+    for test in (lambda m: is_pose(m) and fam and cn_family(m) == fam, lambda m: fam and cn_family(m) == fam, is_pose):
+        hit = next((m for m in models if test(m)), None)
+        if hit:
+            return hit
+    return models[0] if models else ""
+
+
+def controlnet_applied(info):
+    """From the txt2img response 'info' (dict or JSON string): True if ControlNet is recorded in the generation
+    parameters, False if it clearly isn't, None if the info doesn't tell us."""
+    if isinstance(info, str):
+        try:
+            info = json.loads(info or "{}")
+        except ValueError:
+            return None
+    if not isinstance(info, dict) or not info:
+        return None
+    extra = info.get("extra_generation_params")
+    if isinstance(extra, dict) and any(str(k).lower().startswith(("controlnet", "controllllite")) for k in extra):
+        return True
+    texts = info.get("infotexts") or []
+    if any("controlnet" in str(t).lower() or "controllllite" in str(t).lower() for t in texts):
+        return True
+    return False if (isinstance(extra, dict) or texts) else None

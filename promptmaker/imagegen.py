@@ -95,6 +95,7 @@ class Job:
         self.profile, self.checkpoint, self.workflow = profile, checkpoint, workflow
         self.sampler, self.scheduler, self.tag = sampler, scheduler, tag
         self.clip_skip = None
+        self.controlnet_applied = None  # True/False/None after a Forge run with ControlNet
         self.controlnet = None  # {"image": png bytes, "model": str, "weight": float} – OpenPose from the sketcher
         self.id = uuid.uuid4().hex[:8]
 
@@ -330,11 +331,24 @@ class A1111:
 
     def controlnet_models(self):
         """sd-webui-controlnet / Forge: GET /controlnet/model_list (empty if the extension API isn't there)."""
+        return self.controlnet_model_info()["models"]
+
+    def controlnet_model_info(self):
+        """{'models': [exact names Forge uses], 'known': bool}. known=False means the WebUI has no ControlNet list
+        API, so we can't tell what is installed (the user may type a name)."""
         try:
             d = _http(self.url + "/controlnet/model_list", timeout=8)
-            return [m for m in d.get("model_list", []) if m and m != "None"]
+            return {"models": [m for m in d.get("model_list", []) if m and m != "None"], "known": True}
         except (BackendError, AttributeError):
-            return []
+            pass
+        try:  # fallback: does the WebUI have a ControlNet script at all?
+            s = _http(self.url + "/sdapi/v1/scripts", timeout=8)
+            names = [n.lower() for n in (s.get("txt2img") or [])]
+            if names and not any("controlnet" in n for n in names):
+                return {"models": [], "known": True, "no_extension": True}
+        except (BackendError, AttributeError):
+            pass
+        return {"models": [], "known": False}
 
     def generate(self, job, workflow=None, progress=None, cancelled=None, poll=0.8, timeout=1800):
         import threading
@@ -368,7 +382,10 @@ class A1111:
             if info.get("seed"):
                 job.seed = int(info["seed"])
         except (ValueError, TypeError):
-            pass
+            info = None
+        if getattr(job, "controlnet", None):
+            from .pose import controlnet_applied
+            job.controlnet_applied = controlnet_applied(info)
         imgs = [base64.b64decode(i.split(",", 1)[-1]) for i in r.get("images", [])]
         if not imgs:
             raise BackendError("Backend returned no images")
