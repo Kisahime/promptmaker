@@ -59,12 +59,15 @@ def detect_forge_regional(scripts):
     return FORGE_COUPLE if FORGE_COUPLE in names else ""
 
 
-def forge_couple(payload, base, regions, base_weight=0.5):
+def forge_couple(payload, base, regions, base_weight=0.2, repeat_base=True):
     """Advanced mode: line 1 = global prompt over the whole image (so every pixel has weight), then one line per region."""
     regs = valid_regions(regions)
     if not regs:
         raise ValueError("Add at least one region with a prompt")
-    lines = [(base or "").replace("\n", " ").strip() or "high quality"] + [r["prompt"].replace("\n", " ") for r in regs]
+    b = (base or "").replace("\n", " ").strip()
+    # Attention couple works much better when every region line carries the shared scene/count tags
+    # (e.g. "2girls, beach"); otherwise each region is read as a full single-subject image.
+    lines = [b or "high quality"] + [(f"{b}, " if (repeat_base and b) else "") + r["prompt"].replace("\n", " ") for r in regs]
     mapping = [[0.0, 1.0, 0.0, 1.0, float(base_weight)]] + \
         [[round(r["x"], 4), round(r["x"] + r["w"], 4), round(r["y"], 4), round(r["y"] + r["h"], 4), r["weight"]] for r in regs]
     payload["prompt"] = "\n".join(lines)

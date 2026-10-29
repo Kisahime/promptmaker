@@ -256,6 +256,11 @@ class V4Pages:
         split = QSplitter(Qt.Horizontal)
         cc = Card("Canvas")
         self.ip_canvas = InpaintCanvas()
+        self.ip_size = QComboBox()
+        for name, wh in (("Model default", None), ("1024×1024 square", (1024, 1024)), ("1344×768 wide", (1344, 768)),
+                         ("1216×832 landscape", (1216, 832)), ("832×1216 portrait", (832, 1216)), ("768×1344 tall", (768, 1344))):
+            self.ip_size.addItem(tr(name), wh)
+        self.ip_size.currentIndexChanged.connect(lambda _i: self.ip_blank() if self.ip_canvas.image is None else None)
         self.ip_mode = QComboBox()
         for key, name in (("brush", "🖌 Paint mask"), ("erase", "🧽 Erase mask"), ("region", "▭ Draw regions")):
             self.ip_mode.addItem(tr(name), key)
@@ -263,7 +268,8 @@ class V4Pages:
         self.ip_brush = QSpinBox(); self.ip_brush.setRange(2, 400); self.ip_brush.setValue(48); self.ip_brush.setSuffix(" px")
         self.ip_brush.valueChanged.connect(lambda n: setattr(self.ip_canvas, "brush", n))
         cc.add(hrow(button("📂 Open image…", lambda: self.ip_open(), "ghost"), button("🗂 Last generated", self.ip_last, "ghost"),
-                    button("⬜ Blank", self.ip_blank, "ghost", "Blank canvas at the target model's size – for regions"), None))
+                    button("⬜ Blank", self.ip_blank, "ghost", "Blank canvas at the target model's size – for regions"),
+                    label("Size"), self.ip_size, None))
         cc.add(hrow(self.ip_mode, label("Brush"), self.ip_brush, None, button("⇄ Invert", self.ip_canvas.invert_mask, "ghost"),
                     ConfirmButton("Clear mask", self.ip_canvas.clear_mask, "Confirm clear")))
         cc.add(self.ip_canvas, 1)
@@ -297,13 +303,16 @@ class V4Pages:
         self.rg_weight = QDoubleSpinBox(); self.rg_weight.setRange(0.1, 5.0); self.rg_weight.setSingleStep(0.1); self.rg_weight.setValue(1.0)
         self.rg_weight.valueChanged.connect(self._rg_edit)
         self.rg_base_w = QDoubleSpinBox(); self.rg_base_w.setRange(0.0, 1.5); self.rg_base_w.setSingleStep(0.1)
-        self.rg_base_w.setValue(self.store.get("rg_base_weight", 0.5))
+        self.rg_base_w.setValue(self.store.get("rg_base_weight", 0.2))
+        self.rg_repeat = QCheckBox(tr("Repeat main prompt in every region (recommended)"))
+        self.rg_repeat.setChecked(bool(self.store.get("rg_repeat_base", True)))
         rc.add(self.rg_list)
         rc.add(hrow(self.rg_prompt, label("Weight"), self.rg_weight))
         rc.add(hrow(button("＋ Region", lambda: self.ip_canvas.add_region("", (.55, .05, .4, .9)), "ghost"),
                     button("Remove", lambda: self.ip_canvas.remove_region(), "ghost"),
                     button("Mask it", self.rg_mask_selected, "ghost", "Turn the selected region into the inpaint mask"),
                     None, label("Base weight"), self.rg_base_w))
+        rc.add(self.rg_repeat)
         self.rg_status = label(tr("Forge needs the Forge Couple extension for regions; ComfyUI works as is."), "hint", wrap=True)
         rc.add(self.rg_status)
         rc.add(hrow(button("🔎 Check support", self.rg_check, "ghost"), button("📋 Copy as one prompt", self.rg_copy_plain, "ghost"),
@@ -316,6 +325,9 @@ class V4Pages:
         return w
 
     def _ip_size(self):
+        wh = self.ip_size.currentData() if hasattr(self, "ip_size") else None
+        if wh:
+            return wh
         try:
             return self._size_for_profile()
         except Exception:  # noqa: BLE001
@@ -456,8 +468,9 @@ class V4Pages:
             if box.clickedButton() is not plain:
                 return None
             mode = "plain"
-        self.store.set("rg_base_weight", self.rg_base_w.value())
-        job.regions = {"regions": [dict(r) for r in self.ip_canvas.regions], "mode": mode, "base_weight": self.rg_base_w.value()}
+        self.store.set("rg_base_weight", self.rg_base_w.value()); self.store.set("rg_repeat_base", self.rg_repeat.isChecked())
+        job.regions = {"regions": [dict(r) for r in self.ip_canvas.regions], "mode": mode, "base_weight": self.rg_base_w.value(),
+                       "repeat_base": self.rg_repeat.isChecked()}
         if self.ip_canvas.image is not None and self.ip_canvas.has_mask():
             job.inpaint = {"image": self.ip_canvas.image_png(), "mask": self.ip_canvas.mask_png(), "denoise": self.ip_denoise.value(),
                            "mask_blur": self.ip_blur.value(), "only_masked": False, "padding": self.ip_pad.value(),

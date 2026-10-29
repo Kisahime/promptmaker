@@ -272,7 +272,10 @@ def test_forge_regional_detection_and_couple_payload(srv):
                                {"prompt": "girl, black hair", "x": .5, "y": 0, "w": .5, "h": 1, "weight": 1.2},
                                {"prompt": "", "x": 0, "y": 0, "w": 1, "h": 1}]}
     p = imagegen.A1111(couple).payload(job)
-    assert p["prompt"] == "two girls in a park\ngirl, blonde\ngirl, black hair"
+    assert p["prompt"] == "two girls in a park\ntwo girls in a park, girl, blonde\ntwo girls in a park, girl, black hair"
+    job.regions["repeat_base"] = False
+    assert imagegen.A1111(couple).payload(job)["prompt"] == "two girls in a park\ngirl, blonde\ngirl, black hair"
+    job.regions["repeat_base"] = True
     args = p["alwayson_scripts"]["forge couple"]["args"]
     assert args[:4] == [True, True, "Advanced", "\n"] and len(args) == 17
     assert args[7] == [[0.0, 1.0, 0.0, 1.0, 0.4], [0.0, 0.5, 0.0, 1.0, 1.0], [0.5, 1.0, 0.0, 1.0, 1.2]]

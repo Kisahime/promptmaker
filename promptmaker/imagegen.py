@@ -348,7 +348,7 @@ class A1111:
         if rg and rg.get("regions"):
             from . import regions as _rg
             if rg.get("mode") == _rg.FORGE_COUPLE:
-                _rg.forge_couple(p, job.prompt, rg["regions"], rg.get("base_weight", 0.5))
+                _rg.forge_couple(p, job.prompt, rg["regions"], rg.get("base_weight", 0.2), rg.get("repeat_base", True))
             else:
                 p["prompt"] = _rg.plain_prompt(job.prompt, rg["regions"])
         ip = getattr(job, "inpaint", None)
