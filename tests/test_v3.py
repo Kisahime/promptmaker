@@ -391,7 +391,7 @@ def test_forge_controlnet_payload(srv):
     be.generate(job)
     srv_payload = [s for s in LOG if s[1] == "/sdapi/v1/txt2img"][-1][2]
     unit = json.loads(srv_payload)["alwayson_scripts"]["controlnet"]["args"][0]
-    assert unit["enabled"] and unit["module"] == "none" and unit["model"] == "xinsir_openpose_sdxl" and unit["weight"] == 0.8
+    assert unit["enabled"] and unit["module"] == "None" and unit["model"] == "xinsir_openpose_sdxl" and unit["weight"] == 0.8
     assert base64.b64decode(unit["image"]) == PNG
     assert be.controlnet_models() == ["control_v11p_sd15_openpose", "xinsir_openpose_sdxl"]
     assert "alwayson_scripts" not in imagegen.A1111(url).payload(imagegen.Job("x"))

@@ -191,7 +191,7 @@ def render_openpose(figures, width=768, height=1024):
 # ---------------------------------------------------------------- ControlNet
 def forge_unit(image_b64, model="", weight=1.0):
     """One ControlNet unit for /sdapi/v1/txt2img alwayson_scripts (sd-webui-controlnet / Forge built-in)."""
-    return {"enabled": True, "image": image_b64, "module": "none", "model": model or "None", "weight": float(weight),
+    return {"enabled": True, "image": image_b64, "module": "None", "model": model or "None", "weight": float(weight),
             "resize_mode": "Crop and Resize", "control_mode": "Balanced", "pixel_perfect": True,
             "guidance_start": 0.0, "guidance_end": 1.0}
 
