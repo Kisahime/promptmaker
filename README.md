@@ -1,4 +1,6 @@
-# ✦ PromptMaker
+<p align="center"><img src="promptmaker/assets/icon_256.png" width="96" alt="PromptMaker icon"></p>
+
+# PromptMaker
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 

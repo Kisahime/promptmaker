@@ -85,6 +85,7 @@ class MainWindow(V3Pages, QMainWindow):
         self.profiles_path = profiles.ensure_user_file(os.path.join(data_dir, "profiles.json"))
         self.profiles = profiles.load(self.profiles_path)
         self.setWindowTitle("PromptMaker — AI Image Prompt Studio")
+        self.setWindowIcon(app_icon())
         self.resize(1440, 900)
         self.setMinimumSize(1100, 700)
 
@@ -2371,16 +2372,30 @@ class MainWindow(V3Pages, QMainWindow):
             self.toast.move(p.width() - self.toast.width() - 24, p.height() - self.toast.height() - 24)
 
 
+ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+
+
+def app_icon():
+    from PySide6.QtGui import QIcon
+    ico = QIcon()
+    for name in ("icon.ico", "icon_256.png"):
+        f = os.path.join(ICON_DIR, name)
+        if os.path.exists(f):
+            ico.addFile(f)
+    return ico
+
+
 def main(argv=None):
     argv = argv if argv is not None else sys.argv
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PromptMaker.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Kisahime.PromptMaker")
         except Exception:  # noqa: BLE001
             pass
     app = QApplication(argv)
     app.setApplicationName("PromptMaker")
+    app.setWindowIcon(app_icon())
     data_dir = paths.data_dir(APP_DIR)
     store = Store(os.path.join(data_dir, "promptmaker.db"))
     i18n.set_language(store.get("language", "en"))
