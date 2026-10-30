@@ -25,7 +25,7 @@ from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
 from .v4ui import V4Pages
-from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
+from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -207,6 +207,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         if self.negpreset.currentText() == "Model default":
             self.negative.blockSignals(True); self._neg_preset("Model default"); self.negative.blockSignals(False)
         self.profile_tips.setText(" · ".join(p.get("tips", [])[:3]))
+        self.apply_profile_checkpoint()
         self.update_preview()
         self._create_profile_refresh()
         if hasattr(self, "score_in"):
@@ -2096,7 +2097,10 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.img_steps.setValue(self.store.get("img_steps") or 0)
         self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
+        self.ckpt_link_lbl = label("", "hint")
+        self.ckpt_link_lbl.setToolTip(tr("Each target model remembers the checkpoint you pick. Choose 'Backend default' (clear the box) to unlink."))
         im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
+        im.add(self.ckpt_link_lbl)
         self.img_sampler = self._pick_combo("img_sampler"); self.img_scheduler = self._pick_combo("img_scheduler")
         im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, label("Sampler"), self.img_sampler,
                     button("⟳", lambda: self._load_picks("samplers", self.img_sampler), "ghost", "Load samplers from the backend"),
@@ -2274,6 +2278,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
             self.store.set(f"img_url:{kind}", self.img_url.text().strip())
         self.store.set("img_workflow", self.img_wf.currentText())
         self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
+        self.link_profile_checkpoint(self.img_ckpt.name())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
         self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
         self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
@@ -2354,6 +2359,8 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         """Store the checkpoint and mirror it into every other picker using the same key."""
         key = key or self.ckpt_key()
         self.store.set(f"img_checkpoint:{key}", name)
+        if source is not None and not getattr(self, "_applying_profile_ckpt", False):
+            self.link_profile_checkpoint(name)
         if key != self.ckpt_key():
             return
         for c in self._ckpt_combos_list():
@@ -2364,6 +2371,53 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
             if c.name() != name:
                 c.set_name(name)
 
+    # ------------------------------------------------- target model <-> checkpoint link (4.0.1)
+    def profile_checkpoints(self):
+        return dict(self.store.get("profile_checkpoints") or {})
+
+    def link_profile_checkpoint(self, name, pid=None):
+        """Remember `name` for the target model; an empty name (Backend default) unlinks it."""
+        pid = pid or self.profile.get("id")
+        m = self.profile_checkpoints()
+        if name:
+            m[pid] = name
+        else:
+            m.pop(pid, None)
+        self.store.set("profile_checkpoints", m)
+        self._update_ckpt_link_label()
+
+    def _update_ckpt_link_label(self):
+        lbl = getattr(self, "ckpt_link_lbl", None)
+        if lbl is None:
+            return
+        name = self.profile_checkpoints().get(self.profile.get("id"))
+        lbl.setText(tr("Linked to") + f": {self.profile.get('name')}" if name else
+                    tr("Not linked to a target model – pick a checkpoint to link it to") + f" {self.profile.get('name')}")
+
+    def apply_profile_checkpoint(self):
+        """Target model changed: use its linked checkpoint, else a confident unique auto-match, else leave it."""
+        if not hasattr(self, "img_ckpt"):
+            return None
+        name = self.profile_checkpoints().get(self.profile.get("id"))
+        if not name:
+            names = getattr(self, "_ckpt_names", None)
+            if names is None and (self.profile.get("civitai") and not os.environ.get("PROMPTMAKER_NO_NET")
+                                  and self.store.get("img_backend", "none") != "none"):
+                self._ckpt_match_pending = True; self.load_checkpoints()  # background; re-runs when the list arrives
+            from . import ckptmatch
+            name = ckptmatch.match(self.profile, names or [])
+            name = name and strip_ckpt_hash(name)
+        if name and name != self.store.get(f"img_checkpoint:{self.ckpt_key()}", ""):
+            self._applying_profile_ckpt = True
+            try:
+                self.set_checkpoint(name)
+                if self._settings_ckpt_key() == self.ckpt_key() and self.img_ckpt.name() != name:
+                    self.img_ckpt.set_name(name)
+            finally:
+                self._applying_profile_ckpt = False
+        self._update_ckpt_link_label()
+        return name
+
     def load_checkpoints(self, backend=None, combos=None):
         """Ask the backend for its checkpoints (in a worker) and fill the pickers."""
         backend = backend or self.image_backend()
@@ -2373,8 +2427,11 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         wk = CallWorker(backend.checkpoints)
         def ok(lst):
             self._ckpt_loading = False
+            self._ckpt_names = list(lst or [])
             for c in combos or self._ckpt_combos_list():
                 c.set_items(lst or [])
+            if getattr(self, "_ckpt_match_pending", False):
+                self._ckpt_match_pending = False; self.apply_profile_checkpoint()
         def failed(_e):
             self._ckpt_loading = False
         wk.ok.connect(ok); wk.failed.connect(failed); self._keep(wk); wk.start()

@@ -5,6 +5,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [4.0.1] - 2026-10-29
 
 ### Added
+- The image checkpoint now follows the **Target model**: the checkpoint you pick in any picker is remembered per target model (`profile_checkpoints` setting, included in Library sync) and restored when you switch. Civitai-imported profiles without a link are auto-matched to a backend checkpoint by file name or normalised name, only when the match is unique. Settings shows "Linked to: …"; choosing Backend default unlinks.
 - **Sampler** and **Scheduler** pickers in Settings → Image generation, with ⟳ to load the lists from Forge/A1111 or ComfyUI (built-in scheduler list as a fallback). "Profile default" keeps the profile's choice; anything else overrides it on every page. Forge/A1111 payloads now include `scheduler`.
 
 ### Fixed
