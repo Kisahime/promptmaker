@@ -188,7 +188,8 @@ def tag_messages(image_png, chars):
         lines.append(f"- {c['name']}: {refs}; outfits: " + "; ".join(o['tags'] for o in outfits(c)))
     return [{"role": "system", "content": "You identify recurring characters in images. You are given a list of known "
              "characters with their appearance tags. Reply only with JSON: {\"characters\": [names that clearly appear], "
-             "\"outfit\": {name: outfit name or \"\"}}. Use exact names from the list; [] if none match."},
+             "\"outfit\": {name: outfit name or \"\"}}. Use exact names from the list. Only list a character when the "
+             "hair, eyes and overall look clearly match their tags; when unsure, or for a generic person, return []."},
             {"role": "user", "content": "Known characters:\n" + "\n".join(lines) + "\n\nWho appears in this image?",
              "images": [base64.b64encode(image_png).decode()]}]
 
