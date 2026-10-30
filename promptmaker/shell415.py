@@ -19,6 +19,7 @@ SECTIONS = [("⌂", "Home", ["Home"]),
             ("⚙", "Settings", ["Settings", "Model profiles", "Library sync"])]
 STUDIO_PAGES = {"Create", "Builder", "Refine", "Batch", "Templates"}
 RAIL_W, RAIL_W_COLLAPSED = 184, 64
+INSPECTOR_MIN_W = 1360
 
 
 def section_of(page):
@@ -41,7 +42,7 @@ class Shell415:
         self.filmstrip = QListWidget(); self.filmstrip.setObjectName("filmstrip")
         self.filmstrip.setViewMode(QListWidget.IconMode); self.filmstrip.setFlow(QListWidget.LeftToRight)
         self.filmstrip.setWrapping(False); self.filmstrip.setMovement(QListWidget.Static)
-        self.filmstrip.setIconSize(QSize(72, 72)); self.filmstrip.setFixedHeight(92); self.filmstrip.setSpacing(4)
+        self.filmstrip.setIconSize(QSize(64, 64)); self.filmstrip.setFixedHeight(82); self.filmstrip.setSpacing(4)
         self.filmstrip.setToolTip(tr("Recent results – click to open"))
         self.filmstrip.itemClicked.connect(lambda it: it.data(Qt.UserRole) and self.gal_view(it.data(Qt.UserRole)))
         right.addWidget(self.filmstrip)
@@ -149,6 +150,10 @@ class Shell415:
         return f
 
     # ------------------------------------------------------------------ behaviour
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        _resize_hook(self)
+
     def open_section(self, sec):
         last = self.store.get(f"section_page:{sec}")
         pages = next(p for _i, s, p in SECTIONS if s == sec)
@@ -164,7 +169,7 @@ class Shell415:
         pages = next(p for _i, s, p in SECTIONS if s == sec)
         if len(pages) > 1:
             for i, p in enumerate(pages):
-                b = QPushButton(tr(p)); b.setObjectName("subTab"); b.setCheckable(True); b.setCursor(Qt.PointingHandCursor)
+                b = QPushButton(tr(p).replace("&", "&&")); b.setObjectName("subTab"); b.setCheckable(True); b.setCursor(Qt.PointingHandCursor)
                 b.clicked.connect(lambda _=False, n=p: self.go(n))
                 self.page_bar_lay.insertWidget(1 + i, b); self.sub_tabs[p] = b
 
@@ -176,12 +181,21 @@ class Shell415:
         self.section_title.setText(tr(sec))
         self._build_tabs(sec)
         self.page_bar.setVisible(bool(self.sub_tabs))
+        # The page bar already names the section and page, so the page's own big title would repeat it.
+        names = {name, tr(name)}
+        for h1 in self.stack.currentWidget().findChildren(QLabel, "h1"):
+            if h1.text() in names:
+                h1.setVisible(not self.sub_tabs)
+        for hd in self.stack.currentWidget().findChildren(QFrame, "pageHeader"):
+            hd.setVisible(not self.sub_tabs or bool(hd.property("has_sub")))
         for p, b in self.sub_tabs.items():
             b.setChecked(p == name)
         studio = name in STUDIO_PAGES
         self.filmstrip.setVisible(studio)
         self.insp_btn.setVisible(studio)
-        show_insp = studio and bool(self.store.get("inspector_open", True))
+        # Narrow windows (< INSPECTOR_MIN_W) keep the centre usable: the inspector only shows when asked for.
+        wide = self.width() >= INSPECTOR_MIN_W
+        show_insp = studio and (bool(self.store.get("inspector_open", True)) if wide else getattr(self, "_insp_force", False))
         card = getattr(self, "settings_img_card", None)
         if card is not None:
             if show_insp:
@@ -194,7 +208,10 @@ class Shell415:
             self.film_refresh()
 
     def toggle_inspector(self):
-        self.store.set("inspector_open", not self.store.get("inspector_open", True))
+        if self.width() >= INSPECTOR_MIN_W:
+            self.store.set("inspector_open", not self.store.get("inspector_open", True))
+        else:
+            self._insp_force = not getattr(self, "_insp_force", False)
         self._chrome_sync(self.page_name())
 
     def page_name(self):
@@ -206,7 +223,7 @@ class Shell415:
             return
         self.filmstrip.clear()
         for path, _m in self.gallery.items()[:24]:
-            it = QListWidgetItem(QIcon(QPixmap(path).scaled(72, 72, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)), "")
+            it = QListWidgetItem(QIcon(QPixmap(path).scaled(64, 64, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)), "")
             it.setData(Qt.UserRole, path); it.setToolTip(path); self.filmstrip.addItem(it)
         if not self.filmstrip.count():
             it = QListWidgetItem(tr("Your results will appear here – press Generate in Create or Builder"))
@@ -284,3 +301,11 @@ class Shell415:
 def _vsep():
     s = QFrame(); s.setObjectName("vsep"); s.setFixedSize(1, 22)
     return s
+
+
+def _resize_hook(win):
+    """Re-evaluate the inspector when the window crosses INSPECTOR_MIN_W."""
+    wide = win.width() >= INSPECTOR_MIN_W
+    if getattr(win, "_was_wide", None) != wide and hasattr(win, "inspector"):
+        win._was_wide = wide
+        win._chrome_sync(win.page_name())

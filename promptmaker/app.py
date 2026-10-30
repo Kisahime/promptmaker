@@ -27,7 +27,7 @@ from .v3ui import V3Pages
 from .v4ui import V4Pages
 from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
-from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
+from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NEGATIVE_PRESETS = {
@@ -62,8 +62,9 @@ def _frow(name, *widgets):
 
 def page(title, subtitle=""):
     w = QWidget()
-    v = QVBoxLayout(w); v.setContentsMargins(24, 14, 24, 18); v.setSpacing(14)
+    v = QVBoxLayout(w); v.setContentsMargins(24, 10, 24, 12); v.setSpacing(12)
     banner = QFrame(); banner.setObjectName("pageHeader")
+    banner.setProperty("has_sub", bool(subtitle))
     bh = QHBoxLayout(banner); bh.setContentsMargins(0, 0, 0, 0)
     head = QVBoxLayout(); head.setSpacing(2)
     head.addWidget(label(title, "h1"))
@@ -117,7 +118,9 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page):
-            self.stack.addWidget(builder_fn())
+            pg = builder_fn()
+            # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
+            self.stack.addWidget(PageScroll(pg))
         self.toast = Toast(root)
         self.nav.currentRowChanged.connect(self._nav_changed)
         self.nav.setCurrentRow(0)
@@ -325,7 +328,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
     def _create_page(self):
         w, v = page("Create", "Describe what you want in plain words – the AI writes a finished prompt for your target model.")
         top = Card()
-        self.idea = QPlainTextEdit(); self.idea.setFixedHeight(96)
+        self.idea = QPlainTextEdit(); self.idea.setFixedHeight(70)
         self.idea.setPlaceholderText("e.g. give me a prompt for an anime girl wearing an outfit in a setting   (Ctrl+Enter to create)")
         f = QFont(); f.setPointSize(12); self.idea.setFont(f)
         go = QAction(self.idea, shortcut=QKeySequence("Ctrl+Return")); go.triggered.connect(self.create_generate)
@@ -356,9 +359,10 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         self.create_status = label("", "hint")
         res.add(hrow(label("Result", "h2"), self.opt_pick, None, self.create_status))
         self.c_prompt = QPlainTextEdit(); f2 = QFont(); f2.setPointSize(11); self.c_prompt.setFont(f2)
+        self.c_prompt.setMinimumHeight(80)
         res.add(self.c_prompt, 2)
         self.c_neg_lbl = label("Negative prompt", "h2"); res.add(self.c_neg_lbl)
-        self.c_neg = QPlainTextEdit(); self.c_neg.setFixedHeight(60); res.add(self.c_neg)
+        self.c_neg = QPlainTextEdit(); self.c_neg.setFixedHeight(54); res.add(self.c_neg)
         self.c_settings = label("", "hint", wrap=True); self.c_settings.setTextInteractionFlags(Qt.TextSelectableByMouse)
         res.add(self.c_settings)
         acts = QWidget(); fl = FlowLayout(acts, spacing=8)  # 4.1.5: wraps instead of clipping next to the inspector
@@ -1666,6 +1670,8 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
             self.queue_list.addItem(f"{icon} {j.width}×{j.height} · seed {j.seed} · {j.prompt[:70]}" +
                                     (f"  — {j.error}" if st == "failed" else ""))
         self.queue_list.scrollToBottom()
+        active = any(getattr(j, "state", "queued") in ("queued", "running") for j in self.queue_jobs)
+        self.queue_box.setVisible(active); self.gen_bar.setVisible(active)
 
     def _gen_progress(self, jid, pct, msg):
         for j in self.queue_jobs:
@@ -1715,7 +1721,10 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         q.add(self.gen_bar)
         self.queue_list = QListWidget(); self.queue_list.setFixedHeight(84)
         self.queue_list.itemDoubleClicked.connect(lambda *_: self.open_queue())
-        q.add(hrow(self.queue_list, self.gen_preview))
+        # 4.1.5: the job list, progress bar and live preview only take space while something is queued or running
+        self.queue_box = QWidget(); qb = QHBoxLayout(self.queue_box); qb.setContentsMargins(0, 0, 0, 0)
+        qb.addWidget(self.queue_list, 1); qb.addWidget(self.gen_preview)
+        q.add(self.queue_box); q.lay.setContentsMargins(16, 10, 16, 10)
         v.addWidget(q)
         row = QSplitter(); row.setChildrenCollapsible(False); v.addWidget(row, 1)
         left = Card()
@@ -1727,7 +1736,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         row.addWidget(left)
         right = Card()
         self.gal_preview = QLabel(tr("Select an image")); self.gal_preview.setAlignment(Qt.AlignCenter)
-        self.gal_preview.setMinimumHeight(280)
+        self.gal_preview.setMinimumHeight(200)
         right.add(self.gal_preview, 2)
         self.gal_meta = QTextBrowser(); right.add(self.gal_meta, 1)
         right.add(hrow(button("🔍 Open full size", self._gal_open), button("📋 Copy prompt", self._gal_copy),
@@ -1737,7 +1746,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         right.add(hrow(button("🎲 Same seed again", self._gal_regen), button("⛶ Viewer", lambda: self.gal_view()), button("📂 Folder", lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(self.gallery.root))), None, ConfirmButton("🗑 Delete", self._gal_delete, "Confirm delete", 4, "danger")))
         row.addWidget(right); row.setSizes([700, 480])
-        self.load_gallery()
+        self.load_gallery(); self._render_queue()
         return w
 
     def load_gallery(self):
@@ -1970,7 +1979,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         score_side("A", lambda: QTimer.singleShot(100, lambda: score_side("B")))
 
     def ab_generate(self):
-        seed = self.ab_seed.value() or imagegen.new_seed()
+        seed = self.ab_seed.value() or (imagegen.new_seed() % (2**31 - 1)) or 1  # spin box is 32-bit signed
         self.ab_seed.setValue(seed)
         self._job_callbacks = getattr(self, "_job_callbacks", {})
         for side in "AB":

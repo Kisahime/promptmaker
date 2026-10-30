@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - The README screenshot script captures Create correctly (it used to capture Home) and now also captures light and Pastel shots.
 - All pages, features and shortcuts are unchanged and reachable: Ctrl+K, Ctrl+T, Ctrl+Shift+C and every page via the rail, its tabs or the palette.
 
+### Fixed
+- A/B Test generation no longer crashes with an overflow on large random seeds.
+- Duplicate page titles removed; "&" now displays correctly in sub-tab labels.
+- Pages scroll instead of clipping on small windows (e.g. Pastel dusk Create at 1440x900); the inspector auto-hides below 1360px wide (toggle still shows it).
+- Gallery queue strip only appears while jobs are queued or running.
+
 ## [4.1.0] - 2026-10-30
 
 ### Added

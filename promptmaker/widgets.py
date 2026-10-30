@@ -1,7 +1,7 @@
 """Reusable widgets: flow layout, chips, cards, toasts, workers."""
 from .i18n import tr
 from PySide6.QtCore import (QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt, QThread, QTimer, Signal)
-from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QPushButton,
+from PySide6.QtWidgets import (QScrollArea, QComboBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget, QProgressBar)
 
 
@@ -445,3 +445,45 @@ class CheckpointCombo(QComboBox):
             elif e.type() == QEvent.MouseButtonPress:
                 self._maybe_load()
         return super().eventFilter(obj, e)
+
+
+class PageScroll(QScrollArea):
+    """Scroll area for whole pages (4.1.5): the page fills the viewport and only scrolls when the viewport is
+    shorter than the page's *minimum* height. A plain widgetResizable QScrollArea sizes height-for-width pages
+    (anything with a FlowLayout) to their preferred height, so pages scrolled even when they would fit."""
+
+    def __init__(self, page):
+        super().__init__()
+        self.setFrameShape(QScrollArea.NoFrame); self.setWidgetResizable(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setWidget(page); page.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        from PySide6.QtCore import QEvent
+        if obj is self.widget() and ev.type() == QEvent.LayoutRequest:
+            QTimer.singleShot(0, self._fit)
+        return False
+
+    def _need(self, w):
+        pg = self.widget(); lay = pg.layout()
+        if lay is None:
+            return pg.minimumSizeHint().height()
+        return lay.totalMinimumHeightForWidth(w) if lay.hasHeightForWidth() else lay.totalMinimumSize().height()
+
+    def _fit(self):
+        pg = self.widget()
+        if pg is None:
+            return
+        vw, vh = self.viewport().width(), self.viewport().height()
+        need = self._need(vw)
+        if need > vh and self.verticalScrollBar().isHidden():
+            vw = max(1, vw - self.verticalScrollBar().sizeHint().width()); need = self._need(vw)
+        pg.resize(vw, max(vh, need))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._fit()

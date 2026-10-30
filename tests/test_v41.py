@@ -285,6 +285,7 @@ def test_415_every_page_has_a_section_and_rail_navigates(win):
 
 def test_415_studio_inspector_and_filmstrip(win):
     win.store.set("inspector_open", True)
+    win.resize(1440, 900)
     win.go("Create")
     assert not win.filmstrip.isHidden() and not win.inspector.isHidden()
     assert win.settings_img_card.parent() is not win._img_home  # moved into the inspector
@@ -315,3 +316,76 @@ def test_415_command_palette(win):
     win._quickbar_go(); assert NAV[win.stack.currentIndex()][1] == "Wildcards" and win.qbar.isHidden()
     win.open_quickbar(); win.qbar_in.setText("pastel dusk"); win._quickbar_go(); assert win.theme == "pastel_dusk"
     win.apply_theme("dark")
+
+
+
+# ---------------------------------------------------------------- 4.1.5 QA regressions
+def _app():
+    from PySide6.QtWidgets import QApplication
+    return QApplication.instance()
+
+
+def test_415_inspector_auto_hides_on_narrow_windows(win):
+    win.store.set("inspector_open", True)
+    win.resize(1440, 900); win.go("Create"); _app().processEvents()
+    assert not win.inspector.isHidden()
+    win.resize(1280, 800); _app().processEvents()
+    assert win.inspector.isHidden() and win.store.get("inspector_open") is True  # preference kept
+    win.toggle_inspector(); assert not win.inspector.isHidden()  # can still be opened on demand
+    win.toggle_inspector(); assert win.inspector.isHidden()
+
+
+def test_415_no_duplicate_titles(win):
+    from PySide6.QtWidgets import QLabel
+    for name in ("Create", "Settings", "Inpaint & Regions", "Presets", "Gallery"):
+        win.go(name)
+        dup = [h for h in win.stack.currentWidget().findChildren(QLabel, "h1") if h.text() == name and h.isVisibleTo(win)]
+        assert not dup, name
+        assert win.sub_tabs[name].isChecked()
+    win.go("Home")
+    assert win.page_bar.isHidden()
+    assert any(h.text() == "Home" and h.isVisibleTo(win) for h in win.stack.currentWidget().findChildren(QLabel, "h1"))
+
+
+def test_415_tab_labels_keep_ampersand(win):
+    win.go("Inpaint & Regions")
+    assert win.sub_tabs["Inpaint & Regions"].text() == "Inpaint && Regions"
+
+
+def test_415_gallery_queue_strip_only_when_busy(win):
+    from promptmaker import imagegen
+    win.go("Gallery")
+    assert win.queue_box.isHidden() and win.gen_bar.isHidden()
+    j = imagegen.Job("an adult woman in a garden"); j.state = "queued"; win.queue_jobs.append(j); win._render_queue()
+    assert not win.queue_box.isHidden() and not win.gen_bar.isHidden()
+    j.state = "done"; win._render_queue(); assert win.queue_box.isHidden()
+
+
+def test_415_pages_scroll_instead_of_squashing(win):
+    from PySide6.QtWidgets import QScrollArea
+    assert all(isinstance(win.stack.widget(i), QScrollArea) for i in range(win.stack.count()))
+    assert win.c_prompt.minimumHeight() >= 80
+
+
+def test_415_ab_generate_seed_fits_spinbox(win, monkeypatch):
+    from promptmaker import imagegen
+    monkeypatch.setattr(imagegen, "new_seed", lambda: 2**32 - 5)
+    monkeypatch.setattr(win, "generate_image", lambda *a, **k: None)
+    win.ab_seed.setValue(0); win.ab_generate()
+    assert 0 < win.ab_seed.value() <= 2**31 - 1
+
+
+def test_415_keyboard_shortcuts(win):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtTest import QTest
+    win.activateWindow(); _app().processEvents()
+    target = _app().focusWidget() or win
+    t0 = win.theme; QTest.keyClick(target, Qt.Key_T, Qt.ControlModifier); _app().processEvents()
+    assert win.theme == __import__("promptmaker.theme", fromlist=["PAIR"]).PAIR[t0]
+    QTest.keyClick(target, Qt.Key_K, Qt.ControlModifier); _app().processEvents()
+    assert win.qbar.isVisible(); win.qbar.hide()
+    win.go("Builder"); win.randomise(True); _app().processEvents()  # Ctrl+Shift+C copies the Builder prompt (as in 4.1.0)
+    QGuiApplication.clipboard().setText("")
+    QTest.keyClick(_app().focusWidget() or win, Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier); _app().processEvents()
+    assert QGuiApplication.clipboard().text()

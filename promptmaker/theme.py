@@ -203,7 +203,7 @@ QLabel#brandSub {{ color: {muted}; padding: 0 18px 12px 18px; font-size: {f_xs};
 QWidget#sideFootPanel {{ border-top: 2px dashed {border}; }}
 
 /* ---------- page header banner ---------- */
-QFrame#pageHeader {{ border-radius: {r_xl}px; border: 2px solid {border_soft}; padding: 14px 24px;
+QFrame#pageHeader {{ border-radius: {r_xl}px; border: 2px solid {border_soft}; padding: 8px 20px;
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {head1}, stop:0.5 {head2}, stop:1 {head3}); }}
 QLabel#sparkles {{ color: {accent}; font-size: {f_lg}; font-weight: 800; letter-spacing: 4px; }}
 QLabel#h1 {{ font-size: {f_xl}; font-weight: 900; color: {text}; }}
