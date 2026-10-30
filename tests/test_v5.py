@@ -382,19 +382,20 @@ def test_trainer_core(tmp_path):
     assert steps[0][:2] == ["git", "clone"] and any("requirements.txt" in " ".join(s) for s in steps)
 
 
-def _fake_trainer(tmp_path):
-    sd = tmp_path / "sd-scripts"; (sd / "venv" / "bin").mkdir(parents=True); (sd / "venv" / "Scripts").mkdir(parents=True)
+def _fake_trainer(tmp_path, monkeypatch):
+    """A fake sd-scripts folder whose 'venv python' is this interpreter (no symlinks: works on Windows too)."""
+    sd = tmp_path / "sd-scripts"; sd.mkdir()
     (sd / "sdxl_train_network.py").write_text(FAKE_TRAIN)
-    for p in (sd / "venv" / "bin" / "python", sd / "venv" / "Scripts" / "python.exe"):
-        os.symlink(sys.executable, p)
+    real = trainer.venv_python
+    monkeypatch.setattr(trainer, "venv_python", lambda d: sys.executable if os.path.normcase(str(d)) == os.path.normcase(str(sd)) else real(d))
     forge = tmp_path / "forge"; (forge / "models" / "Stable-diffusion").mkdir(parents=True); (forge / "models" / "Lora").mkdir()
     (forge / "models" / "Stable-diffusion" / "novaAnimeXL.safetensors").write_bytes(b"x")
     (forge / "models" / "Stable-diffusion" / "pastelkaAnima.safetensors").write_bytes(b"x")
     return str(sd), str(forge)
 
 
-def test_training_page_mocked_subprocess_links_character(win, tmp_path):
-    sd, forge = _fake_trainer(tmp_path)
+def test_training_page_mocked_subprocess_links_character(win, tmp_path, monkeypatch):
+    sd, forge = _fake_trainer(tmp_path, monkeypatch)
     cid = win.store.save_character(MIKA); win.tr_refresh_chars()
     win.go("LoRA training")
     win.tr_dir.setText(sd); win.tr_dir.editingFinished.emit(); assert win.tr_status_refresh()
@@ -412,7 +413,7 @@ def test_training_page_mocked_subprocess_links_character(win, tmp_path):
     assert win.tr_start() is None  # user said no
     win._auto_confirm = True
     cmd = win.tr_start()
-    assert cmd and cmd[0].startswith(sd)
+    assert cmd and cmd[0] == sys.executable and cmd[1].startswith(sd)
     assert _wait(lambda: getattr(win, "tr_last", None), 20)
     assert win.tr_last == os.path.join(forge, "models", "Lora", "mika_v2.safetensors") and os.path.exists(win.tr_last)
     assert win.tr_bar.value() == 100
@@ -424,7 +425,7 @@ def test_training_page_mocked_subprocess_links_character(win, tmp_path):
 
 
 def test_training_cancel_and_install_needs_confirmation(win, tmp_path, monkeypatch):
-    sd, forge = _fake_trainer(tmp_path)
+    sd, forge = _fake_trainer(tmp_path, monkeypatch)
     monkeypatch.setenv("SLOW", "1")
     win.tr_dir.setText(sd); win.tr_forge.setText(forge); win.tr_load_ckpts()
     win.tr_name.setText("x"); win._auto_confirm = True
