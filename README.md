@@ -15,7 +15,7 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🏠 Home** *(4.1)*: a dashboard with your target model and linked checkpoint, Forge / Ollama status, recent images and quick-start buttons.
 - **🗂 Gallery** *(4.1)*: justified rows that keep aspect ratios, hover preview, full-screen viewer (←/→, Esc), and right-click actions: *Inpaint this*, *Use as reference*, *Regenerate with hires*, *Upscale…*. Drag a thumbnail onto the inpaint canvas.
 - **⤢ Upscale** *(4.1)*: Forge img2img at 1.5× with denoise 0.3 (same prompt and seed), or *Pure upscale* via Forge Extras / ComfyUI `ImageScaleBy`.
-- **Queue & status** *(4.1)*: the sidebar dot shows *Forge · active checkpoint* or *Offline* (click for settings); ☰ opens the queue to reorder or cancel jobs. Forge shows a live preview while it generates.
+- **Queue & status** *(4.1)*: the sidebar dot shows *Forge · active checkpoint* or *Offline* (click for settings); ☰ opens the queue to reorder or cancel jobs. Forge and ComfyUI show a live preview while they generate (ComfyUI: start it with `--preview-method auto`).
 - **Look & feel** *(4.1)*: accent colours (purple, teal, pink, orange) in Settings → General, a collapsible icon-only sidebar («), and short page fades.
 - **✨ Create:** type an idea like *"an anime girl wearing an outfit in a setting"* and get finished prompts for your target model. You also get a separate negative prompt (where the model supports one) and recommended settings. A creativity slider controls how much it invents, and it can give 1–5 options with live streaming. **⚡ Offline build** works without AI.
 - **🎨 Builder:** 13 categories and about 800 grouped presets as clickable chips, with global search, locks, randomise/surprise and your own custom chips. A live, model-aware preview and quick score update as you go.
@@ -255,6 +255,9 @@ When it starts, PromptMaker can ask the GitHub releases API whether a newer vers
 English, Español and Deutsch. Choose one in **Settings → Language** and restart. The Spanish and German translations are **machine-translated**, and corrections are very welcome. Translations live in `promptmaker/i18n/<code>.json`, and any string without a translation falls back to English.
 
 ## Troubleshooting
+
+**ComfyUI: no live preview, only "Step n/N"**
+ComfyUI only sends preview images when it is started with a preview method. Open `run_nvidia_gpu.bat` in your ComfyUI portable folder and add `--preview-method auto` to the end of the `python … main.py` line (e.g. `.\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build --preview-method auto`), then restart ComfyUI. `auto` uses the TAESD decoders in `models/vae_approx` when present.
 
 **Forge / A1111: "HTTP 404 from /sdapi/v1/sd-models" or "API not enabled"**
 The WebUI is running, but it was started without its API. PromptMaker detects this and shows the fix:

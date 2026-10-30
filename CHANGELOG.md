@@ -14,7 +14,17 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Live generation preview** from Forge's `/sdapi/v1/progress` `current_image`, shown in the Gallery queue area and on the Auto-refine page (Settings toggle). ComfyUI keeps the progress text only.
 - **Look & feel**: justified gallery rows that keep each image's aspect ratio, a hover preview, a full-screen viewer (←/→, Esc); accent colour picker (purple, teal, pink, orange) for dark and light themes; collapsible icon-only sidebar (remembered); 150 ms page fade (can be switched off); loading placeholders for checkpoint pickers and LoRA scans.
 
- - 2026-10-30
+### Fixed
+- Full-screen viewer "zoom-in" while browsing: each new picture enlarged the image label, which grew the window, which scaled the next picture bigger. The viewer now always fits the image to the window (aspect kept, centred), switches instantly with ←/→ or the mouse wheel, and hides the gallery hover preview.
+- ComfyUI: sampler/scheduler names saved from a Forge list (e.g. `DPM++ 2M` / `Karras`) are converted to ComfyUI names (`dpmpp_2m` / `karras`) instead of failing workflow validation.
+- Sidebar status for ComfyUI read "ComfyUI · ComfyUI 0.43.0"; now "ComfyUI · v0.43.0".
+- Tests: windows are destroyed after each test (full suite ~9.6 min → ~1 min).
+
+### Added (ComfyUI)
+- **Live preview and exact step progress** over ComfyUI's websocket (`/ws?clientId=…`, same client id as `/prompt`; built-in client, no new dependency). Preview frames need ComfyUI started with `--preview-method auto` (or `taesd`); without it you still get *Step n/N* progress.
+- **Hires fix on ComfyUI**: `LatentUpscaleBy` + a second KSampler pass with your hires scale, denoise and steps (the Settings checkbox is now just *Hires fix*; the upscaler list stays Forge-only).
+
+## [4.0.1] - 2026-10-30
 
 ### Added
 - The image checkpoint now follows the **Target model**: the checkpoint you pick in any picker is remembered per target model (`profile_checkpoints` setting, included in Library sync) and restored when you switch. Civitai-imported profiles without a link are auto-matched to a backend checkpoint by file name or normalised name, only when the match is unique. Settings shows "Linked to: …"; choosing Backend default unlinks.
