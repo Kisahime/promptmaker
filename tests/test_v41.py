@@ -237,3 +237,23 @@ def test_live_preview_tick(win):
     assert win.gen_preview.pixmap() is not None and not win.gen_preview.pixmap().isNull()
     assert not win.ar_img.pixmap().isNull()
     imagegen.LAST_PREVIEW.clear()
+
+
+def test_viewer_no_zoom_and_wheel(win):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    a = _gallery_img(win, "big", 1600, 1200); _gallery_img(win, "small", 64, 48); _gallery_img(win, "tall", 300, 900)
+    v = win.gal_view(a); v.show(); v.resize(800, 600)
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    sizes = []
+    for _ in range(6):
+        ev = QWheelEvent(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120), Qt.NoButton, Qt.NoModifier,
+                         Qt.NoScrollPhase, False)
+        v.wheelEvent(ev); QApplication.processEvents()
+        pm = v.img.pixmap()
+        assert pm.width() <= v.img.width() and pm.height() <= v.img.height()  # always fits
+        sizes.append((v.size().width(), v.size().height()))
+    assert len(set(sizes)) == 1 and sizes[0] == (800, 600)  # window never grows (old zoom bug)
+    assert v.i == (v.paths.index(a) + 6) % 3
+    v.close()

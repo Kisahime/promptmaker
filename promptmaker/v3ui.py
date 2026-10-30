@@ -281,7 +281,7 @@ class V3Pages:
         job.scheduler_set = bool(_pick(ps.get("scheduler")) or _pick(self.store.get("img_scheduler")) or g.get("scheduler"))
         if g.get("clip_skip"):
             job.clip_skip = g["clip_skip"]
-        if a1 and self.store.get("hr_on", False):
+        if self.store.get("hr_on", False):  # Forge: enable_hr; ComfyUI (4.1): LatentUpscaleBy + 2nd KSampler pass
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         job.profile_family = self.profile.get("family", "")

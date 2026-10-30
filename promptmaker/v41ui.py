@@ -6,7 +6,7 @@ from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSize, Qt, 
 from PySide6.QtGui import QCursor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QGraphicsOpacityEffect,
                                QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QProgressBar,
-                               QPushButton, QVBoxLayout)
+                               QPushButton, QSizePolicy, QVBoxLayout)
 
 from . import imagegen
 from .i18n import tr
@@ -55,38 +55,59 @@ class GalleryList(QListWidget):
 
 
 class Viewer(QDialog):
-    """Full-screen image viewer: ←/→ to browse, Esc to close."""
+    """Full-screen image viewer: ←/→ or the mouse wheel to browse, Esc to close.
+    The picture is always fitted to the window (aspect kept, centred) and switches instantly. The image label
+    ignores its pixmap's size hint – otherwise each new pixmap grew the label, which grew the window, which
+    rescaled the next image bigger (the "zoom-in" effect in 4.1.0)."""
     def __init__(self, parent, paths, index=0):
         super().__init__(parent)
-        self.paths, self.i = list(paths), index
+        self.paths, self.i, self._pm = list(paths), index, QPixmap()
         self.setWindowTitle(tr("Viewer")); self.setStyleSheet("background:#000")
-        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0)
-        self.img = QLabel(); self.img.setAlignment(Qt.AlignCenter); v.addWidget(self.img, 1)
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
+        self.img = QLabel(); self.img.setAlignment(Qt.AlignCenter)
+        self.img.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored); self.img.setMinimumSize(1, 1)
+        v.addWidget(self.img, 1)
         self.cap = QLabel(); self.cap.setAlignment(Qt.AlignCenter); self.cap.setStyleSheet("color:#aaa;padding:6px"); v.addWidget(self.cap)
+        if parent is not None and hasattr(parent, "gal_list"):
+            parent.gal_list.hover.hide()
+        self.resize(1400, 860)
         self.show_i(index)
 
     def show_i(self, i):
         if not self.paths:
             return
         self.i = i % len(self.paths)
-        pm = QPixmap(self.paths[self.i])
-        size = self.size() if self.isVisible() else QSize(1400, 860)
-        self.img.setPixmap(pm.scaled(size.width(), size.height() - 30, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.cap.setText(f"{self.i + 1}/{len(self.paths)} · {os.path.basename(self.paths[self.i])}  ·  ← →  ·  Esc")
+        self._pm = QPixmap(self.paths[self.i])
+        self.cap.setText(f"{self.i + 1}/{len(self.paths)} · {os.path.basename(self.paths[self.i])}  ·  ← → / wheel  ·  Esc")
+        self._fit()
+
+    def _fit(self):
+        if self._pm.isNull():
+            self.img.clear(); return
+        box = self.img.size()
+        if box.width() < 10 or box.height() < 10:
+            box = QSize(max(10, self.width()), max(10, self.height() - 30))
+        self.img.setPixmap(self._pm.scaled(box, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def keyPressEvent(self, e):
         k = e.key()
-        if k in (Qt.Key_Right, Qt.Key_Space):
+        if k in (Qt.Key_Right, Qt.Key_Space, Qt.Key_PageDown):
             self.show_i(self.i + 1)
-        elif k == Qt.Key_Left:
+        elif k in (Qt.Key_Left, Qt.Key_PageUp):
             self.show_i(self.i - 1)
         elif k == Qt.Key_Escape:
             self.close()
         else:
             super().keyPressEvent(e)
 
+    def wheelEvent(self, e):
+        d = e.angleDelta().y() or e.angleDelta().x()
+        if d:
+            self.show_i(self.i + (1 if d < 0 else -1))
+        e.accept()
+
     def resizeEvent(self, e):
-        super().resizeEvent(e); self.show_i(self.i)
+        super().resizeEvent(e); self._fit()
 
 
 class QueueDialog(QDialog):
@@ -334,8 +355,6 @@ class V41Pages:
         if not made:
             return None
         job, backend, wf = made
-        if not isinstance(backend, imagegen.A1111):
-            self.notify(tr("Hires fix needs the Forge / A1111 backend"), error=True); return None
         job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                      "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         return self._queue(job, backend, wf, tr("Hires version queued"))

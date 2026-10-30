@@ -62,6 +62,27 @@ def png_size(png):
     return struct.unpack(">II", png[16:24])
 
 
+def add_comfy_hires(wf, scale=1.5, denoise=0.4, steps=0):
+    """ComfyUI hires fix: LatentUpscaleBy + a second KSampler pass before the VAEDecode (like Forge's hires fix)."""
+    wf = copy.deepcopy(wf)
+    ks = next((k for k, n in wf.items() if n.get("class_type") in ("KSampler", "KSamplerAdvanced")), None)
+    dec = [k for k, n in wf.items() if n.get("class_type") == "VAEDecode" and n.get("inputs", {}).get("samples") == [ks, 0]]
+    if not ks or not dec:
+        return wf  # unknown workflow shape: leave it alone
+    i = ks.rstrip("0123456789") + "pm_hr"
+    up, k2 = i + "_up", i + "_ks"
+    wf[up] = {"class_type": "LatentUpscaleBy", "inputs": {"samples": [ks, 0], "upscale_method": "nearest-exact", "scale_by": float(scale)}}
+    second = copy.deepcopy(wf[ks])
+    second["inputs"]["latent_image"] = [up, 0]
+    second["inputs"]["denoise"] = float(denoise)
+    if steps:
+        second["inputs"]["steps"] = int(steps)
+    wf[k2] = second
+    for d in dec:
+        wf[d]["inputs"]["samples"] = [k2, 0]
+    return wf
+
+
 def comfy_upscale_workflow(name, scale):
     return {"1": {"class_type": "LoadImage", "inputs": {"image": name}},
             "2": {"class_type": "ImageScaleBy", "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "scale_by": float(scale)}},
@@ -242,11 +263,26 @@ class ComfyUI:
                 wf = add_comfy_controlnet(wf, self.upload_image(cn["image"], f"pm_pose_{job.id}.png"), cn["model"], cn.get("weight", 1.0))
             except ValueError as e:
                 raise BackendError(str(e)) from e
-        r = _http(self.url + "/prompt", {"prompt": wf, "client_id": self.client_id})
-        if r.get("node_errors"):
-            raise BackendError("Workflow error: " + json.dumps(r["node_errors"])[:400])
-        pid = self._prompt_id = r["prompt_id"]
-        start = time.time()
+        hr = getattr(job, "hires", None)
+        if hr and not up and not (ip and ip.get("image")):
+            wf = add_comfy_hires(wf, hr.get("scale", 1.5), hr.get("denoise", 0.4), hr.get("steps") or 0)
+        from . import comfyws
+        ws = comfyws.connect(self.url, self.client_id) if (progress or LIVE_PREVIEW) and not os.environ.get("PROMPTMAKER_NO_WS") else None
+        try:
+            r = _http(self.url + "/prompt", {"prompt": wf, "client_id": self.client_id})
+            if r.get("node_errors"):
+                raise BackendError("Workflow error: " + json.dumps(r["node_errors"])[:400])
+            pid = self._prompt_id = r["prompt_id"]
+            if ws:
+                ws.prompt_id = pid
+            self.last_ws = ws
+            return self._wait(job, pid, ws, progress, cancelled, poll, timeout)
+        finally:
+            if ws:
+                ws.close()
+
+    def _wait(self, job, pid, ws, progress, cancelled, poll, timeout):
+        start, seen = time.time(), 0
         while True:
             if cancelled and cancelled():
                 self.cancel()
@@ -270,7 +306,14 @@ class ComfyUI:
                     return images
                 if status.get("completed"):
                     raise BackendError("Workflow finished but produced no output images (needs a SaveImage node).")
-            if progress:
+            if ws and ws.previews != seen:
+                seen = ws.previews; job.preview = ws.preview
+                LAST_PREVIEW.update(job=job.id, tag=getattr(job, "tag", ""), png=ws.preview,
+                                    pct=int(100 * ws.progress[0] / ws.progress[1]) if ws.progress else -1)
+            if progress and ws and ws.progress:
+                v, mx = ws.progress
+                progress(int(100 * v / mx), f"Step {v}/{mx}")
+            elif progress:
                 try:
                     q = _http(self.url + "/queue", timeout=5)
                     running = any(item[1] == pid for item in q.get("queue_running", []))

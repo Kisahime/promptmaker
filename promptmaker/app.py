@@ -2155,7 +2155,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
                     button("⟳", lambda: self._load_picks("samplers", self.img_sampler), "ghost", "Load samplers from the backend"),
                     label("Scheduler"), self.img_scheduler,
                     button("⟳", lambda: self._load_picks("schedulers", self.img_scheduler), "ghost", "Load schedulers from the backend"), None))
-        self.hr_on = QCheckBox(tr("Hires fix (Forge / A1111)")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
+        self.hr_on = QCheckBox(tr("Hires fix")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
         self.hr_scale = QDoubleSpinBox(); self.hr_scale.setRange(1.0, 4.0); self.hr_scale.setSingleStep(0.25)
         self.hr_scale.setValue(float(self.store.get("hr_scale", 1.5))); self.hr_scale.setSuffix("×")
         self.hr_denoise = QDoubleSpinBox(); self.hr_denoise.setRange(0.0, 1.0); self.hr_denoise.setSingleStep(0.05)
@@ -2302,7 +2302,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
     def _hr_upscalers(self):
         b = self.image_backend()
         if not isinstance(b, imagegen.A1111):
-            self.notify(tr("Hires fix needs the Forge / A1111 backend"), error=True); return None
+            self.notify(tr("The upscaler list is Forge-only – ComfyUI hires fix uses a latent upscale + second pass"), error=True); return None
         cur = self.hr_up.currentText()
         wk = CallWorker(b.upscalers)
 
