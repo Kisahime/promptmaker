@@ -259,6 +259,8 @@ English, Español and Deutsch. Choose one in **Settings → Language** and resta
 **ComfyUI: no live preview, only "Step n/N"**
 ComfyUI only sends preview images when it is started with a preview method. Open `run_nvidia_gpu.bat` in your ComfyUI portable folder and add `--preview-method auto` to the end of the `python … main.py` line (e.g. `.\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build --preview-method auto`), then restart ComfyUI. `auto` uses the TAESD decoders in `models/vae_approx` when present.
 
+To stop ComfyUI opening a browser tab on start, also add `--disable-auto-launch` to that line. For Forge, turn off *Settings → System → Automatically open webui in browser on startup* and make sure `COMMANDLINE_ARGS` in `webui-user.bat` has no `--autolaunch`.
+
 **Forge / A1111: "HTTP 404 from /sdapi/v1/sd-models" or "API not enabled"**
 The WebUI is running, but it was started without its API. PromptMaker detects this and shows the fix:
 1. Close the Forge console window.
