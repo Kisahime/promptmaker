@@ -986,8 +986,8 @@ class V5Pages:
                 for f in sorted(fs):
                     if f.lower().endswith((".safetensors", ".ckpt")) and "anima" not in f.lower():
                         self.tr_ckpt.addItem(f, os.path.join(root, f))
-        if cur:
-            self.tr_ckpt.setCurrentText(cur)
+        if cur and self.tr_ckpt.findText(cur) >= 0:  # keep the choice only if it's in this Forge folder
+            self.tr_ckpt.setCurrentIndex(self.tr_ckpt.findText(cur))
         return self.tr_ckpt.count()
 
     def _tr_add(self, path, caption=""):
