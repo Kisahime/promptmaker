@@ -11,11 +11,11 @@ from promptmaker.imagegen import ComfyUI, Job
 import test_v4
 
 
-def _ws_server(frames):
+def _ws_server(frames, gated=False):
     """One-shot WebSocket server that answers the handshake then sends `frames` [(opcode, bytes)]."""
     srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(1)
     port = srv.getsockname()[1]
-    seen = {}
+    seen = {"go": threading.Event()}
 
     def run():
         c, _ = srv.accept()
@@ -26,6 +26,8 @@ def _ws_server(frames):
         key = [ln.split(b": ")[1] for ln in req.split(b"\r\n") if ln.lower().startswith(b"sec-websocket-key")][0]
         acc = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
         c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + acc + b"\r\n\r\n")
+        if gated:
+            seen["go"].wait(3)
         for op, data in frames:
             ln = len(data)
             head = bytes([0x80 | op]) + (bytes([ln]) if ln < 126 else bytes([126]) + struct.pack(">H", ln) if ln < 65536
@@ -48,10 +50,11 @@ def test_ws_previews_and_progress():
     url, seen = _ws_server([(1, b'{"type":"status","data":{"status":{}}}'),
                             (1, b'{"type":"progress","data":{"value":3,"max":20,"prompt_id":"p1"}}'),
                             (2, struct.pack(">II", 1, 1) + jpeg),
-                            (1, b'{"type":"executing","data":{"node":null,"prompt_id":"p1"}}')])
+                            (1, b'{"type":"executing","data":{"node":null,"prompt_id":"p1"}}')], gated=True)
     ws = comfyws.connect(url, "abc 123")
     assert ws is not None
     ws.prompt_id = "p1"
+    seen["go"].set()
     _wait(lambda: ws.done)
     assert seen["path"] == "/ws?clientId=abc%20123"
     assert ws.progress == (3, 20) and ws.previews == 1 and ws.preview == jpeg and ws.done
