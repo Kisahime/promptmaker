@@ -369,9 +369,15 @@ class V3Pages:
         backend = self.image_backend()
         if not backend:
             self.notify(tr("Set up ComfyUI or Forge/A1111 in Settings first"), error=True); return
-        tm, vm = self.model.currentText(), self.ar_vision.currentText().strip()
-        if not tm or not vm:
-            self.notify(tr("Pick a text model in the sidebar and a vision model here"), error=True); return
+        tm = self.model.currentText()
+        if not tm:
+            self.notify(tr("Pick a text model in the sidebar"), error=True); return
+        want = self.ar_vision.currentText().strip()
+        vm, note = self.vision_for(want)
+        if not vm:
+            self.notify(note, error=True); return
+        if vm != want:
+            self.ar_vision.setCurrentText(vm); self.notify(note)
         self.store.set("ar_iters", self.ar_iters.value()); self.store.set("ar_threshold", self.ar_thresh.value())
         neg = self._default_negative()
         tmpl, _, wf = self.make_job("x", neg, None, "autorefine")  # read settings here: SQLite is main-thread only

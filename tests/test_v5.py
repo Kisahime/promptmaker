@@ -488,3 +488,114 @@ def test_v5_sections_home_and_palette(win):
     win.qbar.hide()
     win.go("Live sketch"); _app().processEvents()
     assert len(win.sub_tabs) == 6 and "Live sketch" in win.sub_tabs
+
+
+# ================================================================ vision model routing (Sarah: HTTP 400 "Multimodal data provided")
+class CapsProvider:
+    """Ollama-like: chat models + one vision model; 400s when images go to a non-vision model."""
+    pid = "ollama"
+
+    def __init__(self, models=("luchador-fixed:latest", "qwen3:8b", "qwen2.5vl:latest"), vision=("qwen2.5vl:latest",)):
+        self.models, self.vision, self.calls = list(models), set(vision), []
+
+    def list_models(self):
+        return list(self.models)
+
+    def has_vision(self, m):
+        return m in self.vision
+
+    def vision_models(self):
+        return [m for m in self.models if m in self.vision]
+
+    def stream_chat(self, model, messages, temperature=0.7, json_mode=False, stop_flag=None):
+        self.calls.append(model)
+        if any(m.get("images") for m in messages) and model not in self.vision:
+            from promptmaker.providers import ProviderError
+            raise ProviderError('HTTP 400 from http://localhost:11434/api/chat: {"error":"Multimodal data provided, '
+                                'but model does not support multimodal requests."}')
+        yield "1girl, red coat, smiling"
+
+
+def test_resolve_vision_model():
+    from promptmaker import providers as pv
+    p = CapsProvider()
+    assert pv.resolve_vision(p, "qwen2.5vl:latest") == ("qwen2.5vl:latest", "")
+    m, note = pv.resolve_vision(p, "luchador-fixed:latest")
+    assert m == "qwen2.5vl:latest" and "luchador-fixed:latest can't read images" in note
+    assert pv.resolve_vision(p, "")[0] == "qwen2.5vl:latest"
+    m, note = pv.resolve_vision(CapsProvider(vision=()), "qwen3:8b")
+    assert m == "" and "ollama pull qwen2.5vl" in note
+
+
+def test_ollama_capabilities_cached(monkeypatch):
+    import io
+    from promptmaker import providers as pv
+    hits = []
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_req(url, data=None, **k):
+        hits.append(data["model"])
+        return R(json.dumps({"capabilities": ["completion", "vision"] if "vl" in data["model"] else ["completion"]}).encode())
+    monkeypatch.setattr(pv, "_req", fake_req)
+    p = pv.OllamaProvider("http://x")
+    assert p.has_vision("qwen2.5vl:latest") and not p.has_vision("luchador-fixed:latest")
+    assert p.has_vision("qwen2.5vl:latest") and hits == ["qwen2.5vl:latest", "luchador-fixed:latest"]
+
+
+def _tr_with_images(win, tmp_path, n=5):
+    win.go("LoRA training"); win.tr_items.clear()
+    for i in range(n):
+        win._tr_add(_png_file(tmp_path / f"c{i}.png"))
+
+
+def test_caption_uses_vision_model_not_chat_model(win, tmp_path):
+    win.provider = CapsProvider()
+    win.model.addItem("luchador-fixed:latest"); win.model.setCurrentText("luchador-fixed:latest")
+    if hasattr(win, "vision_model"):
+        win.vision_model.clear()  # image→prompt page never opened: the old code fell back to the chat model
+    win.tr_vision.setCurrentText(tr_auto())
+    _tr_with_images(win, tmp_path, 3)
+    assert win.tr_caption_ai()
+    assert _wait(lambda: "Captions done" in win.tr_log.toPlainText(), 10), win.tr_log.toPlainText()
+    assert set(win.provider.calls) == {"qwen2.5vl:latest"} and len(win.provider.calls) == 3
+    assert "Captioning with qwen2.5vl:latest" in win.tr_log.toPlainText()
+    assert all("red coat" in c for _p, c in win.tr_items)
+    # a configured non-vision model is swapped too, and the picker shows which one is used
+    win.provider.calls.clear(); win.tr_vision.setCurrentText("qwen3:8b")
+    assert win.tr_caption_ai() and win.tr_vision.currentText() == "qwen2.5vl:latest"
+    assert "qwen3:8b can't read images" in win.tr_log.toPlainText()
+    assert _wait(lambda: len(win.provider.calls) == 3, 10)
+
+
+def test_caption_without_vision_model_explains_and_400_stops_run(win, tmp_path):
+    win.provider = CapsProvider(vision=())
+    _tr_with_images(win, tmp_path, 4)
+    win.tr_vision.setCurrentText("qwen3:8b")
+    assert not win.tr_caption_ai() and "ollama pull qwen2.5vl" in win.tr_log.toPlainText() and not win.provider.calls
+    # model claims vision but the server 400s: stop after the first image instead of 45 errors
+    win.provider.has_vision = lambda m: True; win.tr_log.clear()
+    assert win.tr_caption_ai()
+    assert _wait(lambda: "Captioning stopped" in win.tr_log.toPlainText(), 10), win.tr_log.toPlainText()
+    _wait(lambda: False, 0.3)
+    assert len(win.provider.calls) == 1 and win.tr_log.toPlainText().count("HTTP 400") == 1
+
+
+def tr_auto():
+    from promptmaker.i18n import tr
+    return tr("Auto")
+
+
+def test_image_to_prompt_and_tagging_route_to_vision_model(win, tmp_path):
+    win.provider = CapsProvider()
+    win.vision_model.clear(); win.vision_model.addItem("luchador-fixed:latest")
+    win.i2p_b64 = "aGk="
+    win._i2p_run()
+    assert _wait(lambda: win.provider.calls, 10) and win.provider.calls[0] == "qwen2.5vl:latest"
+    assert win.vision_model.currentText() == "qwen2.5vl:latest"
+    assert win.vision_for("luchador-fixed:latest")[0] == "qwen2.5vl:latest"

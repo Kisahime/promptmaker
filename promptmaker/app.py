@@ -1891,9 +1891,14 @@ class MainWindow(Shell415, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def _i2p_run(self):
         if not self.i2p_b64:
             self.notify(tr("Add an image first"), error=True); return
-        model = self.vision_model.currentText().strip()
+        want = self.vision_model.currentText().strip()
+        model, note = self.vision_for(want)
         if not model:
-            self.notify(tr("Pick a vision model first"), error=True); self._i2p_models(); return
+            self.notify(note, error=True); return
+        if model != want:
+            if self.vision_model.findText(model) < 0:
+                self.vision_model.addItem(model)
+            self.vision_model.setCurrentText(model); self.notify(note)
         self.store.set(f"vision_model:{self.provider.pid}", model)
         detail = {"Short": "Keep it short (about 25 words).", "Very detailed": "Be very detailed (90-150 words).",
                   "Balanced": "Use the ideal length for the target model."}[self.i2p_detail.currentText()]

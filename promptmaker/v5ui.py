@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
                                QPushButton, QSlider, QSpinBox, QSplitter, QWidget)
 
 from . import characters as ch
-from . import sketch, storyboard as sbm, trainer
+from . import providers, sketch, storyboard as sbm, trainer
 from .i18n import tr
 from .widgets import CallWorker, Card, ChatWorker, ConfirmButton, FlowLayout, button, hrow, label
 
@@ -46,6 +46,14 @@ class PanelPreview(QLabel):
 
 
 class V5Pages:
+    def vision_for(self, preferred=None):
+        """Resolve the model for image requests (captions, tagging, judge, image→prompt); (model, note)."""
+        if preferred is None:
+            preferred = ((self.vision_model.currentText().strip() if hasattr(self, "vision_model") else "")
+                         or self.store.get(f"vision_model:{self.provider.pid}") or "")
+        failed = self._failed_models() if hasattr(self, "_failed_models") else {}
+        return providers.resolve_vision(self.provider, preferred, failed)
+
     # ================================================================== Characters
     def _characters_page(self):
         from .app import page
@@ -409,16 +417,19 @@ class V5Pages:
             return
         q = self.__dict__.get("_tag_queue", [])
         if not q:
+            self._tag_model = ""  # re-resolve next batch (the user may have changed the vision model)
             if hasattr(self, "cr_tag_status"):
                 self.cr_tag_status.setText(tr("Auto-tagging idle"))
             return
         path = q.pop(0)
-        model = (self.vision_model.currentText().strip() if hasattr(self, "vision_model") else "") or self.model.currentText()
-        if not model:
-            self._tag_queue = []
-            if hasattr(self, "cr_tag_status"):
-                self.cr_tag_status.setText(tr("No vision model – pick one in Settings → AI"))
-            return
+        if not getattr(self, "_tag_model", ""):
+            self._tag_model, note = self.vision_for()
+            if not self._tag_model:
+                self._tag_queue = []
+                if hasattr(self, "cr_tag_status"):
+                    self.cr_tag_status.setText("⚠️ " + note)
+                return
+        model = self._tag_model
         chars = [c for c in self.store.characters() if ch.extra(c)["autotag"]]
         img = QImage(path)
         if img.isNull():
@@ -433,7 +444,7 @@ class V5Pages:
         self._tag_worker.start()
 
     def _autotag_failed(self, e):
-        self._tag_queue = []
+        self._tag_queue = []; self._tag_model = ""
         if hasattr(self, "cr_tag_status"):
             self.cr_tag_status.setText("⚠️ " + e[:120])
 
@@ -940,7 +951,11 @@ class V5Pages:
                     button("−", self.tr_remove, "ghost"), None, self.tr_count))
         dc.add(self.tr_list, 1); dc.add(self.tr_cap)
         dc.add(hrow(button("🏷 Captions from prompts", self.tr_caption_prompts, "ghost"),
-                    button("👁 Auto-caption (vision model)", self.tr_caption_ai, "ghost"), None))
+                    button("👁 Auto-caption", self.tr_caption_ai, "ghost"), None))
+        self.tr_vision = QComboBox(); self.tr_vision.setEditable(True); self.tr_vision.setMinimumWidth(180)
+        self.tr_vision.addItem(tr("Auto")); self.tr_vision.setCurrentText(self.store.get(f"vision_model:{self.provider.pid}") or tr("Auto"))
+        self.tr_vision.setToolTip(tr("Model that reads the images. Auto picks an installed vision model (e.g. qwen2.5vl)."))
+        dc.add(hrow(label("Vision model"), self.tr_vision, button("⟳", self._tr_vision_fill, "ghost", "Find vision-capable models"), None))
         split.addWidget(dc)
         sc = Card("Training")
         self.tr_name = QLineEdit(); self.tr_name.setPlaceholderText(tr("LoRA name, e.g. mika_v1"))
@@ -1029,20 +1044,52 @@ class V5Pages:
         self._tr_sel(self.tr_list.currentRow())
 
     def tr_caption_ai(self):
+        if not self.tr_items:
+            self.notify(tr("Add images first"), error=True); return False
+        want = self.tr_vision.currentText().strip()
+        want = "" if want == tr("Auto") else want
+        model, note = self.vision_for(want or None)
+        if not model:
+            self.tr_log.appendPlainText("⚠️ " + note); self.notify(note, error=True); return False
+        if want and model != want:
+            self.tr_vision.setCurrentText(model)
+        self.store.set(f"vision_model:{self.provider.pid}", model)
+        self.tr_log.appendPlainText(tr("Captioning with") + f" {model}" + (f" ({note})" if note else ""))
+        self._tr_cap_model, self._tr_cap_ok = model, 0
         self._tr_cap_q = list(range(len(self.tr_items))); self._tr_cap_next()
+        return True
+
+    def _tr_vision_fill(self):
+        cur = self.tr_vision.currentText()
+        w = CallWorker(self.provider.vision_models)
+        def done(models):
+            self.tr_vision.clear(); self.tr_vision.addItems([tr("Auto")] + list(models))
+            self.tr_vision.setCurrentText(cur or tr("Auto"))
+        w.done.connect(done); w.failed.connect(lambda e: self.notify(e, error=True))
+        self._tr_vision_worker = w; w.start()
+
+    def _tr_cap_failed(self, e):
+        self.tr_log.appendPlainText("⚠️ " + e)
+        if not self._tr_cap_ok or "HTTP 400" in e or "multimodal" in e.lower():
+            left = len(self._tr_cap_q); self._tr_cap_q = []
+            self.tr_log.appendPlainText(tr("Captioning stopped") + f" ({left} " + tr("left") + ") – " +
+                                        tr("pick a vision model and try again"))
+        else:
+            QTimer.singleShot(0, self._tr_cap_next)
 
     def _tr_cap_next(self):
         q = getattr(self, "_tr_cap_q", [])
         if not q:
             self.tr_log.appendPlainText(tr("Captions done")); return
         i = q.pop(0)
-        model = (self.vision_model.currentText().strip() if hasattr(self, "vision_model") else "") or self.model.currentText()
+        model = self._tr_cap_model
         png = sketch.png_bytes(QImage(self.tr_items[i][0]).scaled(512, 512, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         trig = self.tr_trigger.text().strip()
         self._tr_cap_worker = ChatWorker(self.provider, model, trainer.caption_messages(png, trig), 0.2)
         self._tr_cap_worker.done.connect(lambda t, i=i: (self.tr_items[i].__setitem__(1, trainer.clean_caption(t, trig)),
+                                                         setattr(self, "_tr_cap_ok", self._tr_cap_ok + 1),
                                                          self._tr_sel(self.tr_list.currentRow()), QTimer.singleShot(0, self._tr_cap_next)))
-        self._tr_cap_worker.failed.connect(lambda e: self.tr_log.appendPlainText("⚠️ " + e))
+        self._tr_cap_worker.failed.connect(self._tr_cap_failed)
         self.tr_log.appendPlainText(tr("Captioning") + f" {i + 1}/{len(self.tr_items)}")
         self._tr_cap_worker.start()
 
