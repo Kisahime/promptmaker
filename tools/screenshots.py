@@ -184,7 +184,7 @@ def v4_shots():
 def go():
     demo_data()
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
-    w.idea.setPlainText("an anime girl wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
+    w.go("Create"); w.idea.setPlainText("an adult anime woman wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
     g("create")
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("flux2"))
     w.go("Builder"); w.randomise(True); g("builder")
@@ -218,7 +218,7 @@ def go():
         ("1girl, adult woman, red hair, beach at sunset", "create"), ("a lighthouse on a cliff at dusk", "batch"),
         ("masterpiece, knight in silver armour", "wildcards"))]
     d = w.open_queue(); d.list.setCurrentRow(1); app.processEvents(); save(d, "queue"); d.close(); w.genq.jobs = []
-    w.set_sidebar_collapsed(True); w.go("Gallery"); g("sidebar_collapsed"); w.set_sidebar_collapsed(False)
+    w.set_sidebar_collapsed(False); w.go("Gallery"); g("sidebar_expanded"); w.set_sidebar_collapsed(True)
     w.go("Templates"); w.tpl_list.setCurrentRow(0); w.tpl_fill(True); g("templates")
     w.go("Batch"); w.batch_n.setValue(8); w.batch_generate(); g("batch")
     w.load_history(); w.go("History"); w.hist_clear_btn.click(); g("history"); w.hist_clear_btn.reset()
@@ -238,7 +238,9 @@ def go():
     w._ai_error("HTTP 500 from http://localhost:11434/api/chat: {\"error\":\"llama-server process has terminated: exit status 1: "
                 "error loading model: unknown model architecture: 'mllama'\"}", "llama3.2-vision:latest", vision=True)
     app.processEvents(); save(w._last_error_box, "model_error"); w._last_error_box.close()
-    w.toggle_theme(); w.go("Builder"); g("builder_light")
+    w.apply_theme("light"); w.go("Builder"); g("builder_light"); w.go("Home"); g("home_light"); w.go("Create"); g("create_light")
+    w.apply_theme("pastel"); w.go("Home"); g("pastel_home"); w.go("Builder"); g("pastel_builder")
+    w.apply_theme("pastel_dusk"); w.go("Create"); g("pastel_dusk_create"); w.apply_theme("dark")
     # App icon as shown on the window, taskbar and desktop shortcut
     from promptmaker.app import app_icon
     app_icon().pixmap(256, 256).save(os.path.join(OUT, "icon.png"), "PNG", 9); shots.append("icon")

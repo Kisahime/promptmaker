@@ -17,6 +17,13 @@ STATUS_EVERY_MS = 10000
 IMG_KEYS = ("aspect", "steps", "cfg", "sampler", "scheduler")
 
 
+def _empty_item(icon, title, sub=""):
+    """Centred, non-selectable empty-state row for lists (4.1.5)."""
+    it = QListWidgetItem(f"{icon}\n{title}" + (f"\n{sub}" if sub else ""))
+    it.setTextAlignment(Qt.AlignCenter); it.setFlags(Qt.NoItemFlags)
+    return it
+
+
 def offscreen():
     return QApplication.platformName() in ("offscreen", "minimal")
 
@@ -62,12 +69,12 @@ class Viewer(QDialog):
     def __init__(self, parent, paths, index=0):
         super().__init__(parent)
         self.paths, self.i, self._pm = list(paths), index, QPixmap()
-        self.setWindowTitle(tr("Viewer")); self.setStyleSheet("background:#000")
+        self.setWindowTitle(tr("Viewer")); self.setObjectName("viewer")
         v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         self.img = QLabel(); self.img.setAlignment(Qt.AlignCenter)
         self.img.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored); self.img.setMinimumSize(1, 1)
         v.addWidget(self.img, 1)
-        self.cap = QLabel(); self.cap.setAlignment(Qt.AlignCenter); self.cap.setStyleSheet("color:#aaa;padding:6px"); v.addWidget(self.cap)
+        self.cap = QLabel(); self.cap.setObjectName("viewerCaption"); self.cap.setAlignment(Qt.AlignCenter); v.addWidget(self.cap)
         if parent is not None and hasattr(parent, "gal_list"):
             parent.gal_list.hover.hide()
         self.resize(1400, 860)
@@ -140,7 +147,7 @@ class QueueDialog(QDialog):
             if j.id == sel:
                 self.list.setCurrentItem(it)
         if not self.rows():
-            self.list.addItem(tr("Queue is empty")); self.bar.setValue(0)
+            self.list.addItem(_empty_item("✿ ･ﾟ✧", tr("Queue is empty"), tr("Images you generate will line up here.") + "  ♡")); self.bar.setValue(0)
 
     def selected_id(self):
         it = self.list.currentItem()
@@ -175,6 +182,13 @@ class V41Pages:
     def _home_page(self):
         from .app import page
         w, v = page("Home", "Your studio at a glance – pick up where you left off.")
+        from . import theme
+        stats = QHBoxLayout(); stats.setSpacing(14); v.addLayout(stats)
+        self.home_stats = {}
+        for key, title in (("images", "Images in Gallery"), ("prompts", "Prompts in History"), ("favs", "Favourites"), ("chars", "Characters")):
+            c = Card(); c.lay.setSpacing(2)
+            val = QLabel("0"); val.setObjectName("statValue"); c.add(val); c.add(label(title, "statLabel"))
+            self.home_stats[key] = val; stats.addWidget(c, 1)
         top = QHBoxLayout(); top.setSpacing(14); v.addLayout(top)
         st = Card("Status")
         self.home_target = label("", "h2"); self.home_ckpt = label("", "muted", wrap=True)
@@ -189,6 +203,7 @@ class V41Pages:
                  ("🖌  Inpaint", lambda: self.go("Inpaint & Regions")), ("🗂  Gallery", lambda: self.go("Gallery"))]
         for i, (t, fn) in enumerate(tiles):
             b = QPushButton(tr(t)); b.setObjectName("homeTile"); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f())
+            b.setMinimumHeight(56); theme.lift(b)
             g.addWidget(b, i // 3, i % 3)
         qs.add(g)
         top.addWidget(qs, 2)
@@ -210,13 +225,19 @@ class V41Pages:
         cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "") or tr("backend default")
         self.home_ckpt.setText(tr("Checkpoint") + f": {cur}" + (f"  ·  🔗 {tr('linked')}" if ck else ""))
         self.home_backend.setText(self._status_text())
+        for key, fn in (("images", lambda: len(self.gallery.items())), ("prompts", lambda: len(self.store.history())),
+                        ("favs", lambda: len(self.store.favourites())), ("chars", lambda: len(self.store.characters()))):
+            try:
+                self.home_stats[key].setText(str(fn()))
+            except Exception:
+                self.home_stats[key].setText("–")
         self.home_ai.setText(self.ai_dot.text())
         self.home_recent.clear()
         for path, _m in self.gallery.items()[:8]:
             it = QListWidgetItem(QIcon(QPixmap(path).scaled(200, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)), "")
             it.setData(Qt.UserRole, path); self.home_recent.addItem(it)
         if not self.home_recent.count():
-            self.home_recent.addItem(tr("No images yet – generate one from Create or Builder"))
+            self.home_recent.addItem(_empty_item("(｡•ᴗ•｡) ✧", tr("No images yet – generate one from Create or Builder"), "★ ･ﾟ✿ ♡ ✿ﾟ･ ★"))
 
     def home_generate_last(self):
         text = self.current_text().strip() if hasattr(self, "current_text") else ""
@@ -457,20 +478,7 @@ class V41Pages:
 
     # ================================================================ look & feel
     def apply_accent(self, name):
-        self.store.set("accent", name); self.apply_theme(getattr(self, "theme", "dark"))
-
-    def set_sidebar_collapsed(self, on):
-        from .app import NAV
-        self.store.set("sidebar_collapsed", bool(on))
-        self.sidebar_w.setFixedWidth(64 if on else 240)
-        for i, (icon, name) in enumerate(NAV):
-            it = self.nav.item(i)
-            it.setText(icon if on else f"{icon}   {tr(name)}"); it.setToolTip(tr(name) if on else "")
-            it.setTextAlignment(Qt.AlignCenter if on else (Qt.AlignLeft | Qt.AlignVCenter))
-        for wdg in getattr(self, "_side_expand_only", []):
-            wdg.setVisible(not on)
-        self.collapse_btn.setText("»" if on else "«")
-        self.collapse_btn.setToolTip(tr("Expand sidebar") if on else tr("Collapse sidebar to icons"))
+        self.store.set("accent", name); self.apply_theme(getattr(self, "theme", "light"))
 
     def fade_in(self, widget):
         if offscreen() or not self.store.get("animations", True):
