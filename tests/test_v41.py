@@ -222,9 +222,10 @@ def test_per_profile_image_settings(win, srv):
 
 def test_sidebar_collapse_accent_and_fade(win):
     win.set_sidebar_collapsed(True)
-    assert win.sidebar_w.width() == 64 and win.nav.item(1).toolTip() == "Create" and not win.profile_combo.isVisible()
+    assert win.sidebar_w.width() == 64 and win.nav.item(1).toolTip() == "Create"
+    assert win.rail_btns["Studio"].text() == "✦" and win.rail_btns["Studio"].toolTip() == "Studio"
     assert win.store.get("sidebar_collapsed") is True
-    win.set_sidebar_collapsed(False); assert win.sidebar_w.width() == 240
+    win.set_sidebar_collapsed(False); assert win.sidebar_w.width() == 184 and "Studio" in win.rail_btns["Studio"].text()
     win.apply_accent("pink")
     from PySide6.QtWidgets import QApplication
     assert theme.ACCENTS["pink"][0] in QApplication.instance().styleSheet()
@@ -265,3 +266,52 @@ def test_415_design_tokens_render():
         css = theme.stylesheet(name, "teal")
         assert "{" + "r_" not in css and "QDialog#viewer" in css and "QLabel#emptyState" in css
         assert f"{theme.RADIUS['xl']}px" in css
+
+
+
+# ---------------------------------------------------------------- 4.1.5 shell
+def test_415_every_page_has_a_section_and_rail_navigates(win):
+    from promptmaker.app import NAV
+    from promptmaker.shell415 import SECTIONS
+    allp = [p for _i, _s, pages in SECTIONS for p in pages]
+    assert sorted(allp) == sorted(n for _, n in NAV) and len(allp) == len(set(allp))
+    win.rail_btns["Gallery"].click(); assert NAV[win.stack.currentIndex()][1] == "Gallery"
+    assert win.rail_btns["Gallery"].isChecked() and not win.rail_btns["Home"].isChecked()
+    win.go("Score"); assert win.rail_btns["Tools"].isChecked() and win.sub_tabs["Score"].isChecked()
+    win.sub_tabs["Pose"].click(); assert NAV[win.stack.currentIndex()][1] == "Pose"
+    win.rail_btns["Home"].click(); win.rail_btns["Tools"].click()
+    assert NAV[win.stack.currentIndex()][1] == "Pose"  # remembers the last page per section
+
+
+def test_415_studio_inspector_and_filmstrip(win):
+    win.store.set("inspector_open", True)
+    win.go("Create")
+    assert not win.filmstrip.isHidden() and not win.inspector.isHidden()
+    assert win.settings_img_card.parent() is not win._img_home  # moved into the inspector
+    win.toggle_inspector(); assert win.inspector.isHidden()
+    win.toggle_inspector(); assert not win.inspector.isHidden()
+    win.go("Settings")
+    assert win.settings_img_card.parent() is win._img_home and win.filmstrip.isHidden() and win.inspector.isHidden()
+    win.go("Builder"); assert not win.inspector.isHidden()
+
+
+def test_415_theme_switching(win):
+    from PySide6.QtWidgets import QApplication
+    for name in theme.THEMES:
+        win.apply_theme(name); assert win.store.get("theme") == name and win.theme_pick.currentData() == name
+        assert theme.colors(name)["bg"] in QApplication.instance().styleSheet()
+    win.apply_theme("pastel"); win.toggle_theme(); assert win.theme == "pastel_dusk"
+    win.toggle_theme(); assert win.theme == "pastel"
+    assert win.accent.itemText(win.accent.findData("pink")) == "Sakura pink"
+    win.theme_pick.setCurrentIndex(win.theme_pick.findData("dark")); assert win.theme == "dark"
+    assert win.accent.itemText(win.accent.findData("pink")) == "Pink"
+    win.apply_theme("bogus"); assert win.theme == "dark"
+
+
+def test_415_command_palette(win):
+    from promptmaker.app import NAV
+    win.open_quickbar(); win.qbar_in.setText("wildc")
+    assert "Wildcards" in win.qbar_list.item(0).text()
+    win._quickbar_go(); assert NAV[win.stack.currentIndex()][1] == "Wildcards" and win.qbar.isHidden()
+    win.open_quickbar(); win.qbar_in.setText("pastel dusk"); win._quickbar_go(); assert win.theme == "pastel_dusk"
+    win.apply_theme("dark")

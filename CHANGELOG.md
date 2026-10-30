@@ -4,16 +4,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [4.1.5] - 2026-10-30
 
+### Added
+- **Command palette (Ctrl+K, or the search box in the top bar):** jump to any page, open the queue, run the setup wizard, show or hide the inspector, or switch theme. Anything else you type still writes a prompt from your idea, as the old quick bar did.
+- **Studio workspace:** Create, Builder, Refine, Batch and Templates share one workspace. The prompt editor sits in the centre, with a collapsible **Generation inspector** on the right (backend, checkpoint, steps, CFG, sampler, scheduler and hires fix, all live) and a **filmstrip** of recent results along the bottom. Click a result to open it in the viewer.
+- **Theme picker** in Settings → Appearance with four themes: **Graphite dark** (new default), **Graphite light**, **Pastel** and **Pastel dusk** (the cute pastel look, with bundled Nunito font, gradients, pill controls and sparkle headers). Each theme family has its own accent set: Violet, Blue, Teal, Pink and Orange for Graphite, and Lavender, Sakura pink, Mint, Baby blue and Peach for Pastel. Ctrl+T switches between light and dark within the current family.
+- **Home dashboard stat cards**: counts for images, prompts, favourites and characters.
+
 ### Changed
-- **New cute pastel look.** The pastel light theme is now the default; Ctrl+T switches to a matching dusky-pastel dark theme. The palette uses sakura pink, lavender, mint, baby blue and peach, with soft pink-to-lavender-to-blue gradients on the window and sidebar. All styling comes from one design system in `theme.py`, built on colour, radius, type and spacing tokens.
-- **Rounded, friendly font:** Nunito is bundled (SIL Open Font License, `promptmaker/assets/fonts/OFL.txt`), with fallbacks to Quicksand, then Segoe UI Variable.
-- **Every page has a gradient header banner** with sparkle decorations (✧ ★ ♡ ✿). The app title is now "✿ PromptMaker ✧", with a ♡ subtitle.
-- **Sidebar:** cute icons for every page (🏡 🎀 🔮 🧸 🌷 🦄 …). The active page is a pink-to-lavender gradient pill. The footer has a dashed divider.
-- **Very rounded shapes:** pill buttons and chips, 24 px cards, and gradient primary buttons. Home tiles are gradient too. Both bounce up on hover with a soft coloured shadow.
-- **Chunky controls:** sliders with a gradient fill and a round knob, checkboxes as pill toggle switches, a rainbow-pastel progress bar, and lavender scrollbars. Menus, tooltips, tabs and group boxes are themed to match.
-- **Accent colours are now pastel:** Lavender (default), Sakura pink, Mint, Baby blue and Peach. Earlier saved choices still load.
-- **Kawaii empty states** for the queue and Home "Recent images", plus rounded toasts.
-- The README screenshot script now captures the Create page, which it previously captured as Home. The dark-theme shot is now `builder_dark.png`.
+- **New layout.** The long sidebar is now a **slim icon rail** with six sections: Home, Studio, Gallery, Tools, Library and Settings. It expands to show labels, and its choice is remembered. Each section shows its pages as tabs, and each section remembers the last page you used.
+- **A top bar** now holds the search / command palette, image-backend status and queue, target model, AI model and status, the inspector toggle, the setup wizard and the light/dark switch. These used to be crammed into the sidebar footer, so the collapsed sidebar no longer cuts off buttons.
+- **Settings is a two-pane page:** a category list (Appearance, General, AI provider, Image generation, Civitai, Community gallery) on the left and one page per category on the right. Image generation settings move into the Studio inspector while you're in the Studio, and come back to Settings when you open it.
+- **New default look:** clean graphite neutrals with one vivid accent, consistent radius, type and spacing tokens, and refined controls. All styling comes from `theme.py`.
+- **Create page:** the action buttons wrap instead of clipping, and Generate is now a primary button next to Copy.
+- The README screenshot script captures Create correctly (it used to capture Home) and now also captures light and Pastel shots.
+- All pages, features and shortcuts are unchanged and reachable: Ctrl+K, Ctrl+T, Ctrl+Shift+C and every page via the rail, its tabs or the palette.
 
 ## [4.1.0] - 2026-10-30
 

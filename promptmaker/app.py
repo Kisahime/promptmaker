@@ -25,6 +25,7 @@ from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
 from .v4ui import V4Pages
+from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
@@ -53,11 +54,17 @@ def scroll(widget):
     return s
 
 
+def _frow(name, *widgets):
+    """Inspector-friendly settings row: fixed-width label, then the field(s)."""
+    l = label(name, "muted"); l.setFixedWidth(84)
+    return hrow(l, *widgets)
+
+
 def page(title, subtitle=""):
     w = QWidget()
-    v = QVBoxLayout(w); v.setContentsMargins(32, 26, 32, 24); v.setSpacing(16)
+    v = QVBoxLayout(w); v.setContentsMargins(24, 14, 24, 18); v.setSpacing(14)
     banner = QFrame(); banner.setObjectName("pageHeader")
-    bh = QHBoxLayout(banner); bh.setContentsMargins(24, 14, 24, 14)
+    bh = QHBoxLayout(banner); bh.setContentsMargins(0, 0, 0, 0)
     head = QVBoxLayout(); head.setSpacing(2)
     head.addWidget(label(title, "h1"))
     if subtitle:
@@ -69,7 +76,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -102,9 +109,8 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
 
         root = QWidget(); root.setObjectName("root")
         h = QHBoxLayout(root); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
-        h.addWidget(self._sidebar())
         self.stack = QStackedWidget()
-        h.addWidget(self.stack, 1)
+        self._build_chrome(h, self.stack)
         self.setCentralWidget(root)
         for builder_fn in (self._home_page, self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
                            self._inpaint_page, self._presets_page, self._wildcards_page, self._loras_page, self._video_page, self._analyse_page,
@@ -118,9 +124,8 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         sc = QAction(self, shortcut=QKeySequence("Ctrl+T")); sc.triggered.connect(self.toggle_theme); self.addAction(sc)
         cp = QAction(self, shortcut=QKeySequence("Ctrl+Shift+C")); cp.triggered.connect(self.copy_prompt); self.addAction(cp)
         qk = QAction(self, shortcut=QKeySequence("Ctrl+K")); qk.triggered.connect(self.open_quickbar); self.addAction(qk)
-        self.apply_theme(self.store.get("theme", "light"))
-        if self.store.get("sidebar_collapsed"):
-            self.set_sidebar_collapsed(True)
+        self.apply_theme(self.store.get("theme", "dark"))
+        self.set_sidebar_collapsed(bool(self.store.get("sidebar_collapsed", True)))  # 4.1.5: slim icon rail by default
         self.preview_timer = QTimer(self); self.preview_timer.timeout.connect(self._preview_tick); self.preview_timer.start(700)
         self.home_refresh()
         self.update_preview()
@@ -134,52 +139,11 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
             QTimer.singleShot(600, self.start_tour)
 
     # ------------------------------------------------------------------ chrome
-    def _sidebar(self):
-        w = QWidget(); w.setObjectName("sidebarPane"); w.setAttribute(Qt.WA_StyledBackground, True); w.setFixedWidth(240); self.sidebar_w = w
-        v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-        brand = label("✿ PromptMaker ✧", "brand")
-        self.collapse_btn = button("«", lambda: self.set_sidebar_collapsed(not self.store.get("sidebar_collapsed")), "ghost",
-                                   "Collapse sidebar to icons")
-        self.collapse_btn.setFixedWidth(34)
-        top = QWidget(); top.setObjectName("sideFoot"); th = QHBoxLayout(top); th.setContentsMargins(0, 0, 8, 0)
-        th.addWidget(brand, 1); th.addWidget(self.collapse_btn)
-        v.addWidget(top)
-        self._side_expand_only = [brand]
-        _sub = label(f"♡ AI image prompt studio · v{__version__}", "brandSub"); v.addWidget(_sub)
-        self.nav = QListWidget(); self.nav.setObjectName("sidebar"); self.nav.setIconSize(QSize(18, 18))
-        for icon, name in NAV:
-            it = QListWidgetItem(f"{icon}   {tr(name)}"); self.nav.addItem(it)
-        v.addWidget(self.nav, 1)
-        foot = QWidget(); foot.setObjectName("sideFootPanel")
-        f = QVBoxLayout(foot); f.setContentsMargins(16, 12, 16, 16); f.setSpacing(6)
-        self._status_widgets(f)
-        _tm = label("TARGET MODEL", "groupLabel"); f.addWidget(_tm)
-        self.profile_combo = QComboBox()
-        for pid, p in self.profiles.items():
-            self.profile_combo.addItem(p["name"], pid)
-        idx = self.profile_combo.findData(self.store.get("profile", "generic"))
-        self.profile_combo.setCurrentIndex(max(0, idx))
-        self.profile_combo.currentIndexChanged.connect(self._profile_changed)
-        f.addWidget(self.profile_combo)
-        _ap = label("AI PROVIDER", "groupLabel"); f.addWidget(_ap)
-        self.prov_label = label("", "hint"); f.addWidget(self.prov_label)
-        self.model = QComboBox(); self.model.setPlaceholderText("no models")
-        self.model.currentTextChanged.connect(lambda m: m and self.store.set(f"model:{self.provider.pid}", m))
-        f.addWidget(self.model)
-        self.ai_dot = label("○ checking…", "hint", wrap=True)
-        f.addLayout(hrow(self.ai_dot, None, button("⟳", self.refresh_models, "ghost", "Refresh Ollama models")))
-        self.update_btn = button("", None, "ghost"); self.update_btn.setVisible(False); f.addWidget(self.update_btn)
-        f.addWidget(button("🧭  Setup wizard", lambda: self.open_setup(), "ghost", "Check Ollama, download models, find Forge / ComfyUI"))
-        self.theme_btn = button("🌙  Dark mode", self.toggle_theme, "ghost")
-        f.addWidget(self.theme_btn)
-        v.addWidget(foot)
-        self._side_expand_only += [_sub, _tm, self.profile_combo, _ap, self.prov_label, self.model, self.ai_dot, self.theme_btn]
-        return w
-
     def _nav_changed(self, i):
         self.stack.setCurrentIndex(i)
         self.fade_in(self.stack.currentWidget())
         name = NAV[i][1]
+        self._chrome_sync(name)
         if name == "Home":
             self.home_refresh()
         if name == "History":
@@ -204,15 +168,16 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.toast.show_message(text, error)
 
     def apply_theme(self, name):
+        name = theme.normalise(name)
         self.theme = name
         QApplication.instance().setStyleSheet(theme.stylesheet(name, self.store.get("accent", "purple")))
         self.store.set("theme", name)
-        self.theme_btn.setText("🌸  Pastel light" if name == "dark" else "🌙  Dusky dark")
+        self._sync_theme_widgets(name)
         if hasattr(self, "thread_view"):
             self.render_thread()
 
     def toggle_theme(self):
-        self.apply_theme("light" if self.theme == "dark" else "dark")
+        self.apply_theme(theme.PAIR[theme.normalise(self.theme)])
 
     @property
     def profile(self):
@@ -375,8 +340,8 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.creativity.valueChanged.connect(_cl); _cl(self.creativity.value())
         self.n_opts = QSpinBox(); self.n_opts.setRange(1, 5); self.n_opts.setValue(1); self.n_opts.setPrefix("Options: ")
         self.create_target = label("", "badge")
-        top.add(hrow(label("Creativity"), self.creativity, self.creativity_lbl, self.n_opts, self.create_target, None,
-                     button("⚡ Offline build", self.create_offline, tip="No AI – builds from matching presets"),
+        top.add(hrow(label("Creativity"), self.creativity, self.creativity_lbl, self.n_opts, None, self.create_target))
+        top.add(hrow(None, button("⚡ Offline build", self.create_offline, tip="No AI – builds from matching presets"),
                      self.stop_btn(), self.ai_btn("✨ Create prompt", self.create_generate, "primary")))
         # Ollama offline banner
         self.ollama_banner = QWidget(); bl = QHBoxLayout(self.ollama_banner); bl.setContentsMargins(0, 0, 0, 0)
@@ -396,11 +361,14 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.c_neg = QPlainTextEdit(); self.c_neg.setFixedHeight(60); res.add(self.c_neg)
         self.c_settings = label("", "hint", wrap=True); self.c_settings.setTextInteractionFlags(Qt.TextSelectableByMouse)
         res.add(self.c_settings)
-        res.add(hrow(button("📋 Copy", self.c_copy, "primary"), button("Copy negative", self.c_copy_neg),
-                     button("💬 Refine in chat", self.c_refine), button("↩ Load into Builder", self.c_to_builder),
-                     button("📊 Score", self.c_score), button("🕘 Save to history", self.c_hist),
-                     button("⭐ Favourite", self.c_fav), button("🖼 Generate", lambda: self.generate_image(
-                         self.c_prompt.toPlainText(), self.c_neg.toPlainText())), None, self.ai_btn("⟳ Regenerate", self.create_generate)))
+        acts = QWidget(); fl = FlowLayout(acts, spacing=8)  # 4.1.5: wraps instead of clipping next to the inspector
+        for b in (button("📋 Copy", self.c_copy, "primary"), button("🖼 Generate", lambda: self.generate_image(
+                      self.c_prompt.toPlainText(), self.c_neg.toPlainText()), "primary"),
+                  self.ai_btn("⟳ Regenerate", self.create_generate), button("Copy negative", self.c_copy_neg),
+                  button("💬 Refine in chat", self.c_refine), button("↩ Load into Builder", self.c_to_builder),
+                  button("📊 Score", self.c_score), button("🕘 Save to history", self.c_hist), button("⭐ Favourite", self.c_fav)):
+            fl.addWidget(b)
+        res.add(acts)
         v.addWidget(res, 1)
         self.create_opts = []
         return w
@@ -598,22 +566,37 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
 
     # ------------------------------------------------------------------ Quick bar (Ctrl+K)
     def open_quickbar(self):
+        """Ctrl+K command palette: jump to any page, run an action or switch theme – or type an idea and press
+        Enter to write a prompt for it (the original quick bar)."""
         if not hasattr(self, "qbar"):
-            self.qbar = QFrame(self.centralWidget()); self.qbar.setObjectName("card")
-            ql = QHBoxLayout(self.qbar); ql.setContentsMargins(14, 10, 14, 10)
-            self.qbar_in = QLineEdit(); self.qbar_in.setPlaceholderText("✨ Describe an image idea and press Enter…  (Esc to close)")
+            self.qbar = QFrame(self.centralWidget()); self.qbar.setObjectName("palette")
+            ql = QVBoxLayout(self.qbar); ql.setContentsMargins(14, 12, 14, 12); ql.setSpacing(8)
+            self.qbar_in = QLineEdit(); self.qbar_in.setPlaceholderText(tr("Search pages and actions, or describe an image idea…  (Esc to close)"))
             f = QFont(); f.setPointSize(12); self.qbar_in.setFont(f)
             self.qbar_in.returnPressed.connect(self._quickbar_go)
+            self.qbar_in.textChanged.connect(self.palette_filter)
             esc = QAction(self.qbar_in, shortcut=QKeySequence("Escape")); esc.triggered.connect(self.qbar.hide)
             self.qbar_in.addAction(esc)
-            ql.addWidget(label("✨", "h2")); ql.addWidget(self.qbar_in, 1)
+            for key, d in (("Down", 1), ("Up", -1)):
+                a = QAction(self.qbar_in, shortcut=QKeySequence(key))
+                a.triggered.connect(lambda _=False, d=d: self.qbar_list.setCurrentRow(max(0, min(self.qbar_list.count() - 1, self.qbar_list.currentRow() + d))))
+                self.qbar_in.addAction(a)
+            self.qbar_list = QListWidget(); self.qbar_list.setObjectName("paletteList")
+            self.qbar_list.itemClicked.connect(lambda it: (self.qbar_list.setCurrentItem(it), self._quickbar_go()))
+            ql.addWidget(self.qbar_in); ql.addWidget(self.qbar_list)
+        self._qbar_fns = []
         W = self.centralWidget().width()
-        self.qbar.setGeometry(int(W * 0.2), 70, int(W * 0.6), 64)
+        self.qbar.setFixedWidth(int(W * 0.5)); self.qbar.move(int(W * 0.25), 64)
+        self.palette_filter(self.qbar_in.text())
         self.qbar.show(); self.qbar.raise_(); self.qbar_in.setFocus(); self.qbar_in.selectAll()
 
     def _quickbar_go(self):
         t = self.qbar_in.text().strip()
+        it = self.qbar_list.currentItem() if hasattr(self, "qbar_list") else None
+        idx = it.data(Qt.UserRole) if it is not None else -1
         self.qbar.hide()
+        if idx is not None and idx >= 0 and idx < len(self._qbar_fns):
+            self._qbar_fns[idx](); return
         if t:
             self.idea.setPlainText(t); self.go("Create"); self.create_generate()
 
@@ -1704,7 +1687,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.store.add_history(job.prompt, self.profile["name"], "generated")
         self.gen_status.setText(tr("Done") + f" · {len(paths)} image(s)")
         self.gen_bar.setRange(0, 100); self.gen_bar.setValue(100)
-        self._render_queue(); self.load_gallery()
+        self._render_queue(); self.load_gallery(); self.film_refresh()
         for cb in getattr(self, "_job_callbacks", {}).pop(job.id, []):
             cb(job)
         self.notify(tr("Image ready") + " – " + tr("saved to Gallery"))
@@ -2099,7 +2082,8 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.live_prev = QCheckBox(tr("Live preview while generating (Forge)")); self.live_prev.setChecked(bool(self.store.get("live_preview", True)))
         self.live_prev.toggled.connect(lambda on: (self.store.set("live_preview", on), setattr(imagegen, "LIVE_PREVIEW", on)))
         imagegen.LIVE_PREVIEW = bool(self.store.get("live_preview", True))
-        g.add(hrow(label("Accent colour"), self.accent, self.anim_on, self.live_prev, None))
+        g.add(hrow(self.live_prev, None))
+        ap = self._appearance_card(Card("Appearance"), self.accent, [self.anim_on])
         self.chk_updates = QCheckBox(tr("Check GitHub for new versions at startup"))
         self.chk_updates.setChecked(self.store.get("check_updates", True))
         self.chk_updates.toggled.connect(lambda on: self.store.set("check_updates", on))
@@ -2138,7 +2122,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.img_kind.setCurrentIndex(max(0, self.img_kind.findData(self.store.get("img_backend", "none"))))
         self.img_url = QLineEdit()
         self.img_kind.currentIndexChanged.connect(self._img_form)
-        im.add(hrow(label("Backend"), self.img_kind, label("URL"), self.img_url))
+        im.add(_frow("Backend", self.img_kind)); im.add(_frow("URL", self.img_url))
         self.img_wf = QComboBox()
         for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
             self.img_wf.addItem(name)
@@ -2147,21 +2131,21 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.img_ckpt.currentTextChanged.connect(lambda _t: self.set_checkpoint(self.img_ckpt.name(), self.img_ckpt, self._settings_ckpt_key()))
         self._ckpt_combos_list().append(self.img_ckpt)
         self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
-        wl.addWidget(label("Workflow")); wl.addWidget(self.img_wf); wl.addStretch()
+        wl.addLayout(_frow("Workflow", self.img_wf))
         im.add(self.wf_row)
         self.img_steps = QSpinBox(); self.img_steps.setRange(0, 150); self.img_steps.setSpecialValueText("default")
         self.img_steps.setValue(self.store.get("img_steps") or 0)
         self.img_cfg = QDoubleSpinBox(); self.img_cfg.setRange(0, 30); self.img_cfg.setSingleStep(0.5); self.img_cfg.setSpecialValueText("default")
         self.img_cfg.setValue(self.store.get("img_cfg") or 0)
-        self.ckpt_link_lbl = label("", "hint")
+        self.ckpt_link_lbl = label("", "hint", wrap=True)
         self.ckpt_link_lbl.setToolTip(tr("Each target model remembers the checkpoint you pick. Choose 'Backend default' (clear the box) to unlink."))
-        im.add(hrow(label("Checkpoint"), self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
+        im.add(_frow("Checkpoint", self.img_ckpt, button("⟳", self._img_ckpts, "ghost", "Reload checkpoint list")))
         im.add(self.ckpt_link_lbl)
         self.img_sampler = self._pick_combo("img_sampler"); self.img_scheduler = self._pick_combo("img_scheduler")
-        im.add(hrow(label("Steps"), self.img_steps, label("CFG"), self.img_cfg, label("Sampler"), self.img_sampler,
-                    button("⟳", lambda: self._load_picks("samplers", self.img_sampler), "ghost", "Load samplers from the backend"),
-                    label("Scheduler"), self.img_scheduler,
-                    button("⟳", lambda: self._load_picks("schedulers", self.img_scheduler), "ghost", "Load schedulers from the backend"), None))
+        im.add(_frow("Steps", self.img_steps, None)); im.add(_frow("CFG", self.img_cfg, None))
+        im.add(_frow("Sampler", self.img_sampler, button("⟳", lambda: self._load_picks("samplers", self.img_sampler), "ghost", "Load samplers from the backend")))
+        im.add(_frow("Scheduler", self.img_scheduler,
+                     button("⟳", lambda: self._load_picks("schedulers", self.img_scheduler), "ghost", "Load schedulers from the backend")))
         self.hr_on = QCheckBox(tr("Hires fix")); self.hr_on.setChecked(bool(self.store.get("hr_on", False)))
         self.hr_scale = QDoubleSpinBox(); self.hr_scale.setRange(1.0, 4.0); self.hr_scale.setSingleStep(0.25)
         self.hr_scale.setValue(float(self.store.get("hr_scale", 1.5))); self.hr_scale.setSuffix("×")
@@ -2169,18 +2153,20 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.hr_denoise.setValue(float(self.store.get("hr_denoise", 0.4)))
         self.hr_steps = QSpinBox(); self.hr_steps.setRange(0, 150); self.hr_steps.setSpecialValueText("same")
         self.hr_steps.setValue(int(self.store.get("hr_steps", 0) or 0))
-        self.hr_up = QComboBox(); self.hr_up.setEditable(False); self.hr_up.setMinimumWidth(220)
+        self.hr_up = QComboBox(); self.hr_up.setEditable(False); self.hr_up.setMinimumWidth(120)
         self.hr_up.addItem(self.store.get("hr_upscaler", "Latent"))
-        im.add(hrow(self.hr_on, label("Upscale"), self.hr_scale, label("Upscaler"), self.hr_up,
-                    button("⟳", self._hr_upscalers, "ghost", "Load upscalers from Forge"), None))
-        im.add(hrow(label("Hires steps"), self.hr_steps, label("Denoise"), self.hr_denoise,
-                    label("0.3–0.5 keeps the picture, higher adds detail but can change it", "hint"), None))
-        self.img_unload = QCheckBox(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
+        im.add(self.hr_on)
+        im.add(_frow("Upscale", self.hr_scale, None)); im.add(_frow("Hires steps", self.hr_steps, None))
+        im.add(_frow("Upscaler", self.hr_up, button("⟳", self._hr_upscalers, "ghost", "Load upscalers from Forge")))
+        im.add(_frow("Denoise", self.hr_denoise, None))
+        im.add(label("Hires denoise 0.3–0.5 keeps the picture, higher adds detail but can change it", "hint", wrap=True))
+        self.img_unload = QCheckBox(tr("Unload Ollama models before each image"))
+        self.img_unload.setToolTip(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
         self.img_unload.setChecked(bool(self.store.get("img_unload_ollama", True)))
         self.img_unload.toggled.connect(lambda on: (self.store.set("img_unload_ollama", bool(on)), self._refresh_unload_cfg()))
         im.add(self.img_unload)
         self.img_test_lbl = label("", "muted", wrap=True)
-        im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None, self.img_test_lbl))
+        im.add(hrow(button("Save", self._img_save, "primary"), button("Test connection", self._img_test), None)); im.add(self.img_test_lbl)
         im.add(label("ComfyUI workflows are API-format JSON with {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{steps}} {{cfg}} "
                      "{{checkpoint}} {{sampler}} {{scheduler}} placeholders. Put your own in data/workflows/. "
                      "Start ComfyUI normally; for Forge/A1111 launch with --api.", "hint", wrap=True))
@@ -2198,8 +2184,12 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         cm.add(hrow(label("Index URL"), self.comm_url, button("Save", lambda: (self.store.set("community_index", self.comm_url.text().strip()),
                                                                             self.notify(tr("Saved"))))))
         iv.addWidget(cm)
-        iv.addStretch()
-        v.addWidget(scroll(inner), 1)
+        self.settings_img_card = im
+        for cb in (self.img_kind, self.img_ckpt, self.img_sampler, self.img_scheduler, self.hr_up, self.img_wf):
+            cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon); cb.setMinimumContentsLength(8); cb.setMinimumWidth(100)
+        self.img_url.setMinimumWidth(80)
+        self._settings_two_pane(v, [("Appearance", ap), ("General", g), ("AI provider", a), ("Image generation", im),
+                                    ("Civitai", cv), ("Community gallery", cm)])
         self._prov_form(); self._img_form()
         return w
 
@@ -2537,10 +2527,11 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         wk.failed.connect(lambda e: manual and self.notify(tr("Couldn't check for updates") + f": {e[:120]}", error=True))
         self._keep(wk); wk.start()
 
-    TOUR = [("Home", "Your dashboard: target model, linked checkpoint, Forge / Ollama status, recent images and quick-start buttons. "
-                     "The « button collapses the sidebar to icons; the dot below it shows the image backend – click it for settings, ☰ opens the queue."),
-            ("Create", "Start here: describe an idea in plain words and the AI writes a finished prompt for your target model. Press Ctrl+K anywhere for the quick bar."),
-            ("Builder", "Or build a prompt by clicking preset chips. Pick the target model in the sidebar – the output adapts automatically."),
+    TOUR = [("Home", "Your dashboard: stats, target model, linked checkpoint, Forge / Ollama status, recent images and quick-start buttons. "
+                     "The rail on the left switches sections (« collapses it to icons); the top bar shows the image backend – click it for settings, ☰ opens the queue."),
+            ("Create", "The Studio: describe an idea in plain words and the AI writes a finished prompt. Generation settings sit in the inspector on the right, "
+                       "results in the filmstrip below. Press Ctrl+K anywhere for the command palette."),
+            ("Builder", "Or build a prompt by clicking preset chips. Pick the target model in the top bar – the output adapts automatically."),
             ("Refine", "Chat with the AI to improve a prompt. Apply suggestions with one click and revert any time."),
             ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),
             ("Auto-refine", "New in 3.0: generate, let a vision model check the image against your idea, and refine the prompt automatically."),
