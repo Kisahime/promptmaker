@@ -110,3 +110,11 @@ def test_comfy_generate_uses_ws_preview(monkeypatch):
     j = Job("p", tag="create")
     assert c.generate(j, {"1": {"class_type": "SaveImage", "inputs": {}}}, progress=lambda p, m: msgs.append((p, m)), poll=0.05) == [png]
     assert j.preview == png and (50, "Step 10/20") in msgs
+
+
+def test_comfy_names_from_forge_settings():
+    assert imagegen.comfy_names("DPM++ 2M", "Karras") == ("dpmpp_2m", "karras")
+    assert imagegen.comfy_names("Euler a", "SGM Uniform") == ("euler_ancestral", "sgm_uniform")
+    assert imagegen.comfy_names("DPM++ 2M Karras", "normal") == ("dpmpp_2m", "karras")
+    assert imagegen.comfy_names("dpmpp_2m_sde", "beta") == ("dpmpp_2m_sde", "beta")  # comfy names untouched
+    assert imagegen.comfy_names("euler", "Automatic") == ("euler", "normal")

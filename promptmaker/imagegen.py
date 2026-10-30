@@ -83,6 +83,27 @@ def add_comfy_hires(wf, scale=1.5, denoise=0.4, steps=0):
     return wf
 
 
+COMFY_SCHEDULERS = {"automatic": "normal", "uniform": "normal", "polyexponential": "exponential", "align your steps": "normal",
+                    "ddim": "ddim_uniform"}
+
+
+def comfy_names(sampler, scheduler):
+    """Forge/A1111 names saved in Settings ('DPM++ 2M', 'SGM Uniform') → ComfyUI's enum names ('dpmpp_2m', 'sgm_uniform').
+    Comfy-style names pass through unchanged."""
+    from .civitai import comfy_sampler
+    smp, sch = sampler or "euler", scheduler or "normal"
+    implied = None
+    if smp != smp.lower() or " " in smp or "+" in smp:
+        cs, implied = comfy_sampler(smp)
+        smp = cs or smp.lower().replace(" ", "_")
+    if sch != sch.lower() or " " in sch:
+        low = sch.lower()
+        sch = COMFY_SCHEDULERS.get(low, low.replace(" ", "_"))
+    elif sch == "normal" and implied:
+        sch = implied  # 'DPM++ 2M Karras' → dpmpp_2m + karras
+    return smp, sch
+
+
 def comfy_upscale_workflow(name, scale):
     return {"1": {"class_type": "LoadImage", "inputs": {"image": name}},
             "2": {"class_type": "ImageScaleBy", "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "scale_by": float(scale)}},
@@ -194,7 +215,8 @@ class ComfyUI:
     def status(self):
         """Cheap poll for the sidebar: ('online', label). Raises BackendError when offline."""
         s = _http(self.url + "/system_stats", timeout=3)
-        return "online", "ComfyUI " + (s.get("system", {}).get("comfyui_version", "") or "")
+        ver = s.get("system", {}).get("comfyui_version", "")
+        return "online", (f"v{ver}" if ver else "online")
 
     def _ksampler(self, key):
         try:
@@ -243,7 +265,9 @@ class ComfyUI:
             if up.get("denoise"):
                 raise BackendError("ComfyUI supports Pure upscale only here – set denoise to 0 (or use Forge for img2img upscale)")
             workflow = comfy_upscale_workflow(self.upload_image(up["image"], f"pm_upscale_{job.id}.png"), up.get("scale", 1.5))
-        wf = inject(workflow, job.values())
+        vals = job.values()
+        vals["sampler"], vals["scheduler"] = comfy_names(vals.get("sampler"), vals.get("scheduler"))
+        wf = inject(workflow, vals)
         rg = getattr(job, "regions", None)
         ip = getattr(job, "inpaint", None)
         if rg or ip:

@@ -36,7 +36,7 @@ def test_status_a1111_and_comfy(monkeypatch):
         raise imagegen.BackendError("offline")
     monkeypatch.setattr(imagegen, "_http", fake)
     assert A1111().status() == ("online", "lustify.safetensors [abc]")
-    assert ComfyUI().status()[1].startswith("ComfyUI 0.3")
+    assert ComfyUI().status() == ("online", "v0.3")
 
 
 def test_upscale_payloads(monkeypatch):
