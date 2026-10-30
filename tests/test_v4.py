@@ -563,7 +563,7 @@ def _wait_worker(pred, timeout=5):
 def test_ui_v4_pages_present(win):
     from promptmaker import __version__
     from promptmaker.app import NAV
-    assert __version__ == "4.1.0"
+    assert __version__ == "4.1.5"
     names = [n for _, n in NAV]
     for name in ("Inpaint & Regions", "Wildcards", "Video", "Library sync"):
         win.go(name); assert names[win.stack.currentIndex()] == name

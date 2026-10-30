@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [4.1.5] - 2026-10-30
+
+### Changed
+- **Visual overhaul** with a single design system in `theme.py`: palette tokens for dark and light (layered background → sidebar → cards → inputs), plus shared scales for radius, type and spacing. All app styling now comes from the one stylesheet, and the full-screen viewer's inline colours have moved into it too. Your accent colour drives every highlight.
+- Sidebar: softer surface and divider, a bold active item with an accent bar, a tidier footer panel, and a smaller version line.
+- Pages: larger titles with more breathing room, cards with subtle borders and rounder corners, and Home quick-start tiles that are bigger, left-aligned and lift with an animated shadow on hover.
+- Controls: refined buttons (primary, ghost, chips, pressed and disabled states), inputs with hover and focus states, flat combo arrows, a ticked checkbox, round radio buttons, a thinner slider and progress bar, slimmer scrollbars, and themed menus, tooltips, tabs and group boxes.
+- Toasts are card-style with a green or red edge. Empty Home "Recent images" and an empty queue now show a centred empty state.
+- The README screenshot script now captures the Create page properly (it was capturing Home).
+
 ## [4.1.0] - 2026-10-30
 
 ### Added

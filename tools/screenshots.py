@@ -184,7 +184,7 @@ def v4_shots():
 def go():
     demo_data()
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
-    w.idea.setPlainText("an anime girl wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
+    w.go("Create"); w.idea.setPlainText("an adult anime woman wearing an outfit in a setting"); w.n_opts.setValue(3); w.create_offline()
     g("create")
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("flux2"))
     w.go("Builder"); w.randomise(True); g("builder")

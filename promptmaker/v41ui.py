@@ -17,6 +17,13 @@ STATUS_EVERY_MS = 10000
 IMG_KEYS = ("aspect", "steps", "cfg", "sampler", "scheduler")
 
 
+def _empty_item(icon, title, sub=""):
+    """Centred, non-selectable empty-state row for lists (4.1.5)."""
+    it = QListWidgetItem(f"{icon}\n{title}" + (f"\n{sub}" if sub else ""))
+    it.setTextAlignment(Qt.AlignCenter); it.setFlags(Qt.NoItemFlags)
+    return it
+
+
 def offscreen():
     return QApplication.platformName() in ("offscreen", "minimal")
 
@@ -62,12 +69,12 @@ class Viewer(QDialog):
     def __init__(self, parent, paths, index=0):
         super().__init__(parent)
         self.paths, self.i, self._pm = list(paths), index, QPixmap()
-        self.setWindowTitle(tr("Viewer")); self.setStyleSheet("background:#000")
+        self.setWindowTitle(tr("Viewer")); self.setObjectName("viewer")
         v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         self.img = QLabel(); self.img.setAlignment(Qt.AlignCenter)
         self.img.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored); self.img.setMinimumSize(1, 1)
         v.addWidget(self.img, 1)
-        self.cap = QLabel(); self.cap.setAlignment(Qt.AlignCenter); self.cap.setStyleSheet("color:#aaa;padding:6px"); v.addWidget(self.cap)
+        self.cap = QLabel(); self.cap.setObjectName("viewerCaption"); self.cap.setAlignment(Qt.AlignCenter); v.addWidget(self.cap)
         if parent is not None and hasattr(parent, "gal_list"):
             parent.gal_list.hover.hide()
         self.resize(1400, 860)
@@ -140,7 +147,7 @@ class QueueDialog(QDialog):
             if j.id == sel:
                 self.list.setCurrentItem(it)
         if not self.rows():
-            self.list.addItem(tr("Queue is empty")); self.bar.setValue(0)
+            self.list.addItem(_empty_item("🗒", tr("Queue is empty"), tr("Images you generate will line up here."))); self.bar.setValue(0)
 
     def selected_id(self):
         it = self.list.currentItem()
@@ -175,6 +182,8 @@ class V41Pages:
     def _home_page(self):
         from .app import page
         w, v = page("Home", "Your studio at a glance – pick up where you left off.")
+        from . import theme
+        self._hover_lift = theme.HoverLift()
         top = QHBoxLayout(); top.setSpacing(14); v.addLayout(top)
         st = Card("Status")
         self.home_target = label("", "h2"); self.home_ckpt = label("", "muted", wrap=True)
@@ -189,6 +198,7 @@ class V41Pages:
                  ("🖌  Inpaint", lambda: self.go("Inpaint & Regions")), ("🗂  Gallery", lambda: self.go("Gallery"))]
         for i, (t, fn) in enumerate(tiles):
             b = QPushButton(tr(t)); b.setObjectName("homeTile"); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f())
+            b.setMinimumHeight(56); self._hover_lift.attach(b, self.store.get("theme", "dark"))
             g.addWidget(b, i // 3, i % 3)
         qs.add(g)
         top.addWidget(qs, 2)
@@ -216,7 +226,7 @@ class V41Pages:
             it = QListWidgetItem(QIcon(QPixmap(path).scaled(200, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)), "")
             it.setData(Qt.UserRole, path); self.home_recent.addItem(it)
         if not self.home_recent.count():
-            self.home_recent.addItem(tr("No images yet – generate one from Create or Builder"))
+            self.home_recent.addItem(_empty_item("🖼", tr("No images yet – generate one from Create or Builder")))
 
     def home_generate_last(self):
         text = self.current_text().strip() if hasattr(self, "current_text") else ""

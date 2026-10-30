@@ -55,10 +55,12 @@ def scroll(widget):
 
 def page(title, subtitle=""):
     w = QWidget()
-    v = QVBoxLayout(w); v.setContentsMargins(26, 20, 26, 20); v.setSpacing(14)
-    v.addWidget(label(title, "h1"))
+    v = QVBoxLayout(w); v.setContentsMargins(32, 26, 32, 24); v.setSpacing(16)
+    head = QVBoxLayout(); head.setSpacing(2); head.setContentsMargins(0, 0, 0, 6)
+    head.addWidget(label(title, "h1"))
     if subtitle:
-        v.addWidget(label(subtitle, "muted", wrap=True))
+        head.addWidget(label(subtitle, "muted", wrap=True))
+    v.addLayout(head)
     return w, v
 
 
@@ -139,12 +141,12 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         v.addWidget(top)
         self._side_expand_only = [brand]
         v.addWidget(label(f"AI image prompt studio · v{__version__}", "brandSub"))
-        self.nav = QListWidget(); self.nav.setObjectName("sidebar")
+        self.nav = QListWidget(); self.nav.setObjectName("sidebar"); self.nav.setIconSize(QSize(18, 18))
         for icon, name in NAV:
             it = QListWidgetItem(f"{icon}   {tr(name)}"); self.nav.addItem(it)
         v.addWidget(self.nav, 1)
-        foot = QWidget(); foot.setObjectName("sideFoot")
-        f = QVBoxLayout(foot); f.setContentsMargins(14, 10, 14, 14); f.setSpacing(6)
+        foot = QWidget(); foot.setObjectName("sideFootPanel")
+        f = QVBoxLayout(foot); f.setContentsMargins(16, 12, 16, 16); f.setSpacing(6)
         self._status_widgets(f)
         _tm = label("TARGET MODEL", "groupLabel"); f.addWidget(_tm)
         self.profile_combo = QComboBox()

@@ -257,3 +257,11 @@ def test_viewer_no_zoom_and_wheel(win):
     assert len(set(sizes)) == 1 and sizes[0] == (800, 600)  # window never grows (old zoom bug)
     assert v.i == (v.paths.index(a) + 6) % 3
     v.close()
+
+
+def test_415_design_tokens_render():
+    from promptmaker import theme
+    for name in ("dark", "light"):
+        css = theme.stylesheet(name, "teal")
+        assert "{" + "r_" not in css and "QDialog#viewer" in css and "QLabel#emptyState" in css
+        assert f"{theme.RADIUS['xl']}px" in css
