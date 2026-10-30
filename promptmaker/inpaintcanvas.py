@@ -15,9 +15,20 @@ class InpaintCanvas(QWidget):
     changed = Signal()
     regions_changed = Signal()
     selection_changed = Signal(int)
+    file_dropped = Signal(str)  # 4.1: a gallery thumbnail / image file dropped on the canvas
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        urls = e.mimeData().urls()
+        if urls and urls[0].toLocalFile():
+            self.file_dropped.emit(urls[0].toLocalFile()); e.acceptProposedAction()
 
     def __init__(self):
         super().__init__()
+        self.setAcceptDrops(True)
         self.image = None             # QImage – the base image (None = blank canvas of self.size_wh)
         self.size_wh = (1024, 1024)
         self.mask = self._blank_mask()

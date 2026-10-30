@@ -272,15 +272,16 @@ class V3Pages:
         w, h = self._size_for_profile()
         clean = re.sub(r"\s--\w+(\s+[^-\s][^\s]*)?", "", prompt) if "--" in prompt else prompt
         g = self.profile.get("gen") or {}
-        job = imagegen.Job(clean, negative, w, h, seed, g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
-                           g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
+        ps = self.image_settings_for() if hasattr(self, "image_settings_for") else {}  # 4.1: remembered per target model
+        job = imagegen.Job(clean, negative, w, h, seed, ps.get("steps") or g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
+                           ps.get("cfg") or g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
                            self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""), wf_name or "a1111",
-                           _pick(self.store.get("img_sampler")) or (g.get("a1111_sampler") if a1 else g.get("sampler")) or d.get("sampler", "euler"),
-                           _pick(self.store.get("img_scheduler")) or g.get("scheduler") or d.get("scheduler", "normal"), tag)
-        job.scheduler_set = bool(_pick(self.store.get("img_scheduler")) or g.get("scheduler"))
+                           _pick(ps.get("sampler")) or _pick(self.store.get("img_sampler")) or (g.get("a1111_sampler") if a1 else g.get("sampler")) or d.get("sampler", "euler"),
+                           _pick(ps.get("scheduler")) or _pick(self.store.get("img_scheduler")) or g.get("scheduler") or d.get("scheduler", "normal"), tag)
+        job.scheduler_set = bool(_pick(ps.get("scheduler")) or _pick(self.store.get("img_scheduler")) or g.get("scheduler"))
         if g.get("clip_skip"):
             job.clip_skip = g["clip_skip"]
-        if a1 and self.store.get("hr_on", False):
+        if self.store.get("hr_on", False):  # Forge: enable_hr; ComfyUI (4.1): LatentUpscaleBy + 2nd KSampler pass
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         job.profile_family = self.profile.get("family", "")
@@ -502,6 +503,9 @@ class V3Pages:
         self.lora_worker = ScanWorker(root, loras.Cache(self._lora_cache_path()), client,
                                       os.path.join(self.data_dir, "cache", "lora_previews"))
         self.lora_bar.setVisible(True); self.lora_bar.setRange(0, 0)
+        if self.lora_list.count() == 0:  # skeleton rows while scanning
+            for _ in range(4):
+                sk = QListWidgetItem("░░░░░░░░░░░░░░░░  ░░░░░░░░"); sk.setFlags(Qt.NoItemFlags); self.lora_list.addItem(sk)
         self.lora_worker.progress.connect(lambda i, n, name: (self.lora_bar.setRange(0, n), self.lora_bar.setValue(i),
                                                               self.lora_status.setText(f"{tr('Hashing')} {name}…")))
         self.lora_worker.done.connect(self._lora_loaded)

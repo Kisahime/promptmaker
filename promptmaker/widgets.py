@@ -300,10 +300,38 @@ class GenQueue(QThread):
     def clear(self):
         self.jobs.clear()
 
+    # 4.1 queue view
+    def pending(self):
+        return [j for j, _b, _w in list(self.jobs)]
+
+    def move(self, job_id, delta):
+        """Move a pending job up (-1) or down (+1). Returns its new index or -1."""
+        ids = [j.id for j, _b, _w in self.jobs]
+        if job_id not in ids:
+            return -1
+        i = ids.index(job_id); n = max(0, min(len(ids) - 1, i + delta))
+        item = self.jobs.pop(i); self.jobs.insert(n, item)
+        return n
+
+    def remove(self, job_id):
+        """Cancel one job: drop it if pending, stop it if running."""
+        if self.current is not None and self.current.id == job_id:
+            self.cancel_current(); return True
+        for i, (j, _b, _w) in enumerate(list(self.jobs)):
+            if j.id == job_id:
+                del self.jobs[i]; return True
+        return False
+
+    def cancel_all(self):
+        self.jobs.clear(); self.cancel_current()
+
     def run(self):
         from .imagegen import Cancelled
         while self.jobs:
-            job, backend, wf = self.jobs.pop(0)
+            try:
+                job, backend, wf = self.jobs.pop(0)
+            except IndexError:
+                break
             self.current, self._cancel_current = job, False
             self.progress.emit(job.id, -1, "Starting…")
             try:

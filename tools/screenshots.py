@@ -212,6 +212,13 @@ def go():
         w.ab[side]["img"].setPixmap(QPixmap.fromImage(im).scaled(380, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation))
     w.go("A/B Test"); g("abtest")
     w.load_gallery(); w.go("Gallery"); w.gal_list.setCurrentRow(0); g("gallery")
+    w.home_refresh(); w.go("Home"); g("home")
+    from promptmaker.imagegen import Job
+    w.genq.jobs = [(Job(t, "", 1024, 1344, tag=tag), None, None) for t, tag in (
+        ("1girl, adult woman, red hair, beach at sunset", "create"), ("a lighthouse on a cliff at dusk", "batch"),
+        ("masterpiece, knight in silver armour", "wildcards"))]
+    d = w.open_queue(); d.list.setCurrentRow(1); app.processEvents(); save(d, "queue"); d.close(); w.genq.jobs = []
+    w.set_sidebar_collapsed(True); w.go("Gallery"); g("sidebar_collapsed"); w.set_sidebar_collapsed(False)
     w.go("Templates"); w.tpl_list.setCurrentRow(0); w.tpl_fill(True); g("templates")
     w.go("Batch"); w.batch_n.setValue(8); w.batch_generate(); g("batch")
     w.load_history(); w.go("History"); w.hist_clear_btn.click(); g("history"); w.hist_clear_btn.reset()
