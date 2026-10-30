@@ -1053,20 +1053,24 @@ class V5Pages:
             self.notify(tr("Trainer already installed")); return False
         steps = trainer.install_steps(d)
         text = (tr("This downloads kohya-ss/sd-scripts and PyTorch (about 6 GB) into:") + f"\n{d}\n\n" +
-                "\n".join(" ".join(s) for s in steps) + "\n\n" + tr("Continue?"))
+                "\n".join(" ".join(s["cmd"]) for s in steps) + "\n\n" + tr("Continue?"))
         if not _ask(self, tr("Install trainer"), text):
             self.tr_log.appendPlainText(tr("Install cancelled")); return False
-        os.makedirs(os.path.dirname(d), exist_ok=True)
+        if not steps:
+            self.tr_status_refresh(); return False
+        os.makedirs(os.path.dirname(os.path.abspath(d)), exist_ok=True)
         self._tr_install_q = list(steps); self._tr_run_next_install()
         return True
 
     def _tr_run_next_install(self):
         if not self._tr_install_q:
             self.tr_log.appendPlainText("✓ " + tr("Trainer installed")); self.tr_status_refresh(); return
-        cmd = self._tr_install_q.pop(0)
-        self.tr_log.appendPlainText("$ " + " ".join(cmd))
-        self._tr_start_proc(cmd, lambda code: self._tr_run_next_install() if code == 0 else
-                            self.tr_log.appendPlainText(tr("Install step failed") + f" (exit {code})"))
+        step = self._tr_install_q.pop(0)
+        self.tr_log.appendPlainText(f"[{step['name']}]  $ " + " ".join(step["cmd"]))
+        self._tr_start_proc(step["cmd"], lambda code: self._tr_run_next_install() if code == 0 else
+                            self.tr_log.appendPlainText(tr("Install step failed") + f" (exit {code}) – " +
+                                                        tr("fix the problem and press Install trainer again; finished steps are skipped")),
+                            cwd=step["cwd"])
 
     def _tr_start_proc(self, cmd, on_exit, cwd=None):
         p = QProcess(self); env = QProcessEnvironment.systemEnvironment(); env.insert("PYTHONUNBUFFERED", "1")

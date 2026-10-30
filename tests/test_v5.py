@@ -379,13 +379,41 @@ def test_trainer_core(tmp_path):
     assert trainer.default_caption({"prompt": "mika_pm, (smiling:1.2), red coat <lora:x:0.8>"}, "mika_pm") == "mika_pm, smiling, red coat"
     assert trainer.clean_caption('"1girl, red coat"\nmore', "mika_pm") == "mika_pm, 1girl, red coat"
     steps = trainer.install_steps(str(tmp_path / "sd"))
-    assert steps[0][:2] == ["git", "clone"] and any("requirements.txt" in " ".join(s) for s in steps)
+    assert steps[0]["cmd"][:2] == ["git", "clone"] and steps[0]["cwd"] == str(tmp_path)
+
+
+def test_trainer_install_steps_cwd_and_resume(tmp_path, monkeypatch):
+    sd = tmp_path / "tools" / "sd-scripts"
+    steps = trainer.install_steps(str(sd))
+    names = [s["name"] for s in steps]
+    assert names == ["clone", "venv", "pip", "torch", "requirements", "bitsandbytes", "accelerate config"]
+    req = steps[names.index("requirements")]
+    assert req["cwd"] == str(sd) and req["cmd"][-2:] == ["-r", "requirements.txt"]  # its `-e .` needs cwd = sd-scripts
+    assert all(s["cwd"] == str(sd) for s in steps[1:])
+    assert not steps[1]["cmd"][0].lower().endswith("pythonw.exe")
+    # pythonw.exe (the GUI app) is swapped for the console python.exe next to it
+    pw = tmp_path / "py" / "pythonw.exe"; pw.parent.mkdir(); pw.write_text(""); (tmp_path / "py" / "python.exe").write_text("")
+    monkeypatch.setattr(sys, "_base_executable", str(pw), raising=False)
+    assert trainer.base_python() == str(tmp_path / "py" / "python.exe")
+    # resume after the failure Sarah hit: repo + venv + torch done, requirements not
+    (sd / "venv").mkdir(parents=True); (sd / "sdxl_train_network.py").write_text("")
+    vpy = trainer.venv_python(str(sd)); os.makedirs(os.path.dirname(vpy), exist_ok=True); open(vpy, "w").close()
+    have = {"torch", "torchvision"}
+    monkeypatch.setattr(trainer, "importable", lambda _v, *m, **k: set(m) <= have)
+    names = [s["name"] for s in trainer.install_steps(str(sd))]
+    assert names == ["requirements", "bitsandbytes", "accelerate config"]
+    have |= {"library", "accelerate", "diffusers", "bitsandbytes"}
+    assert [s["name"] for s in trainer.install_steps(str(sd))] == ["accelerate config"]
+    assert not trainer.is_installed(str(sd))
+    (sd / trainer.MARKER).write_text("ok")
+    assert trainer.install_steps(str(sd)) == [] and trainer.is_installed(str(sd))
+    assert "write_basic_config" in trainer.ACCEL_CFG
 
 
 def _fake_trainer(tmp_path, monkeypatch):
     """A fake sd-scripts folder whose 'venv python' is this interpreter (no symlinks: works on Windows too)."""
     sd = tmp_path / "sd-scripts"; sd.mkdir()
-    (sd / "sdxl_train_network.py").write_text(FAKE_TRAIN)
+    (sd / "sdxl_train_network.py").write_text(FAKE_TRAIN); (sd / trainer.MARKER).write_text("ok")
     real = trainer.venv_python
     monkeypatch.setattr(trainer, "venv_python", lambda d: sys.executable if os.path.normcase(str(d)) == os.path.normcase(str(sd)) else real(d))
     forge = tmp_path / "forge"; (forge / "models" / "Stable-diffusion").mkdir(parents=True); (forge / "models" / "Lora").mkdir()
@@ -440,10 +468,11 @@ def test_training_cancel_and_install_needs_confirmation(win, tmp_path, monkeypat
     # install: nothing runs without confirmation
     win.tr_dir.setText(str(tmp_path / "fresh")); win._auto_confirm = False
     started = []
-    monkeypatch.setattr(win, "_tr_start_proc", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(win, "_tr_start_proc", lambda *a, **k: started.append((a[0], a[1], k.get("cwd"))))
     assert win.tr_install() is False and not started
     win._auto_confirm = True
     assert win.tr_install() is True and started and started[0][0][:2] == ["git", "clone"]
+    assert started[0][2] == str(tmp_path)  # clone runs next to the target folder; later steps inside it
 
 
 # ================================================================ shell / home / palette

@@ -38,23 +38,70 @@ def venv_python(sd_dir):
     return win if os.name == "nt" or os.path.exists(win) else os.path.join(sd_dir, "venv", "bin", "python")
 
 
+MARKER = ".promptmaker_installed"  # written by the last install step
+
+
 def is_installed(sd_dir):
-    return os.path.exists(os.path.join(sd_dir, "sdxl_train_network.py")) and os.path.exists(venv_python(sd_dir))
+    return (os.path.exists(os.path.join(sd_dir, "sdxl_train_network.py")) and os.path.exists(venv_python(sd_dir))
+            and os.path.exists(os.path.join(sd_dir, MARKER)))
 
 
-def install_steps(sd_dir, python=None):
-    """The commands the 'Install trainer' button runs, in order (shown to the user before they confirm).
+def base_python(python=None):
+    """A console python.exe to create the venv with. Inside the GUI app sys.executable is pythonw.exe (no console,
+    no stdout), which is the wrong thing to hand to `-m venv`; prefer the python.exe next to it / the base install."""
+    cands = [python] if python else []
+    for exe in (getattr(sys, "_base_executable", ""), sys.executable):
+        if exe:
+            d, f = os.path.split(exe)
+            cands.append(os.path.join(d, "python.exe") if f.lower() == "pythonw.exe" else exe)
+    return next((c for c in cands if c and os.path.exists(c)), sys.executable)
+
+
+def importable(vpy, *mods, timeout=120):
+    """True if the trainer venv can import all `mods` (used to skip finished install steps)."""
+    import subprocess
+    if not os.path.exists(vpy):
+        return False
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        return subprocess.run([vpy, "-c", "import " + ", ".join(mods)], capture_output=True, timeout=timeout,
+                              creationflags=flags).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+ACCEL_CFG = ("from accelerate.utils import write_basic_config; write_basic_config(mixed_precision='bf16'); "
+             f"open({MARKER!r}, 'w').write('ok')")
+
+
+def install_steps(sd_dir, python=None, check=True):
+    """Install commands as [{'name', 'cmd', 'cwd'}], in order, shown to the user before they confirm.
+    Every step runs inside the sd-scripts folder (its requirements.txt ends with `-e .`). With check=True steps that
+    are already done are left out, so a failed or interrupted install can simply be run again.
     Downloads roughly 5-6 GB (PyTorch + dependencies)."""
-    py = python or sys.executable
+    sd_dir = os.path.abspath(sd_dir)
     vpy = venv_python(sd_dir)
-    return [
-        ["git", "clone", "--depth", "1", "-b", BRANCH, REPO, sd_dir],
-        [py, "-m", "venv", os.path.join(sd_dir, "venv")],
-        [vpy, "-m", "pip", "install", "--upgrade", "pip"],
-        [vpy, "-m", "pip", "install", "torch", "torchvision", "--index-url", TORCH_INDEX],
-        [vpy, "-m", "pip", "install", "-r", os.path.join(sd_dir, "requirements.txt")],
-        [vpy, "-m", "pip", "install", "bitsandbytes", "xformers", "--index-url", TORCH_INDEX, "--extra-index-url", "https://pypi.org/simple"],
-    ]
+    have_repo = os.path.exists(os.path.join(sd_dir, "sdxl_train_network.py"))
+    have_venv = os.path.exists(vpy)
+    steps = []
+    if not (check and have_repo):
+        steps.append({"name": "clone", "cmd": ["git", "clone", "--depth", "1", "-b", BRANCH, REPO, sd_dir],
+                      "cwd": os.path.dirname(sd_dir)})
+    if not (check and have_venv):
+        steps.append({"name": "venv", "cmd": [base_python(python), "-m", "venv", os.path.join(sd_dir, "venv")], "cwd": sd_dir})
+        steps.append({"name": "pip", "cmd": [vpy, "-m", "pip", "install", "--upgrade", "pip"], "cwd": sd_dir})
+    done = (lambda *m: check and have_venv and importable(vpy, *m))
+    if not done("torch", "torchvision"):
+        steps.append({"name": "torch", "cmd": [vpy, "-m", "pip", "install", "torch", "torchvision", "--index-url", TORCH_INDEX],
+                      "cwd": sd_dir})
+    if not done("library", "accelerate", "diffusers"):
+        steps.append({"name": "requirements", "cmd": [vpy, "-m", "pip", "install", "-r", "requirements.txt"], "cwd": sd_dir})
+    if not done("bitsandbytes"):
+        # PyPI wheel; xformers is not needed (training uses --sdpa) and pulling it could swap the torch build
+        steps.append({"name": "bitsandbytes", "cmd": [vpy, "-m", "pip", "install", "bitsandbytes"], "cwd": sd_dir})
+    if not (check and os.path.exists(os.path.join(sd_dir, MARKER))):
+        steps.append({"name": "accelerate config", "cmd": [vpy, "-c", ACCEL_CFG], "cwd": sd_dir})
+    return steps
 
 
 def slug(name):
