@@ -1073,7 +1073,7 @@ class V5Pages:
                             cwd=step["cwd"])
 
     def _tr_start_proc(self, cmd, on_exit, cwd=None):
-        p = QProcess(self); env = QProcessEnvironment.systemEnvironment(); env.insert("PYTHONUNBUFFERED", "1")
+        p = QProcess(self); env = QProcessEnvironment.systemEnvironment(); env.insert("PYTHONUNBUFFERED", "1"); env.insert("PYTHONUTF8", "1"); env.insert("PYTHONIOENCODING", "utf-8")  # sd-scripts prints Japanese help/log text; cp1252 pipes crash on it
         p.setProcessEnvironment(env); p.setProcessChannelMode(QProcess.MergedChannels)
         if cwd:
             p.setWorkingDirectory(cwd)
