@@ -144,6 +144,19 @@ class ComfyUI:
         except (BackendError, KeyError, IndexError, TypeError):
             return []
 
+    def _ksampler(self, key):
+        try:
+            info = _http(self.url + "/object_info/KSampler", timeout=10)
+            return list(info["KSampler"]["input"]["required"][key][0])
+        except (BackendError, KeyError, IndexError, TypeError):
+            return []
+
+    def samplers(self):
+        return self._ksampler("sampler_name")
+
+    def schedulers(self):
+        return self._ksampler("scheduler")
+
     def regional_support(self):
         return "comfy"  # ConditioningSetArea is a core node
 
@@ -278,11 +291,75 @@ def webui_variant(version="", script_path="", sdapi=True):
     return name, ver
 
 
+DEFAULT_SCHEDULERS = ["Automatic", "Uniform", "Karras", "Exponential", "Polyexponential", "SGM Uniform",
+                      "KL Optimal", "Align Your Steps", "Simple", "Normal", "DDIM", "Beta"]
+PROFILE_DEFAULT = "Profile default"
+
+SD_FAMILIES = ("stable diffusion", "generic", "sdxl", "sd")
+
+
+def job_arch(job):
+    """'anima', 'sd' (SD1.5/SDXL/Illustrious/Pony) or 'other', from the job's profile base/family, else checkpoint name."""
+    base = (getattr(job, "profile_base", "") or "").lower()
+    fam = (getattr(job, "profile_family", "") or "").lower()
+    ck = (getattr(job, "checkpoint", "") or "").lower()
+    if base == "anima" or fam == "anima" or "anima" in ck:
+        return "anima"
+    if fam in SD_FAMILIES or not fam:
+        return "sd"
+    return "other"
+
+
 class A1111:
     name = "Forge / A1111"
 
     def __init__(self, url="http://127.0.0.1:7860"):
         self.url = url.rstrip("/")
+        self._modules = None
+
+    def modules(self):
+        """Forge's extra modules (VAE / text encoders) from /sdapi/v1/sd-modules, cached. [] on error or plain A1111."""
+        if self._modules is None:
+            try:
+                d = _http(self.url + "/sdapi/v1/sd-modules", timeout=8)
+                self._modules = [m for m in d if isinstance(m, dict)] if isinstance(d, list) else []
+            except (BackendError, ValueError, TypeError):
+                self._modules = []
+        return self._modules
+
+    def forge_modules_for(self, job):
+        """List for override_settings['forge_additional_modules'], or None to leave Forge's choice alone.
+        Without this, Anima's VAE/text encoder stay selected after switching to SDXL -> flat grey images."""
+        mods = self.modules()
+        if not mods:  # plain A1111 (no sd-modules endpoint) or Forge offline
+            return None
+        by_name = {}
+        for m in mods:
+            fn = m.get("filename") or m.get("model_name")
+            if fn:
+                by_name.setdefault((m.get("model_name") or os.path.basename(fn)).lower(), fn)
+        override = getattr(job, "forge_modules", None)
+        if isinstance(override, (list, tuple)):
+            out = []
+            for n in override:
+                key = str(n).lower()
+                hit = by_name.get(key) or next((fn for k, fn in by_name.items()
+                                                if k.rsplit(".", 1)[0] == key.rsplit(".", 1)[0]), None)
+                if hit:
+                    out.append(hit)
+            return out
+        arch = job_arch(job)
+        if arch == "anima":
+            def pick(needle):
+                cands = [(k, fn) for k, fn in by_name.items() if needle in k and "vl" not in k.replace(needle, "")]
+                exact = [fn for k, fn in cands if k.rsplit(".", 1)[0] == needle or k.rsplit(".", 1)[0].startswith(needle + "_base")]
+                return (exact or [fn for _, fn in cands] or [None])[0]
+            vae, te = pick("qwen_image_vae"), pick("qwen_3_06b")
+            out = [x for x in (vae, te) if x]
+            return out or None
+        if arch == "sd":
+            return []
+        return None  # FLUX / Qwen etc. need their own modules: don't touch
 
     def _sysinfo(self):
         try:
@@ -347,11 +424,17 @@ class A1111:
         p = {"prompt": job.prompt, "negative_prompt": job.negative, "width": job.width, "height": job.height,
              "seed": job.seed, "steps": job.steps, "cfg_scale": job.cfg, "sampler_name": job.sampler or "Euler a",
              "batch_size": 1, "n_iter": 1, "send_images": True, "save_images": False}
+        sch = getattr(job, "scheduler", "") or ""
+        if sch and sch != PROFILE_DEFAULT and (sch.lower() != "normal" or getattr(job, "scheduler_set", False)):
+            p["scheduler"] = sch  # Forge / A1111 1.9+: separate scheduler field
         ov = {}
         if getattr(job, "clip_skip", None):
             ov["CLIP_stop_at_last_layers"] = int(job.clip_skip)
         if job.checkpoint:
             ov["sd_model_checkpoint"] = job.checkpoint
+            fm = self.forge_modules_for(job)
+            if fm is not None:
+                ov["forge_additional_modules"] = fm
         if ov:
             p["override_settings"] = ov
         cn = getattr(job, "controlnet", None)
@@ -389,6 +472,20 @@ class A1111:
             return _rg.detect_forge_regional(_http(self.url + "/sdapi/v1/scripts", timeout=8))
         except (BackendError, AttributeError):
             return ""
+
+    def samplers(self):
+        try:
+            return [x.get("name") for x in _http(self.url + "/sdapi/v1/samplers", timeout=8) if x.get("name")]
+        except (BackendError, AttributeError, TypeError, ValueError):
+            return []
+
+    def schedulers(self):
+        try:
+            out = [x.get("label") or x.get("name") for x in _http(self.url + "/sdapi/v1/schedulers", timeout=8)
+                   if x.get("label") or x.get("name")]
+        except (BackendError, AttributeError, TypeError, ValueError):
+            out = []
+        return out or list(DEFAULT_SCHEDULERS)
 
     def upscalers(self):
         """Names for the hires-fix upscaler list: latent modes + installed upscalers (ESRGAN etc)."""

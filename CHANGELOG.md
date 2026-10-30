@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [4.0.0] – 2026-10-29
+## [4.0.1] - 2026-10-30
+
+### Added
+- The image checkpoint now follows the **Target model**: the checkpoint you pick in any picker is remembered per target model (`profile_checkpoints` setting, included in Library sync) and restored when you switch. Civitai-imported profiles without a link are auto-matched to a backend checkpoint by file name or normalised name, only when the match is unique. Settings shows "Linked to: …"; choosing Backend default unlinks.
+- **Sampler** and **Scheduler** pickers in Settings → Image generation, with ⟳ to load the lists from Forge/A1111 or ComfyUI (built-in scheduler list as a fallback). "Profile default" keeps the profile's choice; anything else overrides it on every page. Forge/A1111 payloads now include `scheduler`.
+
+### Fixed
+- Forge Neo: grey/blank images after switching from an Anima checkpoint to SDXL. Anima's VAE and text encoder stayed selected in Forge's VAE / Text Encoder box. PromptMaker now sends `forge_additional_modules` with every Forge image that names a checkpoint: none for SD1.5/SDXL/Illustrious/Pony, `qwen_image_vae` + `qwen_3_06b` for Anima (found via `/sdapi/v1/sd-modules`). Other architectures (FLUX, Qwen…) and plain AUTOMATIC1111 are left untouched.
+- Checkpoint lists could stay empty (even after ⟳ / Test connection) when a background request's result was dropped before it reached the window. Workers are now kept until their result is delivered, and ⟳ always reloads.
+- New optional profile field `forge_modules` (list of module file names) overrides the automatic choice.
+
+## [4.0.0] - 2026-10-29
+
 ### Added
 - **Wildcards** page (`promptmaker/wildcards.py`): sd-dynamic-prompts-compatible syntax. `__name__` (`.txt` one entry per line, sub-folders, globs such as `__places/*__`, and `.yaml` packs flattened to `__file/key__` and `__key__`), `{a|b|c}`, weights `{2::a|b}`, multi-pick `{2$$a|b|c}`, ranges and custom separators `{1-3$$ and $$a|b}`, and nested and recursive expansion with a loop guard. Seeded with `random.Random(seed)`, so results are reproducible. Preview, a batch of N unique variations, unknown-wildcard warnings, "Keep ticked characters & styles", and one image queued per variation. The manager creates, edits and deletes files, and imports a folder, a single file or a Civitai `.zip` (handling a `wildcards/` prefix, zips inside zips, and `__MACOSX` junk) with keep / overwrite / keep-both. **✨ Generate** has Ollama (or any provider) write a list from a description.
 - Wildcards are expanded in `make_job()` with the image seed, so every page (Generate, Batch, Pose, Auto-refine, Inpaint …) supports them. This can be switched off. A lone `{tag}` is never touched.

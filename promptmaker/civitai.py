@@ -368,7 +368,10 @@ def build_profile(info, s, base_id, profiles_by_id, pid=None):
         "sources": [info["url"]] + [x for x in base.get("sources", []) if x != info["url"]][:2],
         "gen": gen,
         "civitai": {"model_id": m.get("id") or v.get("modelId"), "version_id": v["id"], "version_name": v.get("name"),
-                    "model_name": m.get("name"), "type": m.get("type"), "base_model": v.get("baseModel"),
+                    "model_name": m.get("name"), "type": m.get("type"),
+                    "file_name": next((fl.get("name") for fl in (v.get("files") or [])
+                                       if isinstance(fl, dict) and fl.get("primary")), None)
+                    or next((fl.get("name") for fl in (v.get("files") or []) if isinstance(fl, dict)), None), "base_model": v.get("baseModel"),
                     "trained_words": s.get("trained_words") or [], "url": info["url"],
                     "fetched": time.strftime("%Y-%m-%d"), "positive_source": s.get("positive_source"),
                     "negative_source": s.get("negative_source")},
