@@ -51,3 +51,18 @@ def _delete_windows():
         w.close(); w.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
+
+
+def pytest_unconfigure(config):
+    """After pytest has reported results, exit without running interpreter teardown. PySide6 on CPython 3.10
+    (Linux CI) can abort with "munmap_chunk(): invalid pointer" while freeing Qt objects at exit even though
+    every test passed. Only affects the test process."""
+    import sys
+    sys.stdout.flush(); sys.stderr.flush()
+    session = getattr(config, "_pm_session", None)
+    status = getattr(session, "exitstatus", 0) if session is not None else 0
+    os._exit(int(status))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    session.config._pm_session = session
