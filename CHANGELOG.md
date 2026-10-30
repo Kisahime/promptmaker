@@ -5,12 +5,15 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [4.1.5] - 2026-10-30
 
 ### Changed
-- **Visual overhaul** with a single design system in `theme.py`: palette tokens for dark and light (layered background → sidebar → cards → inputs), plus shared scales for radius, type and spacing. All app styling now comes from the one stylesheet, and the full-screen viewer's inline colours have moved into it too. Your accent colour drives every highlight.
-- Sidebar: softer surface and divider, a bold active item with an accent bar, a tidier footer panel, and a smaller version line.
-- Pages: larger titles with more breathing room, cards with subtle borders and rounder corners, and Home quick-start tiles that are bigger, left-aligned and lift with an animated shadow on hover.
-- Controls: refined buttons (primary, ghost, chips, pressed and disabled states), inputs with hover and focus states, flat combo arrows, a ticked checkbox, round radio buttons, a thinner slider and progress bar, slimmer scrollbars, and themed menus, tooltips, tabs and group boxes.
-- Toasts are card-style with a green or red edge. Empty Home "Recent images" and an empty queue now show a centred empty state.
-- The README screenshot script now captures the Create page properly (it was capturing Home).
+- **New cute pastel look.** The pastel light theme is now the default; Ctrl+T switches to a matching dusky-pastel dark theme. The palette uses sakura pink, lavender, mint, baby blue and peach, with soft pink-to-lavender-to-blue gradients on the window and sidebar. All styling comes from one design system in `theme.py`, built on colour, radius, type and spacing tokens.
+- **Rounded, friendly font:** Nunito is bundled (SIL Open Font License, `promptmaker/assets/fonts/OFL.txt`), with fallbacks to Quicksand, then Segoe UI Variable.
+- **Every page has a gradient header banner** with sparkle decorations (✧ ★ ♡ ✿). The app title is now "✿ PromptMaker ✧", with a ♡ subtitle.
+- **Sidebar:** cute icons for every page (🏡 🎀 🔮 🧸 🌷 🦄 …). The active page is a pink-to-lavender gradient pill. The footer has a dashed divider.
+- **Very rounded shapes:** pill buttons and chips, 24 px cards, and gradient primary buttons. Home tiles are gradient too. Both bounce up on hover with a soft coloured shadow.
+- **Chunky controls:** sliders with a gradient fill and a round knob, checkboxes as pill toggle switches, a rainbow-pastel progress bar, and lavender scrollbars. Menus, tooltips, tabs and group boxes are themed to match.
+- **Accent colours are now pastel:** Lavender (default), Sakura pink, Mint, Baby blue and Peach. Earlier saved choices still load.
+- **Kawaii empty states** for the queue and Home "Recent images", plus rounded toasts.
+- The README screenshot script now captures the Create page, which it previously captured as Home. The dark-theme shot is now `builder_dark.png`.
 
 ## [4.1.0] - 2026-10-30
 

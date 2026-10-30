@@ -72,6 +72,9 @@ def button(text, slot=None, kind=None, tip=None):
     b.setCursor(Qt.PointingHandCursor)
     if kind:
         b.setObjectName(kind)
+        if kind == "primary":
+            from . import theme
+            theme.lift(b)
     if slot:
         b.clicked.connect(slot)
     if tip:

@@ -238,7 +238,7 @@ def go():
     w._ai_error("HTTP 500 from http://localhost:11434/api/chat: {\"error\":\"llama-server process has terminated: exit status 1: "
                 "error loading model: unknown model architecture: 'mllama'\"}", "llama3.2-vision:latest", vision=True)
     app.processEvents(); save(w._last_error_box, "model_error"); w._last_error_box.close()
-    w.toggle_theme(); w.go("Builder"); g("builder_light")
+    w.toggle_theme(); w.go("Builder"); g("builder_dark")
     # App icon as shown on the window, taskbar and desktop shortcut
     from promptmaker.app import app_icon
     app_icon().pixmap(256, 256).save(os.path.join(OUT, "icon.png"), "PNG", 9); shots.append("icon")

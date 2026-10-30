@@ -38,9 +38,9 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("🏠", "Home"), ("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("🖌", "Inpaint & Regions"), ("👤", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("📊", "Score"),
-       ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
-       ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("☁", "Library sync"), ("⚙", "Settings")]
+NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
+       ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
+       ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings")]
 
 
 def copy(text):
@@ -56,11 +56,16 @@ def scroll(widget):
 def page(title, subtitle=""):
     w = QWidget()
     v = QVBoxLayout(w); v.setContentsMargins(32, 26, 32, 24); v.setSpacing(16)
-    head = QVBoxLayout(); head.setSpacing(2); head.setContentsMargins(0, 0, 0, 6)
+    banner = QFrame(); banner.setObjectName("pageHeader")
+    bh = QHBoxLayout(banner); bh.setContentsMargins(24, 14, 24, 14)
+    head = QVBoxLayout(); head.setSpacing(2)
     head.addWidget(label(title, "h1"))
     if subtitle:
         head.addWidget(label(subtitle, "muted", wrap=True))
-    v.addLayout(head)
+    bh.addLayout(head, 1)
+    deco = QLabel("✧ ･ﾟ ★ ♡ ✿"); deco.setObjectName("sparkles"); deco.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    bh.addWidget(deco)
+    v.addWidget(banner)
     return w, v
 
 
@@ -113,7 +118,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         sc = QAction(self, shortcut=QKeySequence("Ctrl+T")); sc.triggered.connect(self.toggle_theme); self.addAction(sc)
         cp = QAction(self, shortcut=QKeySequence("Ctrl+Shift+C")); cp.triggered.connect(self.copy_prompt); self.addAction(cp)
         qk = QAction(self, shortcut=QKeySequence("Ctrl+K")); qk.triggered.connect(self.open_quickbar); self.addAction(qk)
-        self.apply_theme(self.store.get("theme", "dark"))
+        self.apply_theme(self.store.get("theme", "light"))
         if self.store.get("sidebar_collapsed"):
             self.set_sidebar_collapsed(True)
         self.preview_timer = QTimer(self); self.preview_timer.timeout.connect(self._preview_tick); self.preview_timer.start(700)
@@ -130,9 +135,9 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
 
     # ------------------------------------------------------------------ chrome
     def _sidebar(self):
-        w = QWidget(); w.setFixedWidth(240); self.sidebar_w = w
+        w = QWidget(); w.setObjectName("sidebarPane"); w.setAttribute(Qt.WA_StyledBackground, True); w.setFixedWidth(240); self.sidebar_w = w
         v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-        brand = label("✦ PromptMaker", "brand")
+        brand = label("✿ PromptMaker ✧", "brand")
         self.collapse_btn = button("«", lambda: self.set_sidebar_collapsed(not self.store.get("sidebar_collapsed")), "ghost",
                                    "Collapse sidebar to icons")
         self.collapse_btn.setFixedWidth(34)
@@ -140,7 +145,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         th.addWidget(brand, 1); th.addWidget(self.collapse_btn)
         v.addWidget(top)
         self._side_expand_only = [brand]
-        v.addWidget(label(f"AI image prompt studio · v{__version__}", "brandSub"))
+        _sub = label(f"♡ AI image prompt studio · v{__version__}", "brandSub"); v.addWidget(_sub)
         self.nav = QListWidget(); self.nav.setObjectName("sidebar"); self.nav.setIconSize(QSize(18, 18))
         for icon, name in NAV:
             it = QListWidgetItem(f"{icon}   {tr(name)}"); self.nav.addItem(it)
@@ -168,7 +173,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.theme_btn = button("🌙  Dark mode", self.toggle_theme, "ghost")
         f.addWidget(self.theme_btn)
         v.addWidget(foot)
-        self._side_expand_only += [_tm, self.profile_combo, _ap, self.prov_label, self.model, self.ai_dot, self.theme_btn]
+        self._side_expand_only += [_sub, _tm, self.profile_combo, _ap, self.prov_label, self.model, self.ai_dot, self.theme_btn]
         return w
 
     def _nav_changed(self, i):
@@ -202,7 +207,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.theme = name
         QApplication.instance().setStyleSheet(theme.stylesheet(name, self.store.get("accent", "purple")))
         self.store.set("theme", name)
-        self.theme_btn.setText("☀️  Light mode" if name == "dark" else "🌙  Dark mode")
+        self.theme_btn.setText("🌸  Pastel light" if name == "dark" else "🌙  Dusky dark")
         if hasattr(self, "thread_view"):
             self.render_thread()
 
@@ -957,7 +962,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         self.notify("No earlier version", error=True)
 
     def render_thread(self, streaming=None):
-        c = theme.colors(getattr(self, "theme", "dark"))
+        c = theme.colors(getattr(self, "theme", "light"))
         parts = [f"<div style='color:{c['muted']}'>Target model: <b>{html.escape(self.profile['name'])}</b>. "
                  f"Ask anything about the working prompt on the right.</div>"]
         msgs = self.chat + ([{"role": "assistant", "content": streaming}] if streaming is not None else [])
@@ -966,7 +971,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
             mine = m["role"] == "user"
             bg = c["accent_soft"] if mine else c["raised"]
             body = html.escape(m["content"]).replace("\n", "<br>")
-            body = body.replace("&lt;prompt&gt;", f"<div style='background:{c['card']};border:1px solid {c['accent']};padding:8px;margin:6px 0'><code>")
+            body = body.replace("&lt;prompt&gt;", f"<div style='background:{c['card_solid']};border:1px solid {c['accent']};padding:8px;margin:6px 0'><code>")
             body = body.replace("&lt;/prompt&gt;", "</code></div>")
             is_stream = streaming is not None and m is msgs[-1]
             if not mine and not is_stream:
@@ -2086,7 +2091,7 @@ class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
         from . import theme as _th
         self.accent = QComboBox()
         for k in _th.ACCENTS:
-            self.accent.addItem(tr(k.capitalize()), k)
+            self.accent.addItem(tr(_th.ACCENT_NAMES.get(k, k.capitalize())), k)
         self.accent.setCurrentIndex(max(0, self.accent.findData(self.store.get("accent", "purple"))))
         self.accent.currentIndexChanged.connect(lambda _i: self.apply_accent(self.accent.currentData()))
         self.anim_on = QCheckBox(tr("Page fade animations")); self.anim_on.setChecked(bool(self.store.get("animations", True)))

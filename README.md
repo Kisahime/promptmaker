@@ -50,7 +50,7 @@ Everything runs on your own computer by default. The AI features are optional an
   - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
   - When Forge/A1111's API is off, the app shows the exact `--api` fix, and Test connection reports the WebUI variant and version.
 - **Safe by design:** destructive buttons (Clear all, Delete, Uninstall) confirm **in place**: a red *Confirm (4s)* button with a countdown. Toasts appear top-right and never block clicks.
-- A polished dark/light theme and a **Ctrl+K** quick bar from anywhere.
+- A cute pastel theme (light by default, dusky dark with Ctrl+T) and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
 
@@ -89,8 +89,8 @@ Everything runs on your own computer by default. The AI features are optional an
 | ![Model profiles (Civitai-imported profile)](docs/screenshots/profiles.png) | ![Community](docs/screenshots/community.png) |
 | **Settings** | **Guided tour** |
 | ![Settings](docs/screenshots/settings.png) | ![Guided tour](docs/screenshots/tour.png) |
-| **Preset packs** | **Light theme** |
-| ![Preset packs](docs/screenshots/packs.png) | ![Light theme](docs/screenshots/builder_light.png) |
+| **Preset packs** | **Dusky dark theme** |
+| ![Preset packs](docs/screenshots/packs.png) | ![Dusky dark theme](docs/screenshots/builder_dark.png) |
 
 **Civitai import (review before saving)**
 

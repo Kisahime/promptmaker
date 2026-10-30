@@ -147,7 +147,7 @@ class QueueDialog(QDialog):
             if j.id == sel:
                 self.list.setCurrentItem(it)
         if not self.rows():
-            self.list.addItem(_empty_item("🗒", tr("Queue is empty"), tr("Images you generate will line up here."))); self.bar.setValue(0)
+            self.list.addItem(_empty_item("✿ ･ﾟ✧", tr("Queue is empty"), tr("Images you generate will line up here.") + "  ♡")); self.bar.setValue(0)
 
     def selected_id(self):
         it = self.list.currentItem()
@@ -183,7 +183,6 @@ class V41Pages:
         from .app import page
         w, v = page("Home", "Your studio at a glance – pick up where you left off.")
         from . import theme
-        self._hover_lift = theme.HoverLift()
         top = QHBoxLayout(); top.setSpacing(14); v.addLayout(top)
         st = Card("Status")
         self.home_target = label("", "h2"); self.home_ckpt = label("", "muted", wrap=True)
@@ -198,7 +197,7 @@ class V41Pages:
                  ("🖌  Inpaint", lambda: self.go("Inpaint & Regions")), ("🗂  Gallery", lambda: self.go("Gallery"))]
         for i, (t, fn) in enumerate(tiles):
             b = QPushButton(tr(t)); b.setObjectName("homeTile"); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f())
-            b.setMinimumHeight(56); self._hover_lift.attach(b, self.store.get("theme", "dark"))
+            b.setMinimumHeight(56); theme.lift(b)
             g.addWidget(b, i // 3, i % 3)
         qs.add(g)
         top.addWidget(qs, 2)
@@ -226,7 +225,7 @@ class V41Pages:
             it = QListWidgetItem(QIcon(QPixmap(path).scaled(200, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)), "")
             it.setData(Qt.UserRole, path); self.home_recent.addItem(it)
         if not self.home_recent.count():
-            self.home_recent.addItem(_empty_item("🖼", tr("No images yet – generate one from Create or Builder")))
+            self.home_recent.addItem(_empty_item("(｡•ᴗ•｡) ✧", tr("No images yet – generate one from Create or Builder"), "★ ･ﾟ✿ ♡ ✿ﾟ･ ★"))
 
     def home_generate_last(self):
         text = self.current_text().strip() if hasattr(self, "current_text") else ""
@@ -467,7 +466,7 @@ class V41Pages:
 
     # ================================================================ look & feel
     def apply_accent(self, name):
-        self.store.set("accent", name); self.apply_theme(getattr(self, "theme", "dark"))
+        self.store.set("accent", name); self.apply_theme(getattr(self, "theme", "light"))
 
     def set_sidebar_collapsed(self, on):
         from .app import NAV
