@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 - Forge Neo: grey/blank images after switching from an Anima checkpoint to SDXL. Anima's VAE and text encoder stayed selected in Forge's VAE / Text Encoder box. PromptMaker now sends `forge_additional_modules` with every Forge image that names a checkpoint: none for SD1.5/SDXL/Illustrious/Pony, `qwen_image_vae` + `qwen_3_06b` for Anima (found via `/sdapi/v1/sd-modules`). Other architectures (FLUX, Qwen…) and plain AUTOMATIC1111 are left untouched.
+- Checkpoint lists could stay empty (even after ⟳ / Test connection) when a background request's result was dropped before it reached the window. Workers are now kept until their result is delivered, and ⟳ always reloads.
 - New optional profile field `forge_modules` (list of module file names) overrides the automatic choice.
 
  – 2026-10-29

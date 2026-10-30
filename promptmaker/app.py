@@ -1573,7 +1573,10 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         super().closeEvent(e)
 
     def _keep(self, w):
-        self._workers = [x for x in getattr(self, "_workers", []) if x.isRunning()] + [w]
+        # Hold a reference until the thread's queued signals have been delivered. Dropping a worker as soon as
+        # it stopped running could garbage-collect it before its ok/failed signal reached the UI (4.0.1 fix).
+        self._workers = [x for x in getattr(self, "_workers", []) if not getattr(x, "_pm_done", False)] + [w]
+        w.finished.connect(lambda w=w: setattr(w, "_pm_done", True))
 
     def _models_loaded(self, models, quiet):
         pid = self.provider.pid
@@ -2336,7 +2339,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
             return
         same = kind == self.store.get("img_backend", "none") and self.img_url.text().strip() == self.store.get(f"img_url:{kind}", self.img_url.text().strip())
         self.load_checkpoints(imagegen.make_backend(kind, self.img_url.text().strip()),
-                              None if same else [self.img_ckpt])
+                              None if same else [self.img_ckpt], force=True)
 
     # ------------------------------------------------- shared checkpoint pickers (Settings / Pose / Auto-refine)
     def _ckpt_combos_list(self):
@@ -2418,12 +2421,14 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self._update_ckpt_link_label()
         return name
 
-    def load_checkpoints(self, backend=None, combos=None):
+    def load_checkpoints(self, backend=None, combos=None, force=False):
         """Ask the backend for its checkpoints (in a worker) and fill the pickers."""
         backend = backend or self.image_backend()
-        if not backend or getattr(self, "_ckpt_loading", False):
+        import time as _t
+        busy = getattr(self, "_ckpt_loading", False) and _t.time() - getattr(self, "_ckpt_loading_since", 0) < 20
+        if not backend or (busy and not force):
             return
-        self._ckpt_loading = True
+        self._ckpt_loading = True; self._ckpt_loading_since = _t.time()
         wk = CallWorker(backend.checkpoints)
         def ok(lst):
             self._ckpt_loading = False
