@@ -49,6 +49,25 @@ def _http(url, data=None, timeout=30, raw=False, method=None):
     return content if raw else (json.loads(content) if content.strip() else {})
 
 
+def scaled_size(w, h, scale):
+    """Upscaled size rounded to a multiple of 8 (what SD backends want)."""
+    return max(64, int(round(w * scale / 8)) * 8), max(64, int(round(h * scale / 8)) * 8)
+
+
+def png_size(png):
+    """(width, height) from PNG bytes without Qt."""
+    import struct
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("Not a PNG image")
+    return struct.unpack(">II", png[16:24])
+
+
+def comfy_upscale_workflow(name, scale):
+    return {"1": {"class_type": "LoadImage", "inputs": {"image": name}},
+            "2": {"class_type": "ImageScaleBy", "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "scale_by": float(scale)}},
+            "3": {"class_type": "SaveImage", "inputs": {"images": ["2", 0], "filename_prefix": "PromptMaker_upscale"}}}
+
+
 def new_seed():
     return random.randint(1, 2**32 - 1)
 
@@ -112,6 +131,8 @@ class Job:
         self.inpaint = None     # {"image": png, "mask": png (white = repaint), "denoise", "mask_blur", "only_masked", "padding", "fill"}
         self.hires = None       # Forge/A1111 hires fix: {"scale", "upscaler", "steps", "denoise"}
         self.regions = None     # {"regions": [{prompt,x,y,w,h,weight}], "mode": "forge couple"|"plain"|"comfy", "base_weight"}
+        self.upscale = None     # 4.1: {"image": png, "scale", "upscaler", "denoise" (0 = pure upscale), "source": path}
+        self.preview = None     # 4.1: latest live-preview PNG bytes while generating (Forge current_image)
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -120,6 +141,11 @@ class Job:
     def meta(self):
         d = self.values()
         d.update(profile=self.profile, workflow=self.workflow, created=time.time())
+        if self.upscale:
+            d.update(source_image=self.upscale.get("source", ""), upscaled=self.upscale.get("scale"),
+                     upscale_mode="pure" if not self.upscale.get("denoise") else "img2img")
+        if self.hires:
+            d["hires"] = self.hires.get("scale")
         return d
 
 
@@ -143,6 +169,11 @@ class ComfyUI:
             return info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0]
         except (BackendError, KeyError, IndexError, TypeError):
             return []
+
+    def status(self):
+        """Cheap poll for the sidebar: ('online', label). Raises BackendError when offline."""
+        s = _http(self.url + "/system_stats", timeout=3)
+        return "online", "ComfyUI " + (s.get("system", {}).get("comfyui_version", "") or "")
 
     def _ksampler(self, key):
         try:
@@ -186,6 +217,11 @@ class ComfyUI:
 
     def generate(self, job, workflow, progress=None, cancelled=None, poll=0.7, timeout=1800):
         _before_generate()
+        up = getattr(job, "upscale", None)
+        if up and up.get("image"):
+            if up.get("denoise"):
+                raise BackendError("ComfyUI supports Pure upscale only here – set denoise to 0 (or use Forge for img2img upscale)")
+            workflow = comfy_upscale_workflow(self.upload_image(up["image"], f"pm_upscale_{job.id}.png"), up.get("scale", 1.5))
         wf = inject(workflow, job.values())
         rg = getattr(job, "regions", None)
         ip = getattr(job, "inpaint", None)
@@ -294,6 +330,8 @@ def webui_variant(version="", script_path="", sdapi=True):
 DEFAULT_SCHEDULERS = ["Automatic", "Uniform", "Karras", "Exponential", "Polyexponential", "SGM Uniform",
                       "KL Optimal", "Align Your Steps", "Simple", "Normal", "DDIM", "Beta"]
 PROFILE_DEFAULT = "Profile default"
+LIVE_PREVIEW = True
+LAST_PREVIEW = {}  # {"job", "tag", "png", "pct"} – newest live preview from any generate() (read by the UI timer)  # 4.1: ask Forge for the in-progress image while polling (Settings can switch it off)
 
 SD_FAMILIES = ("stable diffusion", "generic", "sdxl", "sd")
 
@@ -473,6 +511,28 @@ class A1111:
         except (BackendError, AttributeError):
             return ""
 
+    def status(self):
+        """Cheap poll for the sidebar: ('online', active checkpoint). Raises BackendError when offline."""
+        o = _http(self.url + "/sdapi/v1/options", timeout=3)
+        return "online", (o or {}).get("sd_model_checkpoint", "") or "?"
+
+    def upscale_payload(self, job):
+        up = job.upscale
+        b64 = base64.b64encode(up["image"]).decode()
+        if not up.get("denoise"):  # pure upscale: Extras tab
+            return "/sdapi/v1/extra-single-image", {"image": b64, "upscaling_resize": float(up.get("scale", 1.5)),
+                                                    "upscaler_1": up.get("upscaler") or "R-ESRGAN 4x+"}
+        p = self.payload(job)
+        for k in ("enable_hr", "hr_scale", "hr_upscaler", "hr_second_pass_steps", "hr_cfg", "hr_sampler_name",
+                  "hr_additional_modules", "hr_checkpoint_name"):
+            p.pop(k, None)
+        w, h = png_size(up["image"])
+        p["width"], p["height"] = scaled_size(w, h, float(up.get("scale", 1.5)))
+        p.update({"init_images": [b64], "denoising_strength": float(up["denoise"]), "resize_mode": 0})
+        if up.get("upscaler"):
+            p.setdefault("override_settings", {})["upscaler_for_img2img"] = up["upscaler"]
+        return "/sdapi/v1/img2img", p
+
     def samplers(self):
         try:
             return [x.get("name") for x in _http(self.url + "/sdapi/v1/samplers", timeout=8) if x.get("name")]
@@ -525,8 +585,12 @@ class A1111:
 
         def run():
             try:
-                ep = "/sdapi/v1/img2img" if (getattr(job, "inpaint", None) or {}).get("image") else "/sdapi/v1/txt2img"
-                result["r"] = self._api(ep, self.payload(job), timeout=timeout)
+                if (getattr(job, "upscale", None) or {}).get("image"):
+                    ep, body = self.upscale_payload(job)
+                else:
+                    ep = "/sdapi/v1/img2img" if (getattr(job, "inpaint", None) or {}).get("image") else "/sdapi/v1/txt2img"
+                    body = self.payload(job)
+                result["r"] = self._api(ep, body, timeout=timeout)
             except BackendError as e:
                 err["e"] = e
         t = threading.Thread(target=run, daemon=True)
@@ -538,7 +602,14 @@ class A1111:
                 raise Cancelled("Cancelled")
             if progress:
                 try:
-                    pr = _http(self.url + "/sdapi/v1/progress?skip_current_image=true", timeout=5)
+                    pr = _http(self.url + "/sdapi/v1/progress?skip_current_image=" + ("false" if LIVE_PREVIEW else "true"), timeout=5)
+                    if pr.get("current_image"):
+                        try:
+                            job.preview = base64.b64decode(pr["current_image"].split(",", 1)[-1])
+                            LAST_PREVIEW.update(job=job.id, tag=getattr(job, "tag", ""), png=job.preview,
+                                                pct=int(pr.get("progress", 0) * 100))
+                        except (ValueError, TypeError):
+                            pass
                     progress(int(pr.get("progress", 0) * 100), f"Step {pr.get('state', {}).get('sampling_step', 0)}"
                              f"/{pr.get('state', {}).get('sampling_steps', job.steps)}")
                 except BackendError:
@@ -556,7 +627,7 @@ class A1111:
         if getattr(job, "controlnet", None):
             from .pose import controlnet_applied
             job.controlnet_applied = controlnet_applied(info)
-        imgs = [base64.b64decode(i.split(",", 1)[-1]) for i in r.get("images", [])]
+        imgs = [base64.b64decode(i.split(",", 1)[-1]) for i in (r.get("images") or ([r["image"]] if r.get("image") else []))]
         if not imgs:
             raise BackendError("Backend returned no images")
         return imgs

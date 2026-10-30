@@ -27,6 +27,11 @@ QLabel#h2 {{ font-size: 11.5pt; font-weight: 600; }}
 QLabel#muted, QLabel#hint {{ color: {muted}; }}
 QLabel#groupLabel {{ color: {muted}; font-size: 8.5pt; font-weight: 600; letter-spacing: 1px; padding-top: 6px; }}
 QFrame#card {{ background: {card}; border: 1px solid {border}; border-radius: 14px; }}
+QFrame#skeleton {{ background: {raised}; border-radius: 10px; }}
+QPushButton#statusDot {{ text-align: left; border: none; background: transparent; padding: 2px 0; color: {muted}; }}
+QPushButton#statusDot:hover {{ color: {text}; }}
+QPushButton#homeTile {{ background: {card}; border: 1px solid {border}; border-radius: 14px; padding: 14px; font-size: 11pt; }}
+QPushButton#homeTile:hover {{ border-color: {accent}; background: {accent_soft}; }}
 QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox {{
     background: {raised}; border: 1px solid {border}; border-radius: 9px; padding: 6px 8px;
     selection-background-color: {accent}; }}
@@ -97,9 +102,25 @@ def arrow_png(name):
     return path
 
 
-def stylesheet(name):
-    return QSS.format(arrow=arrow_png(name), **PALETTES[name])
+# 4.1: accent colours — (dark, dark hover, light, light hover)
+ACCENTS = {"purple": ("#7c5cff", "#9479ff", "#6a4cf0", "#5a3de0"),
+           "teal": ("#14b8a6", "#2dd4bf", "#0d9488", "#0f766e"),
+           "pink": ("#ec4899", "#f472b6", "#db2777", "#be185d"),
+           "orange": ("#f97316", "#fb923c", "#ea580c", "#c2410c")}
 
 
-def colors(name):
-    return PALETTES[name]
+def _rgba(hexc, a):
+    h = hexc.lstrip("#")
+    return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a})"
+
+
+def colors(name, accent="purple"):
+    pal = dict(PALETTES[name])
+    a = ACCENTS.get(accent) or ACCENTS["purple"]
+    main, hover = (a[0], a[1]) if name == "dark" else (a[2], a[3])
+    pal.update(accent=main, accent_hover=hover, accent_soft=_rgba(main, 0.22 if name == "dark" else 0.14))
+    return pal
+
+
+def stylesheet(name, accent="purple"):
+    return QSS.format(arrow=arrow_png(name), **colors(name, accent))

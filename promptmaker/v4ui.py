@@ -318,6 +318,7 @@ class V4Pages:
         split.addWidget(right); split.setSizes([640, 480])
         v.addWidget(split, 1)
         self.ip_canvas.changed.connect(self._ip_info)
+        self.ip_canvas.file_dropped.connect(self._ip_dropped)
         self.ip_canvas.set_blank(*self._ip_size())
         return w
 
@@ -342,6 +343,13 @@ class V4Pages:
                 self.ip_canvas.set_image(f); self.ip_mode.setCurrentIndex(0)
             except ValueError as e:
                 self.notify(str(e), error=True)
+
+    def _ip_dropped(self, path):
+        """A gallery thumbnail (or any image file) was dropped on the canvas: open it with its saved prompt."""
+        self.ip_open(path)
+        for p, meta in self.gallery.items():
+            if os.path.normcase(p) == os.path.normcase(path) and meta.get("prompt"):
+                self.ip_prompt.setPlainText(meta["prompt"]); break
 
     def ip_last(self):
         items = self.gallery.items()

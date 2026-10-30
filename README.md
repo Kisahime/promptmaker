@@ -12,6 +12,11 @@ Everything runs on your own computer by default. The AI features are optional an
 
 ## Features
 
+- **🏠 Home** *(4.1)*: a dashboard with your target model and linked checkpoint, Forge / Ollama status, recent images and quick-start buttons.
+- **🗂 Gallery** *(4.1)*: justified rows that keep aspect ratios, hover preview, full-screen viewer (←/→, Esc), and right-click actions: *Inpaint this*, *Use as reference*, *Regenerate with hires*, *Upscale…*. Drag a thumbnail onto the inpaint canvas.
+- **⤢ Upscale** *(4.1)*: Forge img2img at 1.5× with denoise 0.3 (same prompt and seed), or *Pure upscale* via Forge Extras / ComfyUI `ImageScaleBy`.
+- **Queue & status** *(4.1)*: the sidebar dot shows *Forge · active checkpoint* or *Offline* (click for settings); ☰ opens the queue to reorder or cancel jobs. Forge shows a live preview while it generates.
+- **Look & feel** *(4.1)*: accent colours (purple, teal, pink, orange) in Settings → General, a collapsible icon-only sidebar («), and short page fades.
 - **✨ Create:** type an idea like *"an anime girl wearing an outfit in a setting"* and get finished prompts for your target model. You also get a separate negative prompt (where the model supports one) and recommended settings. A creativity slider controls how much it invents, and it can give 1–5 options with live streaming. **⚡ Offline build** works without AI.
 - **🎨 Builder:** 13 categories and about 800 grouped presets as clickable chips, with global search, locks, randomise/surprise and your own custom chips. A live, model-aware preview and quick score update as you go.
 - **💬 Refine:** chat with a local LLM about your prompt. Apply its suggestions in one click, with full version history and revert.
@@ -48,6 +53,12 @@ Everything runs on your own computer by default. The AI features are optional an
 - A polished dark/light theme and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
+
+| Home *(4.1)* | Gallery *(4.1)* |
+|---|---|
+| ![Home](docs/screenshots/home.png) | ![Gallery](docs/screenshots/gallery.png) |
+| **Queue** *(4.1)* | **Icon-only sidebar** *(4.1)* |
+| ![Queue](docs/screenshots/queue.png) | ![Collapsed sidebar](docs/screenshots/sidebar_collapsed.png) |
 
 | Wildcards *(4.0)* | Inpaint & Regions *(4.0)* |
 |---|---|
@@ -138,6 +149,10 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 **Regional prompts.** ComfyUI: one `CLIPTextEncode → ConditioningSetArea` per box, combined with your main prompt by `ConditioningCombine`, which is all built in. Forge has no built-in regional prompting, so install **Forge Couple**: in Forge go to *Extensions → Install from URL* and enter `https://github.com/Haoming02/sd-forge-couple`, then restart. PromptMaker detects it through `/sdapi/v1/scripts` (**🔎 Check support**) and sends the boxes in its *Advanced* mode, with the main prompt as a full-image background whose strength you set as *Base weight* (default 0.2). **Repeat main prompt in every region** (on by default) also adds the main prompt to each box. Put the shared scene and the count (`2girls, sitting on a beach`) in the main prompt and only each character's own details in their box. For two characters, two side-by-side boxes on a wide canvas (e.g. 1344×768) work best. Without it you get that message, and can choose **Send as one prompt instead** (for example `(a cat) on the left, (a dog) on the right`).
 
 **Wildcards when generating.** `__name__` and `{a|b}` in any prompt you generate are expanded with the image's seed before it's sent, so Forge and ComfyUI don't need the Dynamic Prompts extension. Turn this off on the Wildcards page if you'd rather let the extension do it. A lone `{tag}` without `|` is left alone.
+
+**Per-target-model image settings** *(4.1)*. Besides the checkpoint, each target model remembers its aspect/size (Create's *Aspect*), steps, CFG, sampler and scheduler (saved with **Save** in Settings while that model is selected). Switching target model restores them; values you never set fall back to the profile / global settings. They're stored in `profile_image_settings` and travel with Library sync.
+
+**Upscale and hires from the Gallery** *(4.1)*. Right-click an image → *Upscale…*: choose the factor (1.5×), upscaler and denoise (0.3 keeps the picture and adds detail). Tick *Pure upscale* for a plain resize through Forge's Extras tab. ComfyUI does Pure upscale only. *Regenerate with hires* reruns the same prompt, seed and settings with hires fix on. Results land in the Gallery with the source image noted in their sidecar.
 
 **Checkpoint follows the target model** *(4.0.1)*. Whatever checkpoint you pick (in Settings, Pose, Auto-refine or Inpaint & Regions) is remembered for the current **Target model**, and switching target model switches the checkpoint in every picker. Settings shows *Linked to: <profile>*; clear the box (**Backend default**) to unlink. With no link, Civitai-imported profiles are matched automatically against your backend's checkpoint list (file name, then name, e.g. *Nova Cross AM v3.0* → `novaCrossAM_v30.safetensors`), but only when exactly one checkpoint fits; otherwise the current one is kept. Links are stored in settings and travel with Library sync.
 

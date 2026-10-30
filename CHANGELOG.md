@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [4.0.1] - 2026-10-30
+## [4.1.0] - 2026-10-30
+
+### Added
+- **🏠 Home dashboard** (new first page): target model and its linked checkpoint, Forge / Ollama status, recent images, and quick-start buttons (Create, Builder, Generate last prompt, Auto-refine, Inpaint, Gallery).
+- **Gallery actions**: right-click or the detail-pane buttons for *Inpaint this* (opens Inpaint & Regions with the image and its prompt), *Use as reference* (Image to Prompt), *Regenerate with hires* (same prompt, seed and settings with hires fix on) and *Upscale…*. Drag a thumbnail onto the inpaint canvas to load it.
+- **One-click Upscale**: Forge img2img at 1.5× (factor, upscaler and denoise 0.3 adjustable; same prompt and seed) or *Pure upscale* through Forge's Extras (`/sdapi/v1/extra-single-image`). ComfyUI supports Pure upscale (`ImageScaleBy`). The result is saved to the Gallery with `source_image` in its sidecar.
+- **Backend status** in the sidebar: 🟢 *Forge · active checkpoint* / 🔴 *Offline* / *Loading…*, checked every 10 s in the background (one request at a time, `/sdapi/v1/options` or ComfyUI `/system_stats`). Click it for Settings; ☰ opens the queue.
+- **Queue view**: pending and running jobs with size and origin page, ▲/▼ reorder, cancel selected, cancel all and progress for the running job. Opens from the sidebar ☰, the Gallery's *Manage queue* button or a double-click on the queue list.
+- **Per-target-model image settings**: each target model also remembers aspect/size, steps, CFG, sampler and scheduler (`profile_image_settings`, included in Library sync), restored when you switch. Settings shows *Linked to: model · checkpoint · 16:9 · 30 steps · …*.
+- **Live generation preview** from Forge's `/sdapi/v1/progress` `current_image`, shown in the Gallery queue area and on the Auto-refine page (Settings toggle). ComfyUI keeps the progress text only.
+- **Look & feel**: justified gallery rows that keep each image's aspect ratio, a hover preview, a full-screen viewer (←/→, Esc); accent colour picker (purple, teal, pink, orange) for dark and light themes; collapsible icon-only sidebar (remembered); 150 ms page fade (can be switched off); loading placeholders for checkpoint pickers and LoRA scans.
+
+ - 2026-10-30
 
 ### Added
 - The image checkpoint now follows the **Target model**: the checkpoint you pick in any picker is remembered per target model (`profile_checkpoints` setting, included in Library sync) and restored when you switch. Civitai-imported profiles without a link are auto-matched to a backend checkpoint by file name or normalised name, only when the match is unique. Settings shows "Linked to: …"; choosing Backend default unlinks.

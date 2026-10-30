@@ -25,6 +25,7 @@ from .library import Library, PLACEHOLDERS, PackError
 from .storage import Store
 from .v3ui import V3Pages
 from .v4ui import V4Pages
+from .v41ui import GalleryList, V41Pages
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,7 +38,7 @@ NEGATIVE_PRESETS = {
     "Photo": "cartoon, illustration, painting, 3d render, cgi, oversaturated, blurry",
     "None": "",
 }
-NAV = [("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("🖌", "Inpaint & Regions"), ("👤", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("📊", "Score"),
+NAV = [("🏠", "Home"), ("✨", "Create"), ("🎨", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔄", "Auto-refine"), ("🧍", "Pose"), ("🖌", "Inpaint & Regions"), ("👤", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("📊", "Score"),
        ("⚖", "A/B Test"), ("🗂", "Gallery"), ("📋", "Templates"),
        ("🔁", "Batch"), ("🕘", "History"), ("⭐", "Favourites"), ("📦", "Packs"), ("🌐", "Community"), ("🎯", "Model profiles"), ("☁", "Library sync"), ("⚙", "Settings")]
 
@@ -61,7 +62,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(V4Pages, V3Pages, QMainWindow):
+class MainWindow(V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -98,7 +99,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
         self.setCentralWidget(root)
-        for builder_fn in (self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
+        for builder_fn in (self._home_page, self._create_page, self._builder_page, self._refine_page, self._img2prompt_page, self._autorefine_page, self._pose_page,
                            self._inpaint_page, self._presets_page, self._wildcards_page, self._loras_page, self._video_page, self._analyse_page,
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
@@ -111,6 +112,10 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         cp = QAction(self, shortcut=QKeySequence("Ctrl+Shift+C")); cp.triggered.connect(self.copy_prompt); self.addAction(cp)
         qk = QAction(self, shortcut=QKeySequence("Ctrl+K")); qk.triggered.connect(self.open_quickbar); self.addAction(qk)
         self.apply_theme(self.store.get("theme", "dark"))
+        if self.store.get("sidebar_collapsed"):
+            self.set_sidebar_collapsed(True)
+        self.preview_timer = QTimer(self); self.preview_timer.timeout.connect(self._preview_tick); self.preview_timer.start(700)
+        self.home_refresh()
         self.update_preview()
         self._create_profile_refresh()
         QTimer.singleShot(50, self.refresh_models_async)
@@ -123,9 +128,16 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
 
     # ------------------------------------------------------------------ chrome
     def _sidebar(self):
-        w = QWidget(); w.setFixedWidth(240)
+        w = QWidget(); w.setFixedWidth(240); self.sidebar_w = w
         v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-        v.addWidget(label("✦ PromptMaker", "brand"))
+        brand = label("✦ PromptMaker", "brand")
+        self.collapse_btn = button("«", lambda: self.set_sidebar_collapsed(not self.store.get("sidebar_collapsed")), "ghost",
+                                   "Collapse sidebar to icons")
+        self.collapse_btn.setFixedWidth(34)
+        top = QWidget(); top.setObjectName("sideFoot"); th = QHBoxLayout(top); th.setContentsMargins(0, 0, 8, 0)
+        th.addWidget(brand, 1); th.addWidget(self.collapse_btn)
+        v.addWidget(top)
+        self._side_expand_only = [brand]
         v.addWidget(label(f"AI image prompt studio · v{__version__}", "brandSub"))
         self.nav = QListWidget(); self.nav.setObjectName("sidebar")
         for icon, name in NAV:
@@ -133,7 +145,8 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         v.addWidget(self.nav, 1)
         foot = QWidget(); foot.setObjectName("sideFoot")
         f = QVBoxLayout(foot); f.setContentsMargins(14, 10, 14, 14); f.setSpacing(6)
-        f.addWidget(label("TARGET MODEL", "groupLabel"))
+        self._status_widgets(f)
+        _tm = label("TARGET MODEL", "groupLabel"); f.addWidget(_tm)
         self.profile_combo = QComboBox()
         for pid, p in self.profiles.items():
             self.profile_combo.addItem(p["name"], pid)
@@ -141,7 +154,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.profile_combo.setCurrentIndex(max(0, idx))
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
         f.addWidget(self.profile_combo)
-        f.addWidget(label("AI PROVIDER", "groupLabel"))
+        _ap = label("AI PROVIDER", "groupLabel"); f.addWidget(_ap)
         self.prov_label = label("", "hint"); f.addWidget(self.prov_label)
         self.model = QComboBox(); self.model.setPlaceholderText("no models")
         self.model.currentTextChanged.connect(lambda m: m and self.store.set(f"model:{self.provider.pid}", m))
@@ -153,11 +166,15 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.theme_btn = button("🌙  Dark mode", self.toggle_theme, "ghost")
         f.addWidget(self.theme_btn)
         v.addWidget(foot)
+        self._side_expand_only += [_tm, self.profile_combo, _ap, self.prov_label, self.model, self.ai_dot, self.theme_btn]
         return w
 
     def _nav_changed(self, i):
         self.stack.setCurrentIndex(i)
+        self.fade_in(self.stack.currentWidget())
         name = NAV[i][1]
+        if name == "Home":
+            self.home_refresh()
         if name == "History":
             self.load_history()
         elif name == "Favourites":
@@ -181,7 +198,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
 
     def apply_theme(self, name):
         self.theme = name
-        QApplication.instance().setStyleSheet(theme.stylesheet(name))
+        QApplication.instance().setStyleSheet(theme.stylesheet(name, self.store.get("accent", "purple")))
         self.store.set("theme", name)
         self.theme_btn.setText("☀️  Light mode" if name == "dark" else "🌙  Dark mode")
         if hasattr(self, "thread_view"):
@@ -208,6 +225,10 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
             self.negative.blockSignals(True); self._neg_preset("Model default"); self.negative.blockSignals(False)
         self.profile_tips.setText(" · ".join(p.get("tips", [])[:3]))
         self.apply_profile_checkpoint()
+        if hasattr(self, "sidebar_w"):
+            self.apply_profile_image_settings()
+            self._update_ckpt_link_label()
+            self.home_refresh()
         self.update_preview()
         self._create_profile_refresh()
         if hasattr(self, "score_in"):
@@ -628,7 +649,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         g = QGridLayout(); g.setHorizontalSpacing(10); g.setVerticalSpacing(8)
         self.aspect = QComboBox(); self.aspect.addItems(profiles.ASPECTS)
         self.aspect.setCurrentText(self.store.get("aspect", "1:1"))
-        self.aspect.currentTextChanged.connect(lambda a: (self.store.set("aspect", a), self.update_preview(), self._create_profile_refresh()))
+        self.aspect.currentTextChanged.connect(lambda a: (self.store.set("aspect", a),
+                                                          getattr(self, "_restoring_img", False) or not hasattr(self, "be_status")
+                                                          or self.save_profile_image(aspect=a), self.update_preview(), self._create_profile_refresh()))
         self.emph = QCheckBox("Emphasise subject"); self.emph.toggled.connect(self.update_preview)
         g.addWidget(label("Aspect"), 0, 0); g.addWidget(self.aspect, 0, 1); g.addWidget(self.emph, 0, 2)
         self.negpreset = QComboBox(); self.negpreset.addItems(list(NEGATIVE_PRESETS))
@@ -1694,18 +1717,22 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         q = Card()
         self.gen_status = label(tr("Idle"), "muted"); self.gen_bar = QProgressBar(); self.gen_bar.setFixedHeight(8)
         self.backend_lbl = label("", "badge")
-        q.add(hrow(label("Queue", "h2"), self.backend_lbl, None, self.gen_status,
+        self.gen_preview = QLabel(); self.gen_preview.setFixedSize(120, 120); self.gen_preview.setAlignment(Qt.AlignCenter)
+        self.gen_preview.setVisible(False); self.gen_preview.setToolTip(tr("Live preview of the image being generated"))
+        q.add(hrow(label("Queue", "h2"), self.backend_lbl, None, self.gen_status, button("☰ Manage queue", self.open_queue, "ghost"),
                    button("■ Cancel current", lambda: self.genq.cancel_current(), "ghost"),
                    button("Clear queue", lambda: (self.genq.clear(), self.notify(tr("Queue cleared"))), "ghost")))
         q.add(self.gen_bar)
-        self.queue_list = QListWidget(); self.queue_list.setFixedHeight(84); q.add(self.queue_list)
+        self.queue_list = QListWidget(); self.queue_list.setFixedHeight(84)
+        self.queue_list.itemDoubleClicked.connect(lambda *_: self.open_queue())
+        q.add(hrow(self.queue_list, self.gen_preview))
         v.addWidget(q)
         row = QSplitter(); row.setChildrenCollapsible(False); v.addWidget(row, 1)
         left = Card()
-        self.gal_list = QListWidget(); self.gal_list.setViewMode(QListWidget.IconMode); self.gal_list.setIconSize(QSize(150, 150))
-        self.gal_list.setResizeMode(QListWidget.Adjust); self.gal_list.setMovement(QListWidget.Static); self.gal_list.setSpacing(8)
+        self.gal_list = GalleryList()
         self.gal_list.currentItemChanged.connect(self._gal_selected)
-        self.gal_list.itemDoubleClicked.connect(lambda *_: self._gal_open())
+        self.gal_list.itemDoubleClicked.connect(lambda *_: self.gal_view())
+        self.gal_list.customContextMenuRequested.connect(self.gal_context)
         left.add(self.gal_list, 1)
         row.addWidget(left)
         right = Card()
@@ -1715,7 +1742,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.gal_meta = QTextBrowser(); right.add(self.gal_meta, 1)
         right.add(hrow(button("🔍 Open full size", self._gal_open), button("📋 Copy prompt", self._gal_copy),
                        button("♻ Reuse prompt", self._gal_reuse, "primary")))
-        right.add(hrow(button("🎲 Same seed again", self._gal_regen), button("📂 Folder", lambda: QDesktopServices.openUrl(
+        right.add(hrow(button("🖌 Inpaint this", lambda: self.gal_inpaint()), button("👁 Use as reference", lambda: self.gal_reference()),
+                       button("🔍 Regenerate with hires", lambda: self.gal_hires()), button("⤢ Upscale…", lambda: self.gal_upscale())))
+        right.add(hrow(button("🎲 Same seed again", self._gal_regen), button("⛶ Viewer", lambda: self.gal_view()), button("📂 Folder", lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(self.gallery.root))), None, ConfirmButton("🗑 Delete", self._gal_delete, "Confirm delete", 4, "danger")))
         row.addWidget(right); row.setSizes([700, 480])
         self.load_gallery()
@@ -1724,10 +1753,15 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
     def load_gallery(self):
         if not hasattr(self, "gal_list"):
             return
+        from .v41ui import ROW_H
         self.gal_list.clear()
-        for path, meta in self.gallery.items()[:400]:
+        items = self.gallery.items()[:400]
+        for path, meta in items:  # justified rows: every thumbnail is ROW_H tall and keeps its aspect ratio
             pm = QPixmap(path)
-            it = QListWidgetItem(QIcon(pm.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)), "")
+            th = pm.scaledToHeight(ROW_H, Qt.SmoothTransformation) if not pm.isNull() else pm
+            th = th.scaledToWidth(ROW_H * 2, Qt.SmoothTransformation) if th.width() > ROW_H * 2 else th
+            it = QListWidgetItem(QIcon(th), "")
+            it.setSizeHint(QSize(max(60, th.width()) + 6, ROW_H + 6))
             it.setData(Qt.UserRole, (path, meta)); it.setToolTip(meta.get("prompt", "")[:200])
             self.gal_list.addItem(it)
         b = self.image_backend()
@@ -1735,7 +1769,7 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
 
     def _gal_cur(self):
         it = self.gal_list.currentItem()
-        return it.data(Qt.UserRole) if it else (None, {})
+        return (it.data(Qt.UserRole) if it else None) or (None, {})
 
     def _gal_selected(self, it, _=None):
         if not it:
@@ -2047,6 +2081,18 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.lang.currentIndexChanged.connect(lambda: (self.store.set("language", self.lang.currentData()),
                                                        self.notify(tr("Language saved – restart PromptMaker to apply"))))
         g.add(hrow(label("Language"), self.lang, None))
+        from . import theme as _th
+        self.accent = QComboBox()
+        for k in _th.ACCENTS:
+            self.accent.addItem(tr(k.capitalize()), k)
+        self.accent.setCurrentIndex(max(0, self.accent.findData(self.store.get("accent", "purple"))))
+        self.accent.currentIndexChanged.connect(lambda _i: self.apply_accent(self.accent.currentData()))
+        self.anim_on = QCheckBox(tr("Page fade animations")); self.anim_on.setChecked(bool(self.store.get("animations", True)))
+        self.anim_on.toggled.connect(lambda on: self.store.set("animations", on))
+        self.live_prev = QCheckBox(tr("Live preview while generating (Forge)")); self.live_prev.setChecked(bool(self.store.get("live_preview", True)))
+        self.live_prev.toggled.connect(lambda on: (self.store.set("live_preview", on), setattr(imagegen, "LIVE_PREVIEW", on)))
+        imagegen.LIVE_PREVIEW = bool(self.store.get("live_preview", True))
+        g.add(hrow(label("Accent colour"), self.accent, self.anim_on, self.live_prev, None))
         self.chk_updates = QCheckBox(tr("Check GitHub for new versions at startup"))
         self.chk_updates.setChecked(self.store.get("check_updates", True))
         self.chk_updates.toggled.connect(lambda on: self.store.set("check_updates", on))
@@ -2282,6 +2328,8 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         self.store.set("img_workflow", self.img_wf.currentText())
         self.store.set(f"img_checkpoint:{self.img_wf.currentText() if kind == 'comfyui' else 'a1111'}", self.img_ckpt.name())
         self.link_profile_checkpoint(self.img_ckpt.name())
+        self.save_profile_image(steps=self.img_steps.value() or None, cfg=self.img_cfg.value() or None,
+                                sampler=self.img_sampler.currentText().strip(), scheduler=self.img_scheduler.currentText().strip())
         self.store.set("img_steps", self.img_steps.value() or None); self.store.set("img_cfg", self.img_cfg.value() or None)
         self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
         self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
@@ -2393,8 +2441,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         lbl = getattr(self, "ckpt_link_lbl", None)
         if lbl is None:
             return
-        name = self.profile_checkpoints().get(self.profile.get("id"))
-        lbl.setText(tr("Linked to") + f": {self.profile.get('name')}" if name else
+        bits = self.link_summary()
+        name = self.profile_checkpoints().get(self.profile.get("id")) or bits
+        lbl.setText(tr("Linked to") + f": {self.profile.get('name')}" + (f" · {' · '.join(map(str, bits))}" if bits else "") if name else
                     tr("Not linked to a target model – pick a checkpoint to link it to") + f" {self.profile.get('name')}")
 
     def apply_profile_checkpoint(self):
@@ -2429,9 +2478,11 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         if not backend or (busy and not force):
             return
         self._ckpt_loading = True; self._ckpt_loading_since = _t.time()
+        self._ckpt_placeholder(tr("Loading checkpoints…"), combos)
         wk = CallWorker(backend.checkpoints)
         def ok(lst):
             self._ckpt_loading = False
+            self._ckpt_placeholder(tr("Backend default (whatever is loaded)"))
             self._ckpt_names = list(lst or [])
             for c in combos or self._ckpt_combos_list():
                 c.set_items(lst or [])
@@ -2439,7 +2490,14 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
                 self._ckpt_match_pending = False; self.apply_profile_checkpoint()
         def failed(_e):
             self._ckpt_loading = False
+            self._ckpt_placeholder(tr("Backend default (whatever is loaded)"))
         wk.ok.connect(ok); wk.failed.connect(failed); self._keep(wk); wk.start()
+
+    def _ckpt_placeholder(self, text, combos=None):
+        """Skeleton text in empty checkpoint pickers while the list loads."""
+        for c in combos or self._ckpt_combos_list():
+            if c.lineEdit() is not None:
+                c.lineEdit().setPlaceholderText(text)
 
     def _autoload_checkpoints(self):
         if os.environ.get("PROMPTMAKER_NO_NET") or self.store.get("img_backend", "none") == "none":
@@ -2472,7 +2530,9 @@ class MainWindow(V4Pages, V3Pages, QMainWindow):
         wk.failed.connect(lambda e: manual and self.notify(tr("Couldn't check for updates") + f": {e[:120]}", error=True))
         self._keep(wk); wk.start()
 
-    TOUR = [("Create", "Start here: describe an idea in plain words and the AI writes a finished prompt for your target model. Press Ctrl+K anywhere for the quick bar."),
+    TOUR = [("Home", "Your dashboard: target model, linked checkpoint, Forge / Ollama status, recent images and quick-start buttons. "
+                     "The « button collapses the sidebar to icons; the dot below it shows the image backend – click it for settings, ☰ opens the queue."),
+            ("Create", "Start here: describe an idea in plain words and the AI writes a finished prompt for your target model. Press Ctrl+K anywhere for the quick bar."),
             ("Builder", "Or build a prompt by clicking preset chips. Pick the target model in the sidebar – the output adapts automatically."),
             ("Refine", "Chat with the AI to improve a prompt. Apply suggestions with one click and revert any time."),
             ("Image to Prompt", "Drop an image and a vision model turns it into a prompt."),

@@ -563,7 +563,7 @@ def _wait_worker(pred, timeout=5):
 def test_ui_v4_pages_present(win):
     from promptmaker import __version__
     from promptmaker.app import NAV
-    assert __version__ == "4.0.1"
+    assert __version__ == "4.1.0"
     names = [n for _, n in NAV]
     for name in ("Inpaint & Regions", "Wildcards", "Video", "Library sync"):
         win.go(name); assert names[win.stack.currentIndex()] == name
@@ -752,5 +752,6 @@ def test_sampler_scheduler_pickers(win, srv):
     assert job.sampler == "DPM++ 2M SDE" and job.scheduler == "Karras"
     assert imagegen.A1111(url).payload(job)["scheduler"] == "Karras"
     win.store.set("img_sampler", None); win.store.set("img_scheduler", None)
+    win.store.set("profile_image_settings", {})  # 4.1: Save also remembers them per target model
     job = win.make_job("a cat")[0]
     assert job.sampler != "DPM++ 2M SDE" and job.scheduler != "Karras"
