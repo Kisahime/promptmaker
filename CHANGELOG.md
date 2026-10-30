@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.0.0] - 2026-10-30
+
+### Added
+- **Characters** (new *Characters* section on the rail): full characters built on the existing character presets, with reference images, multiple named outfits, several LoRAs with weights, trigger words and tag sets per target model. Insert a character + outfit into Create, Refine, a new region or the clipboard, also from the new **👤 Character** buttons on Create and Inpaint & Regions and the command palette. Re-inserting swaps the outfit cleanly and never duplicates LoRA tags.
+- **Character reference images (IP-Adapter)**: optional per character. It is used only when the backend supports it (Forge: an IP-Adapter ControlNet model; ComfyUI: ComfyUI_IPAdapter_plus). Otherwise it is skipped, and *Check reference support* says why.
+- **Gallery character tags**: new images record which characters appear, from trigger words / LoRAs in the prompt (always) and, if you opt in, from the local Ollama vision model in the background.
+- **Storyboard & comics**: an AI panel plan from a short story using your Characters, per-panel or *Generate all* through the queue, a page layout editor (8 grid templates, 4 page sizes, fonts, editable speech bubbles and captions, drag Gallery images onto panels), PNG / PDF export and `.pmstory` project files.
+- **Live sketch** (Studio): a paint canvas with a debounced, low-step img2img result beside it (Lightning/Turbo, Balanced and Quality presets), or ControlNet scribble when a scribble model is installed. Send the result to the Gallery, Inpaint or Image to Prompt.
+- **LoRA training (optional)**: dataset picker (15–50 images), captions from prompts or the vision model, VRAM presets, kohya-ss/sd-scripts run as a separate process with progress, log and cancel. The output goes to Forge's `models/Lora` and is linked to a Character. *Install trainer* clones sd-scripts into `tools/sd-scripts` with its own venv, only after you confirm.
+- Home quick-start tiles and command-palette entries for the new pages.
+
+### Changed
+- The rail has a seventh section, **Characters** (Characters, Storyboard, LoRA training). Studio gains a **Live sketch** tab.
+- Database schema 5: characters get an `extra` column for the new fields. 4.x character presets are kept as they are and still work on the Presets page.
+
 ## [4.1.5] - 2026-10-30
 
 ### Added

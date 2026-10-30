@@ -23,3 +23,6 @@ Thumbs.db
 .vscode/
 .idea/
 packs/custom.json.migrated
+
+# 5.0 optional LoRA trainer (installed by the app)
+tools/sd-scripts/

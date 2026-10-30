@@ -293,6 +293,8 @@ class V3Pages:
         if isinstance(self.profile.get("forge_modules"), list):
             job.forge_modules = self.profile["forge_modules"]
         job.backend_name = backend.name
+        if hasattr(self, "apply_character_reference"):  # 5.0: Character reference image (IP-Adapter) when supported
+            self.apply_character_reference(job)
         return job, backend, wf
 
     def _default_negative(self):

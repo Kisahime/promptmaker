@@ -27,6 +27,7 @@ from .v3ui import V3Pages
 from .v4ui import V4Pages
 from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
+from .v5ui import V5Pages
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,7 +42,8 @@ NEGATIVE_PRESETS = {
 }
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
-       ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings")]
+       ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training")]
 
 
 def copy(text):
@@ -77,7 +79,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -117,11 +119,13 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
                            self._inpaint_page, self._presets_page, self._wildcards_page, self._loras_page, self._video_page, self._analyse_page,
                            self._score_page, self._ab_page, self._gallery_page,
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
-                           self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page):
+                           self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
+                           self._characters_page, self._storyboard_page, self._sketch_page, self._training_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
         self.toast = Toast(root)
+        self._job_callbacks = getattr(self, "_job_callbacks", {})
         self.nav.currentRowChanged.connect(self._nav_changed)
         self.nav.setCurrentRow(0)
         sc = QAction(self, shortcut=QKeySequence("Ctrl+T")); sc.triggered.connect(self.toggle_theme); self.addAction(sc)
@@ -369,7 +373,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         for b in (button("📋 Copy", self.c_copy, "primary"), button("🖼 Generate", lambda: self.generate_image(
                       self.c_prompt.toPlainText(), self.c_neg.toPlainText()), "primary"),
                   self.ai_btn("⟳ Regenerate", self.create_generate), button("Copy negative", self.c_copy_neg),
-                  button("💬 Refine in chat", self.c_refine), button("↩ Load into Builder", self.c_to_builder),
+                  self._char_btn("create"), button("💬 Refine in chat", self.c_refine), button("↩ Load into Builder", self.c_to_builder),
                   button("📊 Score", self.c_score), button("🕘 Save to history", self.c_hist), button("⭐ Favourite", self.c_fav)):
             fl.addWidget(b)
         res.add(acts)
@@ -1696,6 +1700,7 @@ class MainWindow(Shell415, V41Pages, V4Pages, V3Pages, QMainWindow):
         self._render_queue(); self.load_gallery(); self.film_refresh()
         for cb in getattr(self, "_job_callbacks", {}).pop(job.id, []):
             cb(job)
+        self._v5_job_done(job)  # 5.0: tag images with Characters
         self.notify(tr("Image ready") + " – " + tr("saved to Gallery"))
 
     def _gen_failed(self, job, err):

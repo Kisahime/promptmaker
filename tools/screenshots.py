@@ -144,6 +144,50 @@ def v3_shots():
     w.pose_cn_model.setCurrentText("xinsir_openpose_sdxl"); g("pose")
 
 
+def v5_shots():
+    """5.0: Characters, Storyboard, Live sketch, LoRA training (demo data only; nothing is generated)."""
+    import json as _json
+    paths = []
+    for i in range(16):
+        im, data = art(500 + i, 512, 640); paths.append(w.gallery.save(data, {"prompt": "mika_pm, adult woman, short silver hair, cafe", "seed": i}))
+    ex = {"triggers": "mika_pm", "outfits": [{"name": "Café", "tags": "cream knit sweater, jeans"},
+                                             {"name": "Rainy day", "tags": "yellow raincoat, rubber boots"},
+                                             {"name": "Evening", "tags": "black dress, silver earrings"}],
+          "loras": [{"name": "detail_tweaker_xl", "weight": 0.4}], "tagsets": {"anima": "1girl, mika, silver bob cut, green eyes"},
+          "use_reference": True, "refs": [paths[1]]}
+    cid = store.save_character({"name": "Mika", "appearance": "adult woman, short silver hair, green eyes, light freckles",
+                                "lora": "mika_v1", "ref_image": paths[0], "extra": _json.dumps(ex)})
+    store.save_character({"name": "Ren", "appearance": "adult man, messy black hair, glasses", "outfit": "barista apron, white shirt",
+                          "ref_image": paths[5]})
+    w.cr_load(cid); w.go("Characters"); w.cr_list.setCurrentRow(0); w.cr_use_outfit.setCurrentIndex(2); g("characters")
+    w.sb_refresh_cast(); w.sb_cast.item(0).setCheckState(Qt.Checked)
+    plan = _json.dumps({"title": "The rainy kitten", "panels": [
+        {"shot": "establishing shot", "characters": ["Mika"], "setting": "rainy street, evening", "action": "Mika walks home in the rain",
+         "caption": "It had been a long day."},
+        {"shot": "close-up", "characters": ["Mika"], "setting": "alley", "action": "Mika finds a kitten in a box",
+         "dialogue": [{"speaker": "Mika", "text": "Oh! Who are you, little one?"}]},
+        {"shot": "medium shot", "characters": ["Mika", "Ren"], "setting": "cosy cafe", "action": "Mika shows the kitten to Ren",
+         "dialogue": [{"speaker": "Ren", "text": "She can stay here tonight."}]},
+        {"shot": "wide shot", "characters": ["Mika", "Ren"], "setting": "cafe window", "action": "the kitten sleeps by the window",
+         "caption": "And that's how the café got its mascot."}]})
+    w.sb_story.setPlainText("Mika finds a lost kitten on a rainy evening and takes it to Ren's café."); w.sb_n.setValue(4)
+    w.sb_style.setText("manga, soft watercolour colours"); w.sb_apply_plan(plan)
+    for i in range(4):
+        w.sb["panels"][i]["image"] = paths[2 + i]
+    w.sb_cur = 1; w.go("Storyboard"); w.sb_refresh(); app.processEvents(); w.sb_render(); g("storyboard")
+    c = w.sk_canvas; c.fill_rect(0, 420, 640, 220, "#a7c957"); c.fill_ellipse(380, 60, 160, 160, "#f4a261")
+    c.fill_ellipse(220, 200, 120, 260, "#e63946"); c.fill_ellipse(245, 150, 70, 70, "#ffe0c2"); w.sk_timer.stop()
+    w.sk_prompt.setText("adult woman in a red coat on a grassy hill at sunset, watercolor")
+    im, w.sk_png = art(9, 640, 640)
+    w.go("Live sketch"); app.processEvents()
+    w.sk_result.setPixmap(QPixmap.fromImage(im).scaled(w.sk_result.width() - 8, w.sk_result.height() - 8, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    w.sk_status.setText("Done · 640×640 · 6 steps"); g("live_sketch")
+    w.tr_name.setText("mika_v2"); w.tr_trigger.setText("mika_pm"); w.tr_refresh_chars(); w.tr_char.setCurrentIndex(1)
+    w.tr_add_gallery(16); w.tr_list.setCurrentRow(0); w.tr_bar.setValue(42); w.tr_bar.setFormat("%p%  ·  840/2000  ·  loss 0.0912")
+    w.tr_log.setPlainText("$ …sdxl_train_network.py --pretrained_model_name_or_path novaAnimeXL_ilV190.safetensors …\nprepare tokenizer\nepoch 1/10")
+    w.go("LoRA training"); g("lora_training")
+
+
 def v4_shots():
     os.environ["PROMPTMAKER_NO_DIALOGS"] = "1"
     w.profile_combo.setCurrentIndex(w.profile_combo.findData("illustrious"))
@@ -228,6 +272,7 @@ def go():
     civitai_profile()
     v3_shots()
     v4_shots()
+    v5_shots()
     w.go("Model profiles"); app.processEvents(); g("profiles")
     w.go("Settings"); g("settings")
     w.start_tour(); app.processEvents(); g("tour"); w.tour.hide()
