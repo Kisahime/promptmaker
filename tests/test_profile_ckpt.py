@@ -2,7 +2,9 @@ import json
 
 from promptmaker import ckptmatch, sync, wildcards
 from promptmaker.storage import Store
-from test_v4 import win  # noqa: F401  (fixture)
+import test_v4
+
+win = test_v4.win  # shared fixture
 
 NOVA = {"id": "civitai_1", "name": "Nova Cross AM v3.0 (Civitai)",
         "civitai": {"model_name": "Nova Cross AM", "version_name": "v3.0"}}
