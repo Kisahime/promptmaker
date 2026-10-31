@@ -12,12 +12,13 @@ from .widgets import button, label
 
 # (icon, section, pages) – every page in NAV belongs to exactly one section.
 SECTIONS = [("⌂", "Home", ["Home"]),
-            ("✦", "Studio", ["Create", "Builder", "Refine", "Batch", "Templates"]),
+            ("✦", "Studio", ["Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"]),
+            ("☺", "Characters", ["Characters", "Storyboard", "LoRA training"]),
             ("▦", "Gallery", ["Gallery", "A/B Test"]),
             ("◐", "Tools", ["Image to Prompt", "Auto-refine", "Pose", "Inpaint & Regions", "Video", "Analyse", "Score"]),
             ("❖", "Library", ["Presets", "Wildcards", "LoRAs", "History", "Favourites", "Packs", "Community"]),
             ("⚙", "Settings", ["Settings", "Model profiles", "Library sync"])]
-STUDIO_PAGES = {"Create", "Builder", "Refine", "Batch", "Templates"}
+STUDIO_PAGES = {"Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"}
 RAIL_W, RAIL_W_COLLAPSED = 184, 64
 INSPECTOR_MIN_W = 1360
 
@@ -280,7 +281,11 @@ class Shell415:
         from .app import NAV
         e = [(f"{ic}  {tr('Go to')} {tr(n)}", (lambda n=n: self.go(n))) for ic, n in NAV]
         e += [("☾  " + tr("Toggle light / dark theme"), self.toggle_theme), ("☰  " + tr("Open image queue"), self.open_queue),
-              ("🧭  " + tr("Run setup wizard"), lambda: self.open_setup()), ("◨  " + tr("Show / hide inspector"), self.toggle_inspector)]
+              ("🧭  " + tr("Run setup wizard"), lambda: self.open_setup()), ("◨  " + tr("Show / hide inspector"), self.toggle_inspector),
+              ("👤  " + tr("Insert character into Create"), lambda: self.show_character_menu("create")),
+              ("📖  " + tr("New storyboard"), lambda: (self.sb_new(), self.go("Storyboard"))),
+              ("✏  " + tr("Live sketch: clear canvas"), lambda: (self.sk_canvas.clear(), self.go("Live sketch"))),
+              ("🎓  " + tr("Train a LoRA"), lambda: self.go("LoRA training"))]
         e += [(f"🎨  {tr('Theme')}: {tr(n)}", (lambda k=k: self.apply_theme(k))) for k, n in theme.THEMES.items()]
         return e
 

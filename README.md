@@ -12,6 +12,10 @@ Everything runs on your own computer by default. The AI features are optional an
 
 ## Features
 
+- **👤 Characters** *(5.0)*: save a person once with reference images, several named outfits, linked LoRAs + weights, trigger words and per-target-model tag sets. Insert a character + outfit into Create, Refine, a new region or the clipboard (the **👤 Character** buttons on Create and Inpaint & Regions do the same); swapping the outfit replaces the old one instead of piling tags up. With **Use as reference (IP-Adapter)** ticked, the first reference image is sent along when Forge has an IP-Adapter ControlNet model or ComfyUI has ComfyUI_IPAdapter_plus – otherwise it is skipped. New Gallery images are tagged with the characters whose trigger word / LoRA is in the prompt, and (opt-in) by the local Ollama vision model in the background.
+- **📖 Storyboard & comics** *(5.0)*: write a short story, tick the cast, and the AI plans N panels (shot, characters, action, setting, dialogue, caption) using your Characters for consistency. Generate one panel or all of them through the normal queue, then lay out the page: grid templates (1–6 panels, manga), page sizes, fonts, editable speech bubbles and captions, drag Gallery thumbnails onto panels. Export PNG (one per page) or PDF, and save / open the storyboard as a `.pmstory` project file.
+- **✏ Live sketch** *(5.0, Studio)*: draw rough shapes and colours; ~0.8 s after each stroke a fast low-step img2img (Lightning/Turbo-friendly presets, small resolution) regenerates the result beside the canvas. Uses a ControlNet scribble model instead when Forge/ComfyUI has one. Save the result, send it to Inpaint, or to Image to Prompt.
+- **🎓 LoRA training** *(5.0, optional)*: pick 15–50 Gallery or folder images, caption them from their prompts or with the Ollama vision model, edit captions, choose an SDXL / Illustrious base checkpoint and a VRAM preset, and train with [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts) run as a separate process (progress, log, cancel). The finished LoRA is copied to Forge's `models/Lora` and linked to the chosen Character. See [LoRA training](#lora-training-optional).
 - **🏠 Home** *(4.1)*: a dashboard with your target model and linked checkpoint, Forge / Ollama status, recent images and quick-start buttons.
 - **🗂 Gallery** *(4.1)*: justified rows that keep aspect ratios, hover preview, full-screen viewer (←/→, Esc), and right-click actions: *Inpaint this*, *Use as reference*, *Regenerate with hires*, *Upscale…*. Drag a thumbnail onto the inpaint canvas.
 - **⤢ Upscale** *(4.1)*: Forge img2img at 1.5× with denoise 0.3 (same prompt and seed), or *Pure upscale* via Forge Extras / ComfyUI `ImageScaleBy`.
@@ -53,6 +57,12 @@ Everything runs on your own computer by default. The AI features are optional an
 - Four themes – sleek Graphite dark/light (default) plus cute Pastel and Pastel dusk – with accent colours (Ctrl+T toggles light/dark) and a **Ctrl+K** quick bar from anywhere.
 
 ## Screenshots
+
+| Characters *(5.0)* | Storyboard *(5.0)* |
+|---|---|
+| ![Characters](docs/screenshots/characters.png) | ![Storyboard](docs/screenshots/storyboard.png) |
+| **Live sketch** *(5.0)* | **LoRA training** *(5.0)* |
+| ![Live sketch](docs/screenshots/live_sketch.png) | ![LoRA training](docs/screenshots/lora_training.png) |
 
 | Home *(4.1)* | Gallery *(4.1)* |
 |---|---|
@@ -224,11 +234,20 @@ Packs are JSON files in `packs/`:
 ```
 Use **📦 Packs → Import / Export** to share them. Packs in `packs/` are the bundled, read-only ones. Packs you import and chips you add yourself are saved in `data/packs/` (`custom.json`). If you're upgrading from 1.x, an old `packs/custom.json` is moved there automatically.
 
+## LoRA training (optional)
+
+PromptMaker does not train anything itself and ships no training code. **LoRA training → ⬇ Install trainer…** shows the exact commands and asks before running them:
+
+1. `git clone -b sd3 https://github.com/kohya-ss/sd-scripts tools/sd-scripts` (inside the PromptMaker folder)
+2. `python -m venv tools/sd-scripts/venv`, then PyTorch (CUDA 12.4 wheels), `requirements.txt`, `bitsandbytes` and `xformers` into that venv – about 6 GB.
+
+You need git and an NVIDIA GPU (8 GB works with the *8 GB* preset; 16 GB+ recommended). You can also point the *sd-scripts* field at an existing install. A run writes its dataset (`img/<repeats>_<trigger>/` with one `.txt` caption per image) and output under `data/training/<name>/`, then copies `<name>.safetensors` to `<Forge>/models/Lora`. Keep Forge idle while training – both need the GPU.
+
 ## Keyboard shortcuts
 
 | Keys | Action |
 |---|---|
-| Ctrl+K | Quick idea bar (from anywhere) |
+| Ctrl+K | Command palette: pages, actions (insert character, new storyboard, …) or an idea to write a prompt for |
 | Ctrl+Enter | Create (Create page) / send (Refine chat) |
 | Ctrl+Shift+C | Copy the Builder prompt |
 | Ctrl+T | Toggle dark/light theme |

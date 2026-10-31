@@ -200,7 +200,9 @@ class V41Pages:
         qs = Card("Quick start"); g = QGridLayout(); g.setSpacing(10)
         tiles = [("✨  Create", lambda: self.go("Create")), ("🎨  Builder", lambda: self.go("Builder")),
                  ("🖼  Generate last prompt", self.home_generate_last), ("🔄  Auto-refine", lambda: self.go("Auto-refine")),
-                 ("🖌  Inpaint", lambda: self.go("Inpaint & Regions")), ("🗂  Gallery", lambda: self.go("Gallery"))]
+                 ("🖌  Inpaint", lambda: self.go("Inpaint & Regions")), ("🗂  Gallery", lambda: self.go("Gallery")),
+                 ("👤  Characters", lambda: self.go("Characters")), ("📖  Storyboard", lambda: self.go("Storyboard")),
+                 ("✏  Live sketch", lambda: self.go("Live sketch"))]
         for i, (t, fn) in enumerate(tiles):
             b = QPushButton(tr(t)); b.setObjectName("homeTile"); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f())
             b.setMinimumHeight(56); theme.lift(b)

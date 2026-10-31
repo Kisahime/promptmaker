@@ -81,6 +81,14 @@ class Provider:
     def vision_models(self):
         return sort_models([m for m in self.list_models() if looks_vision(m)])
 
+    def capabilities(self, model):
+        """List of capabilities ("vision", ...) or None when the backend can't tell."""
+        return None
+
+    def has_vision(self, model):
+        caps = self.capabilities(model)
+        return looks_vision(model) if caps is None else "vision" in caps
+
     def stream_chat(self, model, messages, temperature=0.7, json_mode=False, stop_flag=None):
         raise NotImplementedError
 
@@ -107,6 +115,18 @@ class OllamaProvider(Provider):
         except (ProviderError, ValueError):
             return ""
 
+    def capabilities(self, model):
+        """Ollama /api/show capabilities, cached per model (None if unknown)."""
+        cache = self.__dict__.setdefault("_caps", {})
+        if model not in cache:
+            try:
+                with _req(self.base_url + "/api/show", {"model": model}, timeout=5) as r:
+                    caps = json.load(r).get("capabilities")
+            except (ProviderError, ValueError, AttributeError):
+                return None  # not cached: Ollama may just be down
+            cache[model] = list(caps) if isinstance(caps, list) else None
+        return cache[model]
+
     def vision_models(self):
         """Vision-capable models, preferred first; models this Ollama can't run are listed last and
         explained in self.notes {model: reason}."""
@@ -117,6 +137,7 @@ class OllamaProvider(Provider):
                 with _req(self.base_url + "/api/show", {"model": m}, timeout=5) as r:
                     d = json.load(r)
                 caps = d.get("capabilities") or []
+                self.__dict__.setdefault("_caps", {})[m] = list(caps) if d.get("capabilities") is not None else None
                 archs[m] = str((d.get("model_info") or {}).get("general.architecture") or d.get("details", {}).get("family") or "")
             except (ProviderError, ValueError, AttributeError):
                 pass
@@ -357,3 +378,25 @@ def friendly_load_error(model, msg, vision=False, ollama_kind=True):
                       + extra) or (f"The {what} “{model}” can't run on this {'Ollama' if ollama_kind else 'server'} version "
             f"({load_error_detail(msg)}). Re-pulling won't fix this. Try another {what}"
             + (", or update Ollama from ollama.com/download." if ollama_kind else "."))
+
+
+NO_VISION_MSG = "No vision model installed – images need one. Run `" + VISION_PULL + "` and try again."
+
+
+def resolve_vision(provider, preferred="", failed=()):
+    """Model to send images to: (model, note). Uses `preferred` when it really has the vision
+    capability, else auto-picks an installed vision model; ("", NO_VISION_MSG) if there is none."""
+    preferred = (preferred or "").strip()
+    try:
+        has = getattr(provider, "has_vision", looks_vision)
+        if preferred and preferred not in failed and has(preferred):
+            return preferred, ""
+        vm = getattr(provider, "vision_models", None)
+        models = [m for m in (vm() if vm else sort_models([m for m in provider.list_models() if looks_vision(m)]))
+                  if m not in failed and m not in (getattr(provider, "notes", {}) or {})]
+    except ProviderError as e:
+        return "", str(e)
+    if not models:
+        return "", NO_VISION_MSG + (f" ({preferred} can't read images.)" if preferred else "")
+    pick = models[0]
+    return pick, (f"{preferred} can't read images – using {pick}" if preferred else f"Using vision model {pick}")

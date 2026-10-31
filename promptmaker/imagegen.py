@@ -175,6 +175,7 @@ class Job:
         self.regions = None     # {"regions": [{prompt,x,y,w,h,weight}], "mode": "forge couple"|"plain"|"comfy", "base_weight"}
         self.upscale = None     # 4.1: {"image": png, "scale", "upscaler", "denoise" (0 = pure upscale), "source": path}
         self.preview = None     # 4.1: latest live-preview PNG bytes while generating (Forge current_image)
+        self.reference = None   # 5.0: character reference {"image": png, "model": IP-Adapter model (Forge), "weight"}
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -285,6 +286,13 @@ class ComfyUI:
             from .pose import add_comfy_controlnet
             try:
                 wf = add_comfy_controlnet(wf, self.upload_image(cn["image"], f"pm_pose_{job.id}.png"), cn["model"], cn.get("weight", 1.0))
+            except ValueError as e:
+                raise BackendError(str(e)) from e
+        ref = getattr(job, "reference", None)
+        if ref and ref.get("image"):
+            from .characters import add_comfy_reference
+            try:
+                wf = add_comfy_reference(wf, self.upload_image(ref["image"], f"pm_ref_{job.id}.png"), ref.get("weight", 0.7))
             except ValueError as e:
                 raise BackendError(str(e)) from e
         hr = getattr(job, "hires", None)
@@ -546,6 +554,10 @@ class A1111:
         if cn and cn.get("image"):
             from .pose import add_forge_controlnet
             add_forge_controlnet(p, base64.b64encode(cn["image"]).decode(), cn.get("model", ""), cn.get("weight", 1.0))
+        ref = getattr(job, "reference", None)
+        if ref and ref.get("image") and ref.get("model"):
+            from .characters import add_forge_reference
+            add_forge_reference(p, ref["image"], ref["model"], ref.get("weight", 0.7))
         hr = getattr(job, "hires", None)
         if hr and not (getattr(job, "inpaint", None) or {}).get("image"):  # hires fix is txt2img only
             p.update({"enable_hr": True, "hr_scale": float(hr.get("scale", 1.5)), "hr_upscaler": hr.get("upscaler") or "Latent",

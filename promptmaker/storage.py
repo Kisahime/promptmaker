@@ -35,7 +35,7 @@ class Store:
         self.db.commit()
         self.migrate()
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
     MIGRATIONS = {
         3: """
         CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY, name TEXT UNIQUE, appearance TEXT DEFAULT '',
@@ -49,6 +49,10 @@ class Store:
             negative TEXT DEFAULT '', settings TEXT DEFAULT '{}');
         CREATE TABLE IF NOT EXISTS sync_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, target TEXT, status TEXT,
             detail TEXT DEFAULT '');
+        """,
+        # 5.0: full Characters (outfits, references, LoRAs, triggers, per-model tag sets) live in a JSON column
+        5: """
+        ALTER TABLE characters ADD COLUMN extra TEXT DEFAULT '{}';
         """,
     }
 
@@ -65,7 +69,7 @@ class Store:
         self.db.commit()
 
     # ---------------------------------------------------------------- characters & styles
-    CHAR_FIELDS = ("name", "appearance", "outfit", "lora", "lora_weight", "ref_image", "notes")
+    CHAR_FIELDS = ("name", "appearance", "outfit", "lora", "lora_weight", "ref_image", "notes", "extra")
 
     def characters(self):
         cur = self.db.execute("SELECT id," + ",".join(self.CHAR_FIELDS) + " FROM characters ORDER BY name COLLATE NOCASE")
@@ -75,14 +79,19 @@ class Store:
         return next((c for c in self.characters() if name_or_id in (c["id"], c["name"])), None)
 
     def save_character(self, data, cid=None):
-        vals = [data.get(k, 0.8 if k == "lora_weight" else "") for k in self.CHAR_FIELDS]
+        if cid and "extra" not in data:  # older callers (Presets page) keep the 5.0 Character details
+            old = self.character(cid)
+            data = dict(data, extra=(old or {}).get("extra") or "{}")
+        vals = [data.get(k, 0.8 if k == "lora_weight" else ("{}" if k == "extra" else "")) for k in self.CHAR_FIELDS]
+        if not isinstance(vals[-1], str):
+            vals[-1] = json.dumps(vals[-1])
         if not str(vals[0]).strip():
             raise ValueError("A character needs a name")
         if cid:
             self.db.execute("UPDATE characters SET " + ",".join(f"{k}=?" for k in self.CHAR_FIELDS) + ",ts=? WHERE id=?",
                             (*vals, time.time(), cid))
         else:
-            self.db.execute("INSERT OR REPLACE INTO characters(" + ",".join(self.CHAR_FIELDS) + ",ts) VALUES(?,?,?,?,?,?,?,?)",
+            self.db.execute("INSERT OR REPLACE INTO characters(" + ",".join(self.CHAR_FIELDS) + ",ts) VALUES(?,?,?,?,?,?,?,?,?)",
                             (*vals, time.time()))
         self.db.commit()
         return self.character(vals[0])["id"]

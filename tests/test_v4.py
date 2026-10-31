@@ -507,7 +507,7 @@ def test_schema_4_migration_from_v3_db(tmp_path):
                      "INSERT INTO characters(name) VALUES('Old');")
     db.commit(); db.close()
     st = Store(p)
-    assert st.schema_version() == 4 and st.character("Old")
+    assert st.schema_version() >= 4 and st.character("Old")
     vid = st.save_video_prompt("x", "ltxv", "p", "n", {"a": 1})
     assert st.video_prompts()[0]["id"] == vid
     st.log_sync("push", "gist:1", "ok"); assert st.sync_log()[0][1:4] == ("push", "gist:1", "ok")
@@ -563,11 +563,11 @@ def _wait_worker(pred, timeout=5):
 def test_ui_v4_pages_present(win):
     from promptmaker import __version__
     from promptmaker.app import NAV
-    assert __version__ == "4.1.5"
+    assert __version__ == "5.0.0"
     names = [n for _, n in NAV]
     for name in ("Inpaint & Regions", "Wildcards", "Video", "Library sync"):
         win.go(name); assert names[win.stack.currentIndex()] == name
-    assert win.store.schema_version() == 4
+    assert win.store.schema_version() >= 4
 
 
 def test_ui_wildcards_page(win, srv):

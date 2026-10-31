@@ -313,7 +313,7 @@ class V4Pages:
         self.rg_status = label(tr("Forge needs the Forge Couple extension for regions; ComfyUI works as is."), "hint", wrap=True)
         rc.add(self.rg_status)
         rc.add(hrow(button("🔎 Check support", self.rg_check, "ghost"), button("📋 Copy as one prompt", self.rg_copy_plain, "ghost"),
-                    None, button("🗺 Generate with regions", lambda: self.rg_generate(), "primary")))
+                    self._char_btn("region"), None, button("🗺 Generate with regions", lambda: self.rg_generate(), "primary")))
         rv.addWidget(rc, 1)
         split.addWidget(right); split.setSizes([640, 480])
         v.addWidget(split, 1)
