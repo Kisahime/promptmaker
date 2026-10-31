@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [5.0.0] - 2026-10-30
+## [5.0.0] - 2026-10-31
 
 ### Added
 - **Characters** (new *Characters* section on the rail): full characters built on the existing character presets, with reference images, multiple named outfits, several LoRAs with weights, trigger words and tag sets per target model. Insert a character + outfit into Create, Refine, a new region or the clipboard, also from the new **👤 Character** buttons on Create and Inpaint & Regions and the command palette. Re-inserting swaps the outfit cleanly and never duplicates LoRA tags.
@@ -11,9 +11,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Storyboard & comics**: an AI panel plan from a short story using your Characters, per-panel or *Generate all* through the queue, a page layout editor (8 grid templates, 4 page sizes, fonts, editable speech bubbles and captions, drag Gallery images onto panels), PNG / PDF export and `.pmstory` project files.
 - **Live sketch** (Studio): a paint canvas with a debounced, low-step img2img result beside it (Lightning/Turbo, Balanced and Quality presets), or ControlNet scribble when a scribble model is installed. Send the result to the Gallery, Inpaint or Image to Prompt.
 - **LoRA training (optional)**: dataset picker (15–50 images), captions from prompts or the vision model, VRAM presets, kohya-ss/sd-scripts run as a separate process with progress, log and cancel. The output goes to Forge's `models/Lora` and is linked to a Character. *Install trainer* clones sd-scripts into `tools/sd-scripts` with its own venv, only after you confirm.
+- **Vision-model routing**: every feature that sends images (Image to Prompt, auto-caption, Auto-refine, gallery tagging) checks the model's capabilities through Ollama `/api/show` and only uses a real vision model. A vision model picker on the LoRA page; captioning stops on the first failure with a clear message instead of repeating HTTP 400s.
 - Home quick-start tiles and command-palette entries for the new pages.
 
 ### Changed
+- The trainer installer runs each step in the right folder, is resumable (marker file `.promptmaker_installed`) and forces UTF-8 for sd-scripts.
 - The rail has a seventh section, **Characters** (Characters, Storyboard, LoRA training). Studio gains a **Live sketch** tab.
 - Database schema 5: characters get an `extra` column for the new fields. 4.x character presets are kept as they are and still work on the Presets page.
 
