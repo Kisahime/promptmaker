@@ -12,9 +12,16 @@ All notable changes to this project are documented here. The format follows [Kee
   - Works with Forge (ControlNet unit `CLIP-ViT-H (IPAdapter)`, or `InsightFace+CLIP-H (IPAdapter)` for FaceID Plus v2, guidance end = stop at) and ComfyUI (ComfyUI_IPAdapter_plus, `PLUS FACE (portraits)` preset, end_at = stop at).
   - **⟳ Check models** finds the face model and shows exact Hugging Face links and folders when something is missing. It warns that Anima / Flux and other non-SDXL models can't use it.
 - Characters: a **🎭 Face Swap** button sends the character's reference image to Face Swap.
+- Face Swap **segmentation mask** (swap mode): the mask now follows the real face and hair outline instead of a head-shaped guess.
+  - Faces are found with OpenCV **YuNet** (photos) and deepghs' **YOLOv8 anime face detector**; every face is numbered on the preview, the largest is picked, and **👆 Pick face** + a click chooses another person.
+  - Photos: a **SegFormer face-parsing** model (CelebAMask-HQ classes: skin, eyes, brows, nose, lips, ears, hair, hat, neck) on a crop around the chosen face. Anime: **anime-seg** (ISNet) cuts the character out, then the face plus the hair-coloured strands joined to it are kept.
+  - The mask only covers the chosen person: pixels are split between faces by distance, and only the region joined to the chosen face is kept, never the other person or the background.
+  - Options are now **Include hair** and **Include neck** (plus Style Auto / Photo / Anime, Grow, Feather, brush). Grow / feather changes are instant.
+  - Models (≈ 0.2 + 12 + 90 MB for photos, + 175 MB for anime) download on first use into `data/models` with progress in the status line. Offline or without onnxruntime it falls back to the previous shape + GrabCut mask and says so.
+- Swap inpaint: "only masked" padding now scales with the head (20 %, 32–160 px), and big targets render at about 1 MP in their own aspect ratio instead of full size, so the head is redrawn at SDXL's native resolution, like ADetailer.
 
 ### Changed
-- New optional dependency `opencv-python-headless` (face detection and hair-following masks). Without it Face Swap still works with a simpler oval mask.
+- New optional dependencies `opencv-python-headless` (face detection and masks) and `onnxruntime` (CPU, the segmentation models). Without them Face Swap still works with a simpler oval mask.
 
 ## [5.0.0] - 2026-10-31
 

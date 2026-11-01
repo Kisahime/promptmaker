@@ -1,7 +1,7 @@
 """5.1 Face Swap page (Tools): Fooocus-style face IP-Adapter, with a face + hair crop and an automatic face + hair mask."""
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QLabel, QLineEdit, QSpinBox,
                                QSplitter, QStackedWidget, QWidget)
@@ -19,6 +19,14 @@ def _show(lbl, png, n=None):
         return
     w = n or max(200, lbl.width() - 8); h = n or max(200, lbl.height() - 8)
     lbl.setPixmap(pm.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+
+class _Progress(QObject):
+    """Thread-safe progress text (model downloads run in a worker thread)."""
+    text = Signal(str)
+
+    def __call__(self, label, done, total):
+        self.text.emit(f"⬇ {label}: {done / 1e6:.0f} / {total / 1e6:.0f} MB")
 
 
 class FaceSwapPage:
@@ -62,21 +70,26 @@ class FaceSwapPage:
         row = QWidget(); fl = FlowLayout(row, spacing=6)
         self.fs_grow = QSpinBox(); self.fs_grow.setRange(-40, 120); self.fs_grow.setSuffix(" px"); self.fs_grow.setValue(int(self.store.get("fs_grow", 16)))
         self.fs_feather = QSpinBox(); self.fs_feather.setRange(0, 80); self.fs_feather.setSuffix(" px"); self.fs_feather.setValue(int(self.store.get("fs_feather", 12)))
-        self.fs_hair = QComboBox(); self.fs_hair.addItems(list(fs.HAIR_LENGTHS)); self.fs_hair.setCurrentText(self.store.get("fs_hair", "Medium"))
-        self.fs_refine = QCheckBox(tr("Follow hair edges")); self.fs_refine.setChecked(bool(self.store.get("fs_refine", True)))
-        self.fs_refine.setToolTip(tr("GrabCut refine – the mask hugs the real hair outline instead of a plain oval"))
+        self.fs_style = QComboBox(); self.fs_style.addItems(["Auto", "Photo", "Anime"])
+        self.fs_style.setCurrentText(self.store.get("fs_style", "Auto"))
+        self.fs_style.setToolTip(tr("Photo: face-parsing model · Anime: anime character cut-out + hair colour · Auto: decided by which face detector finds the face"))
+        self.fs_hair = QCheckBox(tr("Include hair")); self.fs_hair.setChecked(bool(self.store.get("fs_hair_on", True)))
+        self.fs_neck = QCheckBox(tr("Include neck")); self.fs_neck.setChecked(bool(self.store.get("fs_neck", False)))
         for wdg, key in ((self.fs_grow, "fs_grow"), (self.fs_feather, "fs_feather")):
             wdg.valueChanged.connect(lambda n, k=key: (self.store.set(k, int(n)), self.fs_remask()))
-        self.fs_hair.currentTextChanged.connect(lambda t: (self.store.set("fs_hair", t), self.fs_remask()))
-        self.fs_refine.toggled.connect(lambda on: (self.store.set("fs_refine", bool(on)), self.fs_remask()))
+        self.fs_hair.toggled.connect(lambda on: (self.store.set("fs_hair_on", bool(on)), self.fs_remask()))
+        self.fs_neck.toggled.connect(lambda on: (self.store.set("fs_neck", bool(on)), self.fs_remask()))
+        self.fs_style.currentTextChanged.connect(lambda t: (self.store.set("fs_style", t), self.fs_automask()))
+        self.fs_pick_btn = button("👆 Pick face", self.fs_pick_mode, "ghost", "Click a numbered face on the image to mask that person")
         for x in (button("📂 Open image…", self.fs_open_target, "ghost"), button("🗂 Last image", self.fs_target_last, "ghost"),
-                  button("🎭 Auto-mask face + hair", self.fs_automask, "primary"), label("Hair"), self.fs_hair,
-                  label("Grow"), self.fs_grow, label("Feather"), self.fs_feather, self.fs_refine):
+                  button("🎭 Auto-mask face + hair", self.fs_automask, "primary"), self.fs_pick_btn, label("Style"), self.fs_style,
+                  self.fs_hair, self.fs_neck, label("Grow"), self.fs_grow, label("Feather"), self.fs_feather):
             fl.addWidget(x)
         row2 = QWidget(); fl2 = FlowLayout(row2, spacing=6)
         self.fs_brush = QSpinBox(); self.fs_brush.setRange(4, 300); self.fs_brush.setValue(48); self.fs_brush.setSuffix(" px")
         self.fs_brush.valueChanged.connect(lambda n: setattr(self.fs_canvas, "brush", n))
         self.fs_erase = QCheckBox(tr("Eraser")); self.fs_erase.toggled.connect(lambda on: setattr(self.fs_canvas, "mode", "erase" if on else "brush"))
+        self.fs_canvas.face_clicked.connect(self.fs_pick_at)
         for x in (label("Fix mask: brush"), self.fs_brush, self.fs_erase, button("Clear", self.fs_canvas.clear_mask, "ghost"),
                   button("Invert", self.fs_canvas.invert_mask, "ghost")):
             fl2.addWidget(x)
@@ -109,6 +122,9 @@ class FaceSwapPage:
         v.addWidget(split, 1)
         self.fs_src_png = self.fs_face_png = self.fs_png = self.fs_job = None
         self.fs_face_box = None; self.fs_target_face = None; self._fs_worker = None; self._fs_info = None
+        self.fs_faces = []; self.fs_face_idx = None; self.fs_target_style = "Auto"; self._fs_raw = None; self._fs_seg = None
+        self._fs_seg_pending = False; self.fs_mask_method = ""
+        self._fs_progress = _Progress(); self._fs_progress.text.connect(lambda t: self.fs_mask_status.setText(t))
         self.fs_load_characters()
         return w
 
@@ -194,7 +210,8 @@ class FaceSwapPage:
             self.fs_canvas.set_image(self._fs_read(path_or_png))
         except (OSError, ValueError) as e:
             self.fs_mask_status.setText("⚠️ " + str(e)); return False
-        self.fs_target_face = None
+        self.fs_target_face = None; self.fs_faces = []; self.fs_face_idx = None; self._fs_raw = None
+        self.fs_canvas.faces = []; self.fs_canvas.face_sel = -1
         self.fs_mode.setCurrentIndex(1)
         self.fs_automask()
         return True
@@ -208,31 +225,116 @@ class FaceSwapPage:
         it = self.gallery.items()
         return self.fs_set_target(it[0][0]) if it else False
 
+    def _fs_opts(self):
+        return (self.fs_target_style, bool(self.fs_hair.isChecked()), bool(self.fs_neck.isChecked()), self.fs_face_idx,
+                tuple(self.fs_target_face or ()))
+
+    def _fs_busy(self):
+        return self._fs_seg is not None and self._fs_seg.isRunning()
+
     def fs_automask(self):
+        """Detect every face (in a worker – first use downloads the small detectors), then mask the largest."""
         png = self.fs_canvas.image_png()
         if not png:
             self.fs_mask_status.setText(tr("Open the image to swap into first")); return None
-        if self.fs_target_face is None:
-            faces = fs.detect_faces(png, self._fs_cache())
-            self.fs_target_face = faces[0] if faces else None
-        if self.fs_target_face is None:
+        if self._fs_busy():
+            self._fs_seg_pending = True; return None
+        self.fs_mask_status.setText(tr("Finding faces…"))
+        style, cache, prog = self.fs_style.currentText(), self._fs_cache(), self._fs_progress
+
+        def work():
+            faces, st = fs.detect_all(png, cache, style, prog)
+            return (faces or fs.cascade_faces(png, cache)), st
+        self._fs_seg = wk = CallWorker(work)
+        wk.ok.connect(lambda r, png=png: self._fs_faces_found(png, *r))
+        wk.failed.connect(lambda e: self.fs_mask_status.setText("⚠️ " + e[:160]))
+        wk.finished.connect(self._fs_seg_finished)
+        wk.start()
+        return wk
+
+    def _fs_seg_finished(self):
+        if self._fs_seg_pending:
+            self._fs_seg_pending = False; self.fs_remask()
+
+    def _fs_faces_found(self, png, faces, style):
+        if png != self.fs_canvas.image_png():
+            return
+        self.fs_faces = list(faces); self.fs_target_style = style if style in ("Photo", "Anime") else "Photo"
+        self.fs_canvas.faces = self.fs_faces
+        if not faces:
+            self.fs_target_face = None; self.fs_face_idx = None; self.fs_canvas.face_sel = -1; self.fs_canvas.update()
             if self.vision_ok():
                 self.fs_mask_status.setText(tr("No face found by the quick detector – asking the vision model…"))
                 self._fs_vision_box(png, "target")
             else:
                 self.fs_mask_status.setText(tr("No face found – paint over the face and hair with the brush"))
+            return
+        self.fs_select_face(0)
+
+    def fs_select_face(self, i):
+        if not (0 <= i < len(self.fs_faces)):
             return None
+        self.fs_face_idx = i; self.fs_target_face = self.fs_faces[i]; self._fs_raw = None
+        self.fs_canvas.face_sel = i; self.fs_canvas.update()
         return self.fs_remask()
 
+    def fs_pick_mode(self):
+        if len(self.fs_faces) < 1:
+            self.fs_mask_status.setText(tr("No faces found to pick from – paint the mask with the brush")); return
+        self.fs_canvas.mode = "pick"
+        self.fs_mask_status.setText(tr("Click the face to swap (numbered boxes)"))
+
+    def fs_pick_at(self, x, y):
+        from . import faceseg
+        self.fs_canvas.mode = "erase" if self.fs_erase.isChecked() else "brush"
+        i = faceseg.face_at(self.fs_faces, x, y)
+        return self.fs_select_face(i) if i is not None else None
+
     def fs_remask(self):
+        """(Re)build the mask for the chosen face. Grow / feather changes reuse the cached segmentation instantly;
+        new faces / hair / neck options segment again in a worker (first use downloads the model)."""
         png = self.fs_canvas.image_png()
         if not png or self.fs_target_face is None:
             return None
-        m = fs.auto_mask(png, self.fs_target_face, self.fs_hair.currentText(), self.fs_grow.value(), self.fs_feather.value(),
-                         self.fs_refine.isChecked())
-        self.fs_canvas.mask = fs.mask_to_alpha(m); self.fs_canvas.update()
+        if not self.fs_faces or self.fs_face_idx is None:  # face box set directly (vision model / tests)
+            self.fs_faces = [tuple(self.fs_target_face)]; self.fs_face_idx = 0
+            self.fs_canvas.faces = self.fs_faces; self.fs_canvas.face_sel = 0
+        opts = self._fs_opts()
+        if self._fs_raw and self._fs_raw[0] == opts and self._fs_raw[1] == png:
+            m = fs.finish_mask(self._fs_raw[2], self.fs_grow.value(), self.fs_feather.value())
+            self._fs_apply_mask(m, self._fs_raw[3]); return m
+        if self._fs_busy():
+            self._fs_seg_pending = True; return None
+        self.fs_mask_status.setText(tr("Masking face + hair…"))
+        faces, idx, (style, hair, neck) = list(self.fs_faces), self.fs_face_idx, opts[:3]
+        grow, feather, cache, prog = self.fs_grow.value(), self.fs_feather.value(), self._fs_cache(), self._fs_progress
+        self._fs_seg = wk = CallWorker(lambda: fs.smart_mask(png, faces, idx, style, cache, hair, neck, grow, feather, prog))
+        wk.ok.connect(lambda r, o=opts, png=png: self._fs_mask_done(o, png, *r))
+        wk.failed.connect(lambda e: self.fs_mask_status.setText("⚠️ " + e[:160]))
+        wk.finished.connect(self._fs_seg_finished)
+        wk.start()
+        return wk
+
+    def _fs_mask_done(self, opts, png, mask, raw, method):
+        if png != self.fs_canvas.image_png() or mask is None:
+            return
+        if opts != self._fs_opts():   # options changed while it ran – the pending remask redoes it
+            self._fs_seg_pending = True; return
+        self._fs_raw = (opts, png, raw, method) if raw else None
+        if raw:  # grow / feather may have moved while it ran
+            mask = fs.finish_mask(raw, self.fs_grow.value(), self.fs_feather.value())
+        self._fs_apply_mask(mask, method)
+
+    def _fs_apply_mask(self, m, method):
+        self.fs_canvas.mask = fs.mask_to_alpha(m); self.fs_canvas.update(); self.fs_canvas.changed.emit()
+        self.fs_mask_method = method
+        n = len(self.fs_faces)
+        who = (tr("face") + f" {self.fs_face_idx + 1}/{n} · " + tr("👆 Pick face to choose another") + " · ") if n > 1 else ""
         hint = "" if fs.cv2_available() else " " + tr("(install opencv-python-headless for hair-following edges)")
-        self.fs_mask_status.setText(tr("Face + hair masked – fix it with the brush if needed") + hint)
+        if method.startswith("shape"):
+            hint += " · " + tr("rough shape mask") + f" – {method[7:-1]}"
+        self.fs_mask_status.setText(who + tr("Face + hair masked") + f" ({method.split(' (')[0]}) – " +
+                                    tr("fix it with the brush if needed") + hint)
         return m
 
     def _fs_vision_box(self, png, which):

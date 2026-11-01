@@ -152,7 +152,11 @@ def test_face_swap_page_generate_and_swap(win, srv, tmp_path):
     # swap mode: target + auto mask (face given, detector not needed) + brush fix
     win.fs_mode.setCurrentIndex(1)
     win.fs_canvas.set_image(_portrait()); win.fs_target_face = FACE
-    assert win.fs_remask() and win.fs_canvas.has_mask()
+    win.fs_remask()
+    assert _wait(lambda: win.fs_canvas.has_mask() and not win._fs_busy(), 10)
+    assert win.fs_mask_method  # shape fallback here (no models in tests)
+    win.fs_grow.setValue(4)  # grow/feather reuse the segmentation; brush still works after
+    assert _wait(lambda: not win._fs_busy(), 10) and win.fs_canvas.has_mask()
     win.fs_png = None; win.fs_generate()
     assert _wait(lambda: win.fs_png is not None, 10)
     assert s.last_endpoint == "/sdapi/v1/img2img" and s.last_payload["mask"] and s.last_payload["inpaint_full_res"]
@@ -189,3 +193,122 @@ def test_forge_device_warning(tmp_path):
     assert fs.forge_device_warning(str(tmp_path)) == ""
     bat.write_text('set "COMMANDLINE_ARGS=--api --highvram"\n')
     assert fs.forge_device_warning(str(tmp_path)) == ""
+
+
+# ------------------------------------------------------------------ 5.1: segmentation mask, face picking
+SEG_CACHE = os.environ.get("PM_FACESEG_MODELS", "")  # a folder with the downloaded models, for the real-model tests
+
+
+def _two_heads():
+    """Two synthetic heads side by side, the right one bigger."""
+    _qapp()
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter
+    from promptmaker.regions import _png
+    im = QImage(900, 500, QImage.Format_RGB32); im.fill(QColor("#9cc3e6"))
+    p = QPainter(im); p.setRenderHint(QPainter.Antialiasing)
+    for x, s in ((120, 0.8), (520, 1.0)):
+        p.setPen(QColor("#2a1a10")); p.setBrush(QColor("#2a1a10")); p.drawEllipse(QRectF(x, 60, 240 * s, 300 * s))
+        p.setPen(QColor("#e9bf9c")); p.setBrush(QColor("#e9bf9c")); p.drawEllipse(QRectF(x + 45 * s, 130 * s + 30, 150 * s, 190 * s))
+    p.end()
+    return _png(im)
+
+
+def test_face_at_and_owner_map():
+    np = pytest.importorskip("numpy")
+    from promptmaker import faceseg
+    faces = [(520, 160, 150, 190), (160, 140, 120, 150)]
+    assert faceseg.face_at(faces, 600, 250) == 0 and faceseg.face_at(faces, 200, 200) == 1
+    assert faceseg.face_at(faces, 10, 10) == 1 and faceseg.face_at([], 1, 1) is None
+    own = faceseg.owner_map((500, 900), faces, 1)
+    assert own[200, 200] and not own[250, 600] and own.dtype == bool and np.count_nonzero(own) < 900 * 500
+
+
+def test_blob_keeps_only_the_chosen_head():
+    np = pytest.importorskip("numpy"); cv2 = pytest.importorskip("cv2")
+    from promptmaker import faceseg
+    m = np.zeros((200, 400), np.uint8)
+    cv2.circle(m, (80, 100), 50, 255, -1); cv2.circle(m, (300, 100), 50, 255, -1)
+    one = faceseg._blob_with(m, (80, 100))
+    assert one[100, 80] and not one[100, 300]
+    gap = np.zeros((200, 400), np.uint8); gap[50:150, 20:100] = 255; gap[50:150, 104:180] = 255  # line-art gap
+    assert not faceseg._blob_with(gap, (60, 100))[100, 150]
+    assert faceseg._blob_with(gap, (60, 100), bridge=3)[100, 150] == 255 and not faceseg._blob_with(gap, (60, 100), 3)[100, 102]
+
+
+def test_hair_and_neck_options_shape_fallback(monkeypatch):
+    if not fs.cv2_available():
+        pytest.skip("OpenCV not installed")
+    from promptmaker.regions import mask_coverage
+    png = _portrait()
+    face_only = fs.auto_mask(png, FACE, False, 0, 0, False)
+    hair = fs.auto_mask(png, FACE, True, 0, 0, False)
+    neck = fs.auto_mask(png, FACE, False, 0, 0, False, neck=True)
+    assert mask_coverage(face_only) < mask_coverage(neck) < mask_coverage(hair)
+    # smart_mask with no models falls back to the shape mask and says so
+    m, raw, method = fs.smart_mask(png, [FACE], 0, "Photo", "", True, False, 8, 4)
+    assert m and raw is None and method.startswith("shape")
+    assert fs.smart_mask(png, [], None)[0] is None
+
+
+def test_ensure_model_offline_and_progress(tmp_path, monkeypatch):
+    from promptmaker import faceseg
+    assert faceseg.ensure_model("yunet", "") is None
+    assert faceseg.ensure_model("yunet", str(tmp_path)) is None  # downloads are off in tests
+    monkeypatch.delenv("PROMPTMAKER_NO_MODEL_DOWNLOAD")
+    data = b"x" * 1000
+
+    class R:
+        headers = {"Content-Length": str(len(data))}
+        def __init__(self): self.left = data
+        def read(self, n): out, self.left = self.left[:n], self.left[n:]; return out
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setitem(faceseg.SEG_MODELS, "yunet", dict(faceseg.SEG_MODELS["yunet"], size=1000))
+    monkeypatch.setattr(faceseg.urllib.request, "urlopen", lambda *a, **k: R())
+    seen = []
+    p = faceseg.ensure_model("yunet", str(tmp_path), lambda lbl, d, t: seen.append((d, t)))
+    assert p and os.path.getsize(p) == 1000 and seen[-1] == (1000, 1000)
+    assert faceseg.have_model("yunet", str(tmp_path))
+
+
+def test_inpaint_size_and_padding():
+    assert fs.inpaint_size(1024, 1024) == (1024, 1024)
+    w, h = fs.inpaint_size(4032, 3024)
+    assert abs(w * h - 1024 * 1024) < 70000 and w % 8 == 0 and abs(w / h - 4032 / 3024) < 0.02
+    assert fs.inpaint_size(640, 480) == (640, 480)
+    m = fs.auto_mask(_portrait(), FACE, True, 0, 0, False)
+    assert 32 <= fs.mask_padding(m) <= 160
+    job = imagegen.Job("x")
+    fs.apply_to_job(job, _portrait(), "m", "plus_face", target_png=_portrait(), mask_png=m)
+    assert job.inpaint["only_masked"] and 32 <= job.inpaint["padding"] <= 160 and (job.width, job.height) == (512, 640)
+
+
+def test_pick_face_on_page(win):
+    win.go("Face Swap"); win.fs_mode.setCurrentIndex(1)
+    win.fs_canvas.set_image(_two_heads())
+    win._fs_faces_found(win.fs_canvas.image_png(), [(520, 160, 150, 190), (165, 135, 120, 152)], "Photo")
+    assert _wait(lambda: win.fs_canvas.has_mask() and not win._fs_busy(), 10)
+    assert win.fs_face_idx == 0 and win.fs_canvas.faces and "1/2" in win.fs_mask_status.text()
+    win.fs_pick_mode(); assert win.fs_canvas.mode == "pick"
+    win.fs_canvas.face_clicked.emit(200.0, 200.0)
+    assert win.fs_face_idx == 1 and win.fs_canvas.mode == "brush"
+    assert _wait(lambda: not win._fs_busy() and "2/2" in win.fs_mask_status.text(), 10)
+    from PySide6.QtGui import QColor
+    from promptmaker.regions import _qimage
+    img = _qimage(win.fs_canvas.mask_png())
+    assert QColor(img.pixel(225, 220)).red() > 200 and QColor(img.pixel(600, 260)).red() < 50  # only person 2
+
+
+@pytest.mark.skipif(not SEG_CACHE, reason="set PM_FACESEG_MODELS to a folder with the Face Swap models")
+def test_real_models_two_people():
+    """Real models on a synthetic two-head picture: the mask stays on the chosen head, off the other and the sky."""
+    import numpy as np
+    from promptmaker import faceseg
+    png = _two_heads()
+    bgr = fs._decode(png)
+    faces = [(565, 190, 150, 190), (156, 158, 120, 152)]
+    m = faceseg.segment(bgr, faces, 1, "Photo", SEG_CACHE, True, False)
+    assert m is not None and m[230, 216] == 255
+    assert not m[:, 500:].any() and m[5, 5] == 0
+    assert np.count_nonzero(m) < 900 * 500 * 0.3

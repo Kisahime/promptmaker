@@ -2,6 +2,9 @@ import os
 
 import pytest
 
+# never pull the 12–175 MB Face Swap models in tests; tests that need them skip unless they are already present
+os.environ.setdefault("PROMPTMAKER_NO_MODEL_DOWNLOAD", "1")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _qt_teardown():

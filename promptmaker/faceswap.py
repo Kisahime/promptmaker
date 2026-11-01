@@ -9,8 +9,11 @@ How Fooocus does it (modules/flags.py, extras/face_crop.py, modules/async_worker
     decides what is redrawn.
 
 What we add: a source crop with a configurable hair margin (the FFHQ crop cuts most of the hair off), and an
-automatic face + hair mask on the target (face detector → head ellipse sized for the hair length → optional
-GrabCut edge refine → grow → feather) that can be fixed with a brush before inpainting.
+automatic face + hair mask on the target that follows the real outline: faceseg.py detects every face (YuNet /
+anime YOLO), the user picks one, and a face-parsing model (photos) or anime-seg + hair colour (anime) masks only
+that person's face, hair and optionally neck → grow → feather, fixable with a brush. Without onnxruntime / offline
+it falls back to the old head-shape + GrabCut mask. Inpaint runs "only masked" with padding, like ADetailer, so the
+head is redrawn at full resolution and blended back.
 Pure helpers here (numpy/OpenCV optional); the page lives in v5ui.FaceSwapPage.
 """
 import base64
@@ -208,15 +211,46 @@ def add_comfy_face(workflow, image_name, weight=WEIGHT, stop_at=STOP_AT, kind="p
     return wf
 
 
+def inpaint_size(w, h, fw=1024, fh=1024, area=1024 * 1024):
+    """Render size for the masked crop: the target's aspect at about SDXL's 1 MP (never bigger than the image
+    when it is smaller – upscaling a tiny picture 4× just blurs), multiples of 8."""
+    if w <= 0 or h <= 0:
+        return fw, fh
+    s = min(1.0, (area / float(w * h)) ** 0.5)
+    return max(64, int(w * s) // 8 * 8), max(64, int(h * s) // 8 * 8)
+
+
+def mask_padding(mask_png, lo=32, hi=160):
+    """Context around the masked head for "only masked" inpaint: 20 % of the mask's larger side."""
+    try:
+        from .regions import _qimage
+        from PySide6.QtGui import QImage
+        m = _qimage(mask_png).convertToFormat(QImage.Format_Grayscale8)
+        if cv2_available():
+            import numpy as np
+            a = np.frombuffer(m.constBits(), np.uint8).reshape(m.height(), m.bytesPerLine())[:, :m.width()]
+            ys, xs = np.nonzero(a > 127)
+            if len(xs):
+                return int(min(hi, max(lo, 0.2 * max(xs.max() - xs.min(), ys.max() - ys.min()))))
+    except Exception:  # noqa: BLE001
+        pass
+    return 96
+
+
 def apply_to_job(job, face_png, model, kind, weight=WEIGHT, stop_at=STOP_AT, target_png=None, mask_png=None, denoise=DENOISE,
-                 feather=0, padding=96):
-    """Turn a made job into a Face Swap job. Generate mode: just the face unit. Swap mode: inpaint + face unit."""
+                 feather=0, padding=None):
+    """Turn a made job into a Face Swap job. Generate mode: just the face unit. Swap mode: inpaint + face unit.
+    Swap uses "only masked" like ADetailer / Fooocus: Forge crops the masked head plus `padding` of context, redraws
+    that crop at the job size (≈1 MP, the image's aspect) – so the face gets SDXL's full resolution – and pastes it
+    back with the mask blur. padding None = 20 % of the mask's size (32–160 px)."""
     job.faceswap = {"image": face_png, "model": model, "kind": kind, "weight": float(weight), "stop_at": float(stop_at)}
     job.reference = None  # the character's own reference would double up – Face Swap's unit replaces it
     if target_png and mask_png:
         from .imagegen import png_size
         w, h = png_size(target_png)
-        job.width, job.height = (w // 8) * 8 or job.width, (h // 8) * 8 or job.height
+        job.width, job.height = inpaint_size(w, h, job.width, job.height)
+        if padding is None:
+            padding = mask_padding(mask_png)
         job.inpaint = {"image": target_png, "mask": mask_png, "denoise": float(denoise), "mask_blur": int(max(0, feather) // 2) or 4,
                        "only_masked": True, "padding": int(padding), "fill": "original"}
         job.hires = None
@@ -270,7 +304,28 @@ def anime_cascade(cache_dir):
 
 
 def detect_faces(png, cache_dir=None):
-    """Face boxes [(x, y, w, h)] largest first – anime cascade, then the photo cascades. [] without OpenCV."""
+    """Face boxes [(x, y, w, h)] largest first – YuNet / anime YOLO (faceseg), else the old cascades. [] without OpenCV."""
+    if not cv2_available():
+        return []
+    faces, _style = detect_all(png, cache_dir)
+    if faces:
+        return faces
+    return cascade_faces(png, cache_dir)
+
+
+def detect_all(png, cache_dir=None, style="Auto", progress=None):
+    """(faces largest first, 'Photo' | 'Anime' | 'Auto') with the ONNX detectors (faceseg). ([], style) without them."""
+    from . import faceseg
+    if not cv2_available() or not faceseg.available() or not cache_dir:
+        return [], style
+    try:
+        return faceseg.find_faces(_decode(png), cache_dir, style, progress)
+    except Exception:  # noqa: BLE001 – a broken model file must not break the page
+        return [], style
+
+
+def cascade_faces(png, cache_dir=None):
+    """Old OpenCV cascades (anime LBP, then photo Haar) – the fallback detector."""
     if not cv2_available():
         return []
     import cv2
@@ -346,27 +401,40 @@ def crop_face(png, face=None, margin=HAIR_MARGIN, size=512, cache_dir=None):
 
 
 # ------------------------------------------------------------------ target mask (face + hair)
-def head_shapes(face, img_w, img_h, hair="Medium"):
-    """Two ellipses + an optional hair curtain (x, y, w, h) in image pixels covering face, hair and its fall."""
+def _hair_len(hair):
+    """True/False (5.1 'include hair') or the old 'Short' | 'Medium' | 'Long' → hair fall below the chin (None = no hair)."""
+    if isinstance(hair, str):
+        return HAIR_LENGTHS.get(hair, 0.55)
+    return HAIR_LENGTHS["Medium"] if hair else None
+
+
+def head_shapes(face, img_w, img_h, hair="Medium", neck=False):
+    """Ellipses + an optional hair curtain (x, y, w, h) in image pixels covering face, hair and its fall."""
     x, y, w, h = face
     cx = x + w / 2
+    drop = _hair_len(hair)
+    shapes = []
+    if neck:
+        shapes.append(("rounded", cx - w * 0.33, y + h * 0.7, w * 0.66, h * 0.75))
+    if drop is None:  # face only: forehead to chin, ear to ear
+        return [("ellipse", cx - w * 0.6, y - h * 0.12, w * 1.2, h * 1.22)] + shapes
     head_w, top = w * 1.75, y - h * 0.8
     bottom = y + h * 1.12
-    shapes = [("ellipse", cx - head_w / 2, top, head_w, bottom - top)]
-    drop = HAIR_LENGTHS.get(hair, 0.55) * h
+    shapes.insert(0, ("ellipse", cx - head_w / 2, top, head_w, bottom - top))
+    drop *= h
     if drop > 0:
         cw = w * 1.65
         shapes.append(("rounded", cx - cw / 2, y + h * 0.3, cw, h * 0.8 + drop))
     return shapes
 
 
-def auto_mask(png, face, hair="Medium", grow=16, feather=12, refine=True):
+def auto_mask(png, face, hair="Medium", grow=16, feather=12, refine=True, neck=False):
     """White-on-black PNG mask of face + hair. OpenCV: GrabCut edge refine, dilate (grow) and blur (feather);
     without OpenCV it falls back to the drawn shapes grown by `grow` (Forge's mask blur does the feather)."""
     from .regions import _qimage
     img = _qimage(png)
     W, H = img.width(), img.height()
-    shapes = head_shapes(face, W, H, hair)
+    shapes = head_shapes(face, W, H, hair, neck)
     if not cv2_available():
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QColor, QImage, QPainter
@@ -418,6 +486,11 @@ def auto_mask(png, face, hair="Medium", grow=16, feather=12, refine=True):
                 mask = seg
         except cv2.error:
             mask = rough
+    return _encode(_grow_feather(mask, grow, feather))
+
+
+def _grow_feather(mask, grow, feather):
+    import cv2
     if grow > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(grow) + 1, 2 * int(grow) + 1))
         mask = cv2.dilate(mask, k)
@@ -427,7 +500,46 @@ def auto_mask(png, face, hair="Medium", grow=16, feather=12, refine=True):
     if feather > 0:
         f = int(feather) * 2 + 1
         mask = cv2.GaussianBlur(mask, (f, f), 0)
-    return _encode(mask)
+    return mask
+
+
+def seg_mask(png, faces, idx, style="Auto", cache_dir=None, hair=True, neck=False, progress=None):
+    """(raw 0/255 PNG mask of the chosen person's face [+ hair] [+ neck], method) from the segmentation models –
+    (None, reason) when they can't run (no onnxruntime, offline, no face)."""
+    from . import faceseg
+    if not faces or idx is None or not (0 <= idx < len(faces)):
+        return None, "no face"
+    if not cv2_available() or not faceseg.available():
+        return None, "onnxruntime not installed"
+    try:
+        bgr = _decode(png)
+        st = style if style in ("Photo", "Anime") else "Photo"
+        m = faceseg.segment(bgr, faces, idx, st, cache_dir, bool(hair), bool(neck), progress)
+    except Exception as e:  # noqa: BLE001
+        return None, f"segmentation failed: {e}"
+    if m is None:
+        return None, "model download failed"
+    x, y, w, h = faces[idx]
+    if int((m > 0).sum()) < w * h * 0.15:  # model saw no head there – the shape method is safer
+        return None, "segmentation found no head"
+    return _encode(m), ("anime" if st == "Anime" else "face parsing")
+
+
+def finish_mask(raw_png, grow=16, feather=12):
+    """Grow + feather a raw 0/255 mask PNG."""
+    import cv2
+    m = cv2.imdecode(__import__("numpy").frombuffer(raw_png, "uint8"), cv2.IMREAD_GRAYSCALE)
+    return _encode(_grow_feather(m, grow, feather))
+
+
+def smart_mask(png, faces, idx, style="Auto", cache_dir=None, hair=True, neck=False, grow=16, feather=12, progress=None):
+    """(mask PNG, raw PNG or None, method). Segmentation first, the shape + GrabCut mask as the fallback."""
+    raw, method = seg_mask(png, faces, idx, style, cache_dir, hair, neck, progress)
+    if raw is not None:
+        return finish_mask(raw, grow, feather), raw, method
+    if not faces or idx is None:
+        return None, None, method
+    return auto_mask(png, faces[idx], hair, grow, feather, True, neck), None, "shape (" + method + ")"
 
 
 def mask_to_alpha(mask_png):
