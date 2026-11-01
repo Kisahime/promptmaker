@@ -224,7 +224,7 @@ def anime_cascade(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
             with urllib.request.urlopen(ANIME_CASCADE_URL, timeout=20) as r:
                 data = r.read()
-            if b"opencv_storage" not in data[:400]:
+            if b"<opencv_storage>" not in data:
                 return None
             with open(p, "wb") as f:
                 f.write(data)
