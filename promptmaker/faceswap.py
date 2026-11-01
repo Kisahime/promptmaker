@@ -238,11 +238,14 @@ def detect_faces(png, cache_dir=None):
     if not cv2_available():
         return []
     import cv2
+    if not hasattr(cv2, "CascadeClassifier"):  # OpenCV 5 dropped the cascades – needs opencv-python-headless<5
+        return []
     img = _decode(png)
     gray = cv2.equalizeHist(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
     side = min(img.shape[:2])
     mn = max(24, side // 12)
-    paths = [anime_cascade(cache_dir)] + [os.path.join(cv2.data.haarcascades, n) for n in
+    haar = getattr(getattr(cv2, "data", None), "haarcascades", "")
+    paths = [anime_cascade(cache_dir)] + [os.path.join(haar, n) for n in
                                           ("haarcascade_frontalface_default.xml", "haarcascade_profileface.xml")]
     for p in paths:
         if not p or not os.path.exists(p):
