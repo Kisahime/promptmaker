@@ -273,8 +273,19 @@ class FaceSwapPage:
                 lines.append(fs.install_help(info["kind"]))
         if warn:
             lines.append("⚠️ " + warn)
+        if info["kind"] == "forge":
+            dev = fs.forge_device_warning(self._fs_forge_dir())
+            if dev:
+                lines.append("⚠️ " + dev)
         self.fs_status.setText("\n".join(lines))
         return info
+
+    def _fs_forge_dir(self):
+        try:
+            from . import trainer
+            return (self.store.get("forge_dir", "") or trainer.guess_forge_dir()) if hasattr(self, "store") else trainer.guess_forge_dir()
+        except Exception:  # noqa: BLE001
+            return ""
 
     # ---------------------------------------------------------- generate
     def fs_build_job(self):
@@ -329,6 +340,9 @@ class FaceSwapPage:
         note = ""
         if getattr(job, "controlnet_applied", None) is False:
             note = " · ⚠️ " + tr("Forge didn't record the IP-Adapter – is the ControlNet extension enabled?")
+        if not note and getattr(self, "_fs_info", None) and self._fs_info.get("kind") == "forge" \
+                and fs.forge_device_warning(self._fs_forge_dir()):
+            note = " · ⚠️ " + tr("If the face was ignored and Forge's console shows 'same device … cuda:0 … cpu', see the fix under ⟳ Check models")
         self.fs_status.setText(tr("Done") + f" · seed {job.seed}" + note)
 
     def fs_save(self):

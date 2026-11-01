@@ -14,6 +14,7 @@ GrabCut edge refine → grow → feather) that can be fixed with a brush before 
 Pure helpers here (numpy/OpenCV optional); the page lives in v5ui.FaceSwapPage.
 """
 import base64
+import re
 import copy
 import os
 import urllib.request
@@ -94,6 +95,41 @@ def install_help(backend_kind, forge_dir=r"C:\AI\sd-webui-forge-classic", comfy_
             f"Optional, stronger likeness on realistic faces: {m['faceid_v2']['url']} → models\\ControlNet, plus "
             "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl_lora.safetensors "
             "→ models\\Lora (needs insightface in Forge's venv).")
+
+
+FORGE_SAFE_FLAGS = ("--disable-smart-memory", "--highvram", "--gpu-only")
+FORGE_DEVICE_FIX = (
+    "Forge Classic bug: when VRAM is tight it loads the CLIP image encoder only partly onto the GPU, and IP-Adapter "
+    "then crashes with 'Expected all tensors to be on the same device ... cuda:0 ... cpu' (Forge skips the image "
+    "encoder's class_embedding when it splits a model). Forge carries on without the face, so the image ignores it.\n"
+    "Fix: in {bat} change the line to\n   set COMMANDLINE_ARGS=--api --disable-smart-memory\n"
+    "and restart Forge. If it still happens, use --highvram instead of --disable-smart-memory.")
+
+
+def forge_args(forge_dir):
+    """COMMANDLINE_ARGS from Forge's webui-user.bat, or None if it can't be read (Forge on another PC)."""
+    if not forge_dir:
+        return None
+    bat = os.path.join(forge_dir, "webui-user.bat")
+    try:
+        with open(bat, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    args = ""
+    for line in text.splitlines():
+        m = re.match(r"\s*set\s+\"?COMMANDLINE_ARGS=(.*?)\"?\s*$", line, re.I)
+        if m:
+            args = m.group(1)
+    return args
+
+
+def forge_device_warning(forge_dir):
+    """Warning + fix when Forge runs with the memory mode that triggers the IP-Adapter device crash ('' if fine/unknown)."""
+    args = forge_args(forge_dir)
+    if args is None or any(f in args.split() for f in FORGE_SAFE_FLAGS):
+        return ""
+    return FORGE_DEVICE_FIX.format(bat=os.path.join(forge_dir, "webui-user.bat"))
 
 
 def detect(backend):

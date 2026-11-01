@@ -176,3 +176,16 @@ def test_anima_profile_blocks_swap(win, srv):
     win.profile_combo.setCurrentIndex(win.profile_combo.findData("anima"))
     assert win.profile["family"] == "Anima"
     assert win.fs_generate() is None and "Anima" in win.fs_status.text()
+
+
+def test_forge_device_warning(tmp_path):
+    assert fs.forge_device_warning("") == ""
+    assert fs.forge_device_warning(str(tmp_path / "nope")) == ""
+    bat = tmp_path / "webui-user.bat"
+    bat.write_text("@echo off\n:: --cuda-malloc\nset COMMANDLINE_ARGS=--api\ncall webui.bat\n")
+    w = fs.forge_device_warning(str(tmp_path))
+    assert "--disable-smart-memory" in w and "same device" in w
+    bat.write_text("set COMMANDLINE_ARGS=--api --disable-smart-memory\n")
+    assert fs.forge_device_warning(str(tmp_path)) == ""
+    bat.write_text('set "COMMANDLINE_ARGS=--api --highvram"\n')
+    assert fs.forge_device_warning(str(tmp_path)) == ""
