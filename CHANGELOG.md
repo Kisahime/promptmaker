@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.1.0] - 2026-11-01
+
+### Added
+- **Face Swap** (Tools): our take on Fooocus' *FaceSwap* image prompt. It uses the same model (IP-Adapter Plus Face SDXL with the CLIP ViT-H encoder) and the same defaults (weight 0.75, stop at 0.9), and adds hair:
+  - **Source face**: open a picture, use the last gallery image, or pick a Character's reference image. The face is detected (OpenCV anime + photo detectors, vision-model fallback) and cropped as a square with an adjustable **hair margin**, so the adapter sees face *and* hair. Fooocus' own crop is tighter and drops most of the hair.
+  - **Generate with face**: a new image from your prompt wearing the source face and hair.
+  - **Swap into an existing image**: one-click **auto-mask of face + hair** (head shape sized by hair length, GrabCut edge refine that follows the hair outline, grow and feather), a live mask preview with brush / eraser / invert fixes, then an inpaint (only masked, denoise 0.8) with the face IP-Adapter.
+  - Works with Forge (ControlNet unit `CLIP-ViT-H (IPAdapter)`, or `InsightFace+CLIP-H (IPAdapter)` for FaceID Plus v2, guidance end = stop at) and ComfyUI (ComfyUI_IPAdapter_plus, `PLUS FACE (portraits)` preset, end_at = stop at).
+  - **⟳ Check models** finds the face model and shows exact Hugging Face links and folders when something is missing. It warns that Anima / Flux and other non-SDXL models can't use it.
+- Characters: a **🎭 Face Swap** button sends the character's reference image to Face Swap.
+
+### Changed
+- New optional dependency `opencv-python-headless` (face detection and hair-following masks). Without it Face Swap still works with a simpler oval mask.
+
 ## [5.0.0] - 2026-10-31
 
 ### Added

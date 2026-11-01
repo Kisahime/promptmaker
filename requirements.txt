@@ -1,3 +1,4 @@
 PySide6>=6.6,<7
 keyring>=24
 PyYAML>=6  # optional: full YAML for wildcard packs (a built-in reader handles simple packs)
+opencv-python-headless>=4.8  # 5.1 Face Swap: face detection and the face + hair mask (optional – the app runs without it)

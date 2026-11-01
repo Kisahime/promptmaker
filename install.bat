@@ -35,6 +35,7 @@ echo  [..] Installing dependencies (PySide6 is about 100 MB, please wait)
 ".venv\Scripts\python.exe" -m pip install --upgrade pip --disable-pip-version-check -q
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt --disable-pip-version-check -q || (echo  [X] pip install failed - check your internet connection. & pause & exit /b 1)
 ".venv\Scripts\python.exe" -c "import PySide6; print('  [OK] PySide6', PySide6.__version__)" || (echo  [X] PySide6 did not install correctly & pause & exit /b 1)
+".venv\Scripts\python.exe" -c "import cv2" >nul 2>nul && echo  [OK] OpenCV - Face Swap face + hair masks || echo  [i] OpenCV missing - Face Swap still works, with simpler masks
 
 rem --- 3. Optional desktop shortcut -----------------------------------------
 if /i not "%~1"=="/noshortcut" (
