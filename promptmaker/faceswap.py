@@ -258,6 +258,21 @@ def apply_to_job(job, face_png, model, kind, weight=WEIGHT, stop_at=STOP_AT, tar
     return job
 
 
+def harmonise_job(job, image_png, mask_png, face=None, denoise=0.25, frac=0.15):
+    """Auto-blend step 3: a second, low-denoise inpaint over the swap mask grown by a ~15 % head-size ring, WITHOUT
+    the face IP-Adapter (same prompt), so lighting and grain are redrawn as one piece. face = box in image_png px."""
+    from . import faceblend
+    from .imagegen import png_size
+    w, h = png_size(image_png)
+    m = faceblend.harmonise_mask_png(mask_png, w, h, face, frac)
+    job.faceswap = None; job.reference = None; job.hires = None
+    job.width, job.height = inpaint_size(w, h, job.width, job.height)
+    job.inpaint = {"image": image_png, "mask": m, "denoise": float(denoise), "mask_blur": 8, "only_masked": True,
+                   "padding": int(mask_padding(m)), "fill": "original"}
+    job.tag = "faceswap-harmonise"
+    return job
+
+
 # ------------------------------------------------------------------ face detection
 ANIME_CASCADE_URL = "https://raw.githubusercontent.com/nagadomi/lbpcascade_animeface/master/lbpcascade_animeface.xml"
 

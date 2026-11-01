@@ -18,9 +18,16 @@ All notable changes to this project are documented here. The format follows [Kee
   - The mask only covers the chosen person: pixels are split between faces by distance, and only the region joined to the chosen face is kept, never the other person or the background.
   - Options are now **Include hair** and **Include neck** (plus Style Auto / Photo / Anime, Grow, Feather, brush). Grow / feather changes are instant.
   - Models (≈ 0.2 + 12 + 90 MB for photos, + 175 MB for anime) download on first use into `data/models` with progress in the status line. Offline or without onnxruntime it falls back to the previous shape + GrabCut mask and says so.
-- Swap inpaint: "only masked" padding now scales with the head (20 %, 32–160 px), and big targets render at about 1 MP in their own aspect ratio instead of full size, so the head is redrawn at SDXL's native resolution, like ADetailer.
+- Face Swap **Auto-blend** (swap mode, on by default, each step can be switched off): blends the new face into the original picture.
+  - **Harmonise pass** (optional, costs one extra generation): a second inpaint at low denoise (0.25) over the mask plus a ring of ~15 % of the head size, *without* the face IP-Adapter and with the same prompt, so lighting and grain are redrawn as one piece.
+  - **Colour match** (strength 0–1): the new face's skin gets the LAB mean / spread of the original target's skin (skin found inside the mask by colour, hair and eyes excluded).
+  - **Grain / sharpness match** (strength 0–1): measures noise (high-pass std) and sharpness (Laplacian variance) in a ring around the face and adds matching luma grain and a slight blur or sharpen to the swapped area.
+  - **Seam blend** (Laplacian pyramid, Poisson or Poisson mixed): the result is composited onto the *original* target at its full resolution; pixels outside the mask are copied unchanged.
+  - Result panel: **Show before** toggles between the blended result and the original.
+- Swap inpaint: "only masked" padding now scales with the head (20 %, 32–160 px), and big targets render at about 1 MP in their own aspect ratio instead of full size, so the head is redrawn at SDXL's native resolution, like ADetailer. With Auto-blend's seam blend the final image is put back at the original size.
 
 ### Changed
+- Auto-blend uses OpenCV + numpy only (no torch); without OpenCV the swap result is shown unblended.
 - New optional dependencies `opencv-python-headless` (face detection and masks) and `onnxruntime` (CPU, the segmentation models). Without them Face Swap still works with a simpler oval mask.
 
 ## [5.0.0] - 2026-10-31

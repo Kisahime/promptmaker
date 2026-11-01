@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
                                QSplitter, QStackedWidget, QWidget)
 
 from . import characters as ch
+from . import faceblend as fb
 from . import faceswap as fs
 from .i18n import tr
 from .inpaintcanvas import InpaintCanvas
@@ -19,6 +20,10 @@ def _show(lbl, png, n=None):
         return
     w = n or max(200, lbl.width() - 8); h = n or max(200, lbl.height() - 8)
     lbl.setPixmap(pm.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+
+def fb_ok():
+    return fs.cv2_available()
 
 
 class _Progress(QObject):
@@ -109,6 +114,7 @@ class FaceSwapPage:
         self.fs_denoise = QDoubleSpinBox(); self.fs_denoise.setRange(0.3, 1.0); self.fs_denoise.setSingleStep(0.05); self.fs_denoise.setValue(fs.DENOISE)
         self.fs_denoise.setToolTip(tr("Swap mode: how much of the masked head is redrawn"))
         rc.add(hrow(label("Weight"), self.fs_weight, label("Stop at"), self.fs_stop, label("Denoise"), self.fs_denoise))
+        rc.add(self._fs_blend_box())
         rc.add(hrow(button("↺ Fooocus defaults", self.fs_defaults, "ghost"), None, button("🎭 Swap face", self.fs_generate, "primary")))
         self.fs_status = label(tr("Press ⟳ Check models to see if Forge / ComfyUI is ready"), "hint", wrap=True)
         self.fs_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -116,14 +122,19 @@ class FaceSwapPage:
         self.fs_result = QLabel(tr("The result appears here")); self.fs_result.setAlignment(Qt.AlignCenter)
         self.fs_result.setMinimumSize(300, 300); self.fs_result.setObjectName("dropZone")
         rc.add(self.fs_result, 1)
+        self.fs_before = QCheckBox(tr("Show before")); self.fs_before.setEnabled(False)
+        self.fs_before.setToolTip(tr("Compare the blended result with the original target"))
+        self.fs_before.toggled.connect(lambda _on: self._fs_show_result())
         rc.add(hrow(button("💾 Save to Gallery", self.fs_save, "ghost"), button("↪ Use as target", self.fs_result_to_target, "ghost",
-                                                                         "Swap again into the result"), None))
+                                                                         "Swap again into the result"), self.fs_before, None))
         split.addWidget(rc); split.setSizes([300, 560, 420])
         v.addWidget(split, 1)
         self.fs_src_png = self.fs_face_png = self.fs_png = self.fs_job = None
         self.fs_face_box = None; self.fs_target_face = None; self._fs_worker = None; self._fs_info = None
         self.fs_faces = []; self.fs_face_idx = None; self.fs_target_style = "Auto"; self._fs_raw = None; self._fs_seg = None
         self._fs_seg_pending = False; self.fs_mask_method = ""
+        self.fs_before_png = None; self._fs_swap_ctx = None; self._fs_blend_worker = None
+        self._fs_mode_changed()
         self._fs_progress = _Progress(); self._fs_progress.text.connect(lambda t: self.fs_mask_status.setText(t))
         self.fs_load_characters()
         return w
@@ -141,6 +152,61 @@ class FaceSwapPage:
 
     def _fs_mode_changed(self, _i=None):
         self.fs_target_stack.setCurrentIndex(0 if self.fs_mode.currentData() == "generate" else 1)
+        if hasattr(self, "fs_blend_box"):
+            self.fs_blend_box.setVisible(self.fs_mode.currentData() == "swap")
+
+    # ---------------------------------------------------------- auto-blend
+    def _fs_blend_box(self):
+        from PySide6.QtWidgets import QGroupBox, QVBoxLayout
+        st, d = self.store, fb.DEFAULTS
+        box = QGroupBox(tr("Auto-blend")); box.setCheckable(True); box.setChecked(bool(st.get("fs_bl_on", d["on"])))
+        box.setToolTip(tr("Blend the new face into the original image: lighting, skin tone, grain and edges. "
+                          "Only the masked area changes and the image keeps its original size."))
+        box.toggled.connect(lambda on: st.set("fs_bl_on", bool(on)))
+        lay = QVBoxLayout(box); lay.setContentsMargins(8, 4, 8, 4); lay.setSpacing(4)
+
+        def chk(key, text, tip):
+            c = QCheckBox(tr(text)); c.setChecked(bool(st.get("fs_bl_" + key, d[key]))); c.setToolTip(tr(tip))
+            c.toggled.connect(lambda on, k=key: st.set("fs_bl_" + k, bool(on))); return c
+
+        def spin(key, lo, hi, tip):
+            sp = QDoubleSpinBox(); sp.setRange(lo, hi); sp.setSingleStep(0.05); sp.setValue(float(st.get("fs_bl_" + key, d[key])))
+            sp.setToolTip(tr(tip)); sp.valueChanged.connect(lambda x, k=key: st.set("fs_bl_" + k, float(x))); return sp
+        self.fs_bl_harm = chk("harmonise", "Harmonise pass", "A second, light redraw (no face model) over the face and a "
+                              "ring around it, so lighting and grain match the scene. Costs one extra generation.")
+        self.fs_bl_harm_dn = spin("harmonise_denoise", 0.05, 0.6, "Harmonise denoise (0.25 = light touch). "
+                                  "Costs one extra generation.")
+        self.fs_bl_colour = chk("colour", "Colour match", "Shift the new face's skin tone and brightness to the original "
+                                "skin's colour (LAB mean / spread)")
+        self.fs_bl_colour_s = spin("colour_strength", 0.0, 1.0, "How strongly to match the original skin colour")
+        self.fs_bl_grain = chk("grain", "Grain / sharpness match", "Add the original photo's noise and softness (or "
+                               "sharpen) so the face isn't cleaner than the rest")
+        self.fs_bl_grain_s = spin("grain_strength", 0.0, 1.0, "How much of the measured grain / blur difference to apply")
+        self.fs_bl_seam = chk("seam", "Seam blend", "Blend the edge into the original at full resolution so there's no "
+                              "visible line; everything outside the mask stays exactly as it was")
+        self.fs_bl_seam_mode = QComboBox(); self.fs_bl_seam_mode.addItems(["Laplacian", "Poisson", "Poisson (mixed)"])
+        self.fs_bl_seam_mode.setCurrentText(st.get("fs_bl_seam_mode", d["seam_mode"]))
+        self.fs_bl_seam_mode.setToolTip(tr("Laplacian: soft multi-band blend (safe) · Poisson: matches the edge colours (can "
+                                           "shift the face's tone) · mixed: keeps the stronger texture"))
+        self.fs_bl_seam_mode.currentTextChanged.connect(lambda t: st.set("fs_bl_seam_mode", t))
+        lay.addLayout(hrow(self.fs_bl_harm, label("Denoise"), self.fs_bl_harm_dn, None))
+        lay.addLayout(hrow(self.fs_bl_colour, label("Strength"), self.fs_bl_colour_s, None))
+        lay.addLayout(hrow(self.fs_bl_grain, label("Strength"), self.fs_bl_grain_s, None))
+        lay.addLayout(hrow(self.fs_bl_seam, self.fs_bl_seam_mode, None))
+        self.fs_blend_box = box
+        return box
+
+    def fs_blend_opts(self):
+        return {"on": self.fs_blend_box.isChecked(), "colour": self.fs_bl_colour.isChecked(),
+                "colour_strength": self.fs_bl_colour_s.value(), "seam": self.fs_bl_seam.isChecked(),
+                "seam_mode": self.fs_bl_seam_mode.currentText(), "harmonise": self.fs_bl_harm.isChecked(),
+                "harmonise_denoise": self.fs_bl_harm_dn.value(), "grain": self.fs_bl_grain.isChecked(),
+                "grain_strength": self.fs_bl_grain_s.value()}
+
+    def _fs_show_result(self):
+        png = self.fs_before_png if (self.fs_before.isChecked() and self.fs_before_png) else self.fs_png
+        if png:
+            _show(self.fs_result, png)
 
     def fs_defaults(self):
         self.fs_weight.setValue(fs.WEIGHT); self.fs_stop.setValue(fs.STOP_AT); self.fs_denoise.setValue(fs.DENOISE)
@@ -414,13 +480,15 @@ class FaceSwapPage:
             if not tgt or not self.fs_canvas.has_mask():
                 raise ValueError(tr("Open a target image and mask the face + hair first"))
             mask = self.fs_canvas.mask_png()
+        self._fs_swap_ctx = {"target": tgt, "mask": mask, "face": tuple(self.fs_target_face) if self.fs_target_face else None,
+                             "prompt": prompt, "opts": self.fs_blend_opts()} if swap else None
         kind = fs.classify(model) or (info.get("type") or "plus_face")
         fs.apply_to_job(job, self.fs_face_png, model, kind, self.fs_weight.value(), self.fs_stop.value(), tgt, mask,
                         self.fs_denoise.value(), self.fs_feather.value())
         return job, backend, wf
 
     def fs_generate(self):
-        if self._fs_worker is not None and self._fs_worker.isRunning():
+        if any(w is not None and w.isRunning() for w in (self._fs_worker, self._fs_blend_worker)):
             return None
         try:
             job, backend, wf = self.fs_build_job()
@@ -437,15 +505,55 @@ class FaceSwapPage:
     def _fs_done(self, job, imgs):
         if not imgs:
             return
-        self.fs_png = imgs[0]
+        ctx = self._fs_swap_ctx
+        if ctx and ctx["opts"].get("on") and fb_ok():
+            return self._fs_blend_start(job, imgs[0], ctx)
+        self.fs_png = imgs[0]; self.fs_before_png = ctx["target"] if ctx else None
+        self.fs_before.setEnabled(bool(self.fs_before_png)); self.fs_before.setChecked(False)
         _show(self.fs_result, imgs[0])
+        self._fs_done_status(job)
+
+    def _fs_blend_start(self, job, raw, ctx):
+        """Swap done → (harmonise generation) → colour → grain → seam blend onto the original, in a worker."""
+        o = ctx["opts"]
+        self.fs_status.setText(tr("Blending…") if not o.get("harmonise") else tr("Harmonise pass (extra generation)…"))
+        backend = wf = hjob = None
+        if o.get("harmonise"):
+            made = self.make_job(ctx["prompt"], self._default_negative(), job.seed, "faceswap")
+            if made:
+                hjob, backend, wf = made
+                from .imagegen import png_size
+                rw, rh = png_size(raw); tw, th = png_size(ctx["target"])
+                face = fb.scale_box(ctx["face"], rw / tw, rh / th) if ctx["face"] else None
+                fs.harmonise_job(hjob, raw, ctx["mask"], face, o.get("harmonise_denoise", 0.25))
+                self.fs_harmonise_job = hjob
+
+        def work():
+            img = raw
+            if hjob is not None:
+                out = backend.generate(hjob, wf)
+                img = out[0] if out else raw
+            return fb.blend(img, ctx["target"], ctx["mask"], ctx["face"], o)
+        self._fs_blend_worker = wk = CallWorker(work)
+        wk.ok.connect(lambda png, j=job, c=ctx: self._fs_blend_done(j, png, c))
+        wk.failed.connect(lambda e: self.fs_status.setText("⚠️ " + tr("Auto-blend failed: ") + e[:200]))
+        wk.start()
+        return wk
+
+    def _fs_blend_done(self, job, png, ctx):
+        self.fs_png = png; self.fs_before_png = ctx["target"]
+        self.fs_before.setEnabled(True); self.fs_before.setChecked(False)
+        _show(self.fs_result, png)
+        self._fs_done_status(job, " · " + tr("blended"))
+
+    def _fs_done_status(self, job, extra=""):
         note = ""
         if getattr(job, "controlnet_applied", None) is False:
             note = " · ⚠️ " + tr("Forge didn't record the IP-Adapter – is the ControlNet extension enabled?")
         if not note and getattr(self, "_fs_info", None) and self._fs_info.get("kind") == "forge" \
                 and fs.forge_device_warning(self._fs_forge_dir()):
             note = " · ⚠️ " + tr("If the face was ignored and Forge's console shows 'same device … cuda:0 … cpu', see the fix under ⟳ Check models")
-        self.fs_status.setText(tr("Done") + f" · seed {job.seed}" + note)
+        self.fs_status.setText(tr("Done") + f" · seed {job.seed}" + extra + note)
 
     def fs_save(self):
         if not self.fs_png:
