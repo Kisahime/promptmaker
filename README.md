@@ -4,14 +4,20 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. Version 4 adds wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.1** adds **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v4.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v4.0.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v5.1.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.1.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
 ## Features
 
+- **🎭 Face Swap** *(5.1, Tools)*: our take on Fooocus' FaceSwap, using IP-Adapter Plus Face SDXL (weight 0.75, stop at 0.9 by default). Take the source face from a file, your last image, or a Character's reference image (Characters have a **🎭 Face Swap** button); it is cropped with an adjustable **hair margin** so the whole head and hair are used.
+  - **Generate with face**: a new image from your prompt wearing the source face and hair.
+  - **Swap into an existing image**: **Auto-mask face + hair** follows the real outline with segmentation models (YuNet / anime YOLO face detection, SegFormer face parsing for photos, anime-seg for anime). Every face is numbered; **👆 Pick face** chooses another person in group pictures. **Include hair** / **Include neck**, Style (Auto / Photo / Anime), Grow, Feather and a brush / eraser for touch-ups. The head is redrawn at SDXL's native resolution, like ADetailer.
+  - **Auto-blend** (on by default, each step optional): a **harmonise pass** (light extra inpaint without the face model), **colour match** of skin tone, **grain / sharpness match**, and **seam blend** (Laplacian or Poisson) onto the original at full size; pixels outside the mask stay unchanged. **Show before** compares with the original.
+  - Works with Forge (ControlNet IP-Adapter) and ComfyUI (ComfyUI_IPAdapter_plus). SDXL / Illustrious / Pony checkpoints only. See [Face Swap setup](#face-swap-setup).
+- **👁 Vision-model routing** *(5.0)*: everything that sends images (Image to Prompt, auto-caption, Auto-refine, gallery tagging) checks the model's capabilities through Ollama and only uses a real vision model, with a vision model picker on the LoRA page.
 - **👤 Characters** *(5.0)*: save a person once with reference images, several named outfits, linked LoRAs + weights, trigger words and per-target-model tag sets. Insert a character + outfit into Create, Refine, a new region or the clipboard (the **👤 Character** buttons on Create and Inpaint & Regions do the same); swapping the outfit replaces the old one instead of piling tags up. With **Use as reference (IP-Adapter)** ticked, the first reference image is sent along when Forge has an IP-Adapter ControlNet model or ComfyUI has ComfyUI_IPAdapter_plus – otherwise it is skipped. New Gallery images are tagged with the characters whose trigger word / LoRA is in the prompt, and (opt-in) by the local Ollama vision model in the background.
 - **📖 Storyboard & comics** *(5.0)*: write a short story, tick the cast, and the AI plans N panels (shot, characters, action, setting, dialogue, caption) using your Characters for consistency. Generate one panel or all of them through the normal queue, then lay out the page: grid templates (1–6 panels, manga), page sizes, fonts, editable speech bubbles and captions, drag Gallery thumbnails onto panels. Export PNG (one per page) or PDF, and save / open the storyboard as a `.pmstory` project file.
 - **✏ Live sketch** *(5.0, Studio)*: draw rough shapes and colours; ~0.8 s after each stroke a fast low-step img2img (Lightning/Turbo-friendly presets, small resolution) regenerates the result beside the canvas. Uses a ControlNet scribble model instead when Forge/ComfyUI has one. Save the result, send it to Inpaint, or to Image to Prompt.
@@ -19,8 +25,8 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🏠 Home** *(4.1)*: a dashboard with your target model and linked checkpoint, Forge / Ollama status, recent images and quick-start buttons.
 - **🗂 Gallery** *(4.1)*: justified rows that keep aspect ratios, hover preview, full-screen viewer (←/→, Esc), and right-click actions: *Inpaint this*, *Use as reference*, *Regenerate with hires*, *Upscale…*. Drag a thumbnail onto the inpaint canvas.
 - **⤢ Upscale** *(4.1)*: Forge img2img at 1.5× with denoise 0.3 (same prompt and seed), or *Pure upscale* via Forge Extras / ComfyUI `ImageScaleBy`.
-- **Queue & status** *(4.1)*: the sidebar dot shows *Forge · active checkpoint* or *Offline* (click for settings); ☰ opens the queue to reorder or cancel jobs. Forge and ComfyUI show a live preview while they generate (ComfyUI: start it with `--preview-method auto`).
-- **Look & feel** *(4.1)*: accent colours (purple, teal, pink, orange) in Settings → General, a collapsible icon-only sidebar («), and short page fades.
+- **Queue & status** *(4.1)*: the top bar shows *Forge · active checkpoint* or *Offline* (click for settings); ☰ opens the queue to reorder or cancel jobs. Forge and ComfyUI show a live preview while they generate (ComfyUI: start it with `--preview-method auto`).
+- **Look & feel** *(4.1.5)*: a slim icon rail with sections (Home, Studio, Characters, Gallery, Tools, Library, Settings), a top bar with status and queue, four themes with accent colours in Settings → Appearance, and short page fades.
 - **✨ Create:** type an idea like *"an anime girl wearing an outfit in a setting"* and get finished prompts for your target model. You also get a separate negative prompt (where the model supports one) and recommended settings. A creativity slider controls how much it invents, and it can give 1–5 options with live streaming. **⚡ Offline build** works without AI.
 - **🎨 Builder:** 13 categories and about 800 grouped presets as clickable chips, with global search, locks, randomise/surprise and your own custom chips. A live, model-aware preview and quick score update as you go.
 - **💬 Refine:** chat with a local LLM about your prompt. Apply its suggestions in one click, with full version history and revert.
@@ -36,7 +42,7 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🌐 Community** *(2.0)*: browse, install, update and uninstall packs and model profiles from the community index. Every download is checked with SHA-256.
 - **🔌 Providers** *(2.0)*: Ollama, LM Studio, llama.cpp, KoboldCpp, vLLM, any OpenAI-compatible URL, and optional OpenAI, Anthropic, Google Gemini and OpenRouter. All AI features stream from the provider you choose.
 - **⚙ Settings, tour and languages** *(2.0)*: a settings page, a first-run guided tour, an optional update check, portable or AppData data, and English / Español / Deutsch (the translations are machine-made).
-- **🧭 Setup wizard** *(3.0)*: on first launch (and any time from the sidebar or Settings) it checks whether Ollama is installed and running, lists your models, and downloads a recommended text model (`llama3.2`) and vision model (`qwen2.5vl`) with a progress bar. It also looks for Forge/A1111 (and tells you if `--api` is missing) and ComfyUI on their default ports, and saves what it finds.
+- **🧭 Setup wizard** *(3.0)*: on first launch (and any time from the top bar or Settings) it checks whether Ollama is installed and running, lists your models, and downloads a recommended text model (`llama3.2`) and vision model (`qwen2.5vl`) with a progress bar. It also looks for Forge/A1111 (and tells you if `--api` is missing) and ComfyUI on their default ports, and saves what it finds.
 - **🔄 Auto-refine** *(3.0)*: generate an image with Forge or ComfyUI, let a vision model score it against your idea (0–100, with what's missing or wrong), have the local AI rewrite the prompt, and repeat for N iterations or until a target score. Every iteration is shown with its image and review. Stop at any time and **Keep best**.
 - **🧩 LoRAs** *(3.0)*: scans your models folder (Forge layout by default: `models\Lora`, `models\LyCORIS`, `embeddings`), hashes each file (SHA256 / AutoV2) and looks it up on Civitai for its name, trigger words, base model and preview. Results are cached. Filter by compatibility with the target model profile and insert `<lora:name:weight>` plus trigger words in one click.
 - **👤 Presets** *(3.0)*: save **characters** (name, appearance tags, outfit, optional LoRA and weight, reference image) and **styles** (tags plus extra negative). Tick several to combine them in any prompt, and Batch can keep them fixed on every variation so a character stays consistent.
@@ -54,7 +60,7 @@ Everything runs on your own computer by default. The AI features are optional an
   - Models a provider can't load (e.g. `llama3.2-vision` on Ollama 0.30+) get a plain explanation, a one-click switch to another installed model, and a copyable `ollama pull` command. Unsupported or failed models are marked in the model pickers.
   - When Forge/A1111's API is off, the app shows the exact `--api` fix, and Test connection reports the WebUI variant and version.
 - **Safe by design:** destructive buttons (Clear all, Delete, Uninstall) confirm **in place**: a red *Confirm (4s)* button with a countdown. Toasts appear top-right and never block clicks.
-- Four themes – sleek Graphite dark/light (default) plus cute Pastel and Pastel dusk – with accent colours (Ctrl+T toggles light/dark) and a **Ctrl+K** quick bar from anywhere.
+- Four themes – sleek Graphite dark/light (default) plus cute Pastel and Pastel dusk – with accent colours (Ctrl+T toggles light/dark) and a **Ctrl+K** command palette from anywhere.
 
 ## Screenshots
 
@@ -117,7 +123,15 @@ You need **Python 3.10+** ([python.org](https://www.python.org/downloads/); on W
 2. Double-click **`install.bat`**. It checks Python, creates a `.venv`, installs PySide6 and keyring, offers to make a desktop shortcut, and checks for Ollama.
 3. Start the app with **`run.bat`** or the desktop shortcut. A short guided tour runs the first time.
 
-**Upgrading from 2.x (or 1.x):** copy or `git pull` the new version over the old folder (your `data/` is kept), then run `install.bat` again. That installs any new dependencies and recreates the desktop shortcut with the new icon. Your database is upgraded automatically the first time 3.0 starts (schema v3 adds the `characters` and `styles` tables); history, favourites, templates and settings are kept. Making a copy of `data/` first doesn't hurt.
+**Upgrading:** copy or `git pull` the new version over the old folder (your `data/` is kept), then run `install.bat` again. That installs new dependencies (5.1 adds `opencv-python-headless` and `onnxruntime` for Face Swap masks) and recreates the desktop shortcut. Your database is upgraded automatically on first start; history, favourites, templates, characters and settings are kept. Making a copy of `data/` first doesn't hurt.
+
+### Requirements at a glance
+
+- **Ollama** (optional, for AI features) with a text model (`ollama pull llama3.2`) and a **vision model** (`ollama pull qwen2.5vl`) for Image to Prompt, captions, Auto-refine and gallery tagging. The setup wizard can download both.
+- **Forge** (or ComfyUI) for images. Forge must run with the API on: `set COMMANDLINE_ARGS=--api` in `webui-user.bat`.
+- **Face Swap**: the face model, see [Face Swap setup](#face-swap-setup).
+- **Live sketch** (optional): for scribble mode, put [xinsir/controlnet-scribble-sdxl-1.0](https://huggingface.co/xinsir/controlnet-scribble-sdxl-1.0) in Forge's `models\ControlNet` folder; without it Live sketch uses fast img2img.
+- **LoRA training** (optional): git and an NVIDIA GPU, see [LoRA training](#lora-training-optional).
 
 **macOS / Linux** (should work, but is less tested)
 ```bash
@@ -129,7 +143,7 @@ There's no installer package and nothing system-wide. Everything stays in the fo
 
 ## AI providers (optional)
 
-Choose a provider in **⚙ Settings → AI provider**, then click **Test connection** and **Use this provider**. The model list in the sidebar comes from that provider.
+Choose a provider in **⚙ Settings → AI provider**, then click **Test connection** and **Use this provider**. The model list in the top bar comes from that provider.
 
 | Provider | Default URL | Notes |
 |---|---|---|
@@ -173,6 +187,19 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 **Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
+
+## Face Swap setup
+
+1. Download [ip-adapter-plus-face_sdxl_vit-h.safetensors](https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors) and put it in Forge's `models\ControlNet` folder (e.g. `C:\AI\sd-webui-forge-classic\models\ControlNet`), then restart Forge. On ComfyUI, install ComfyUI_IPAdapter_plus and its models.
+2. Start Forge with `--api`. The first face generation is slower because Forge downloads the CLIP ViT-H image encoder itself.
+3. In PromptMaker go to **Tools → Face Swap → ⟳ Check models**. It finds the model, shows download links and folders for anything missing, and warns about Forge settings that cause problems.
+4. Use an **SDXL / Illustrious / Pony** checkpoint. Face features don't work with Anima, Flux or other non-SDXL models.
+
+**8 GB graphics cards:** if Forge logs `Expected all tensors to be on the same device … cuda:0 … cpu` and the face is ignored, close Forge and set `set COMMANDLINE_ARGS=--api --disable-smart-memory` in `webui-user.bat` (if it still fails, try `--api --highvram`).
+
+**Auto-mask models** download on first use into `data/models`, with progress in the status line: about 100 MB the first time you mask a photo, and about 175 MB more for the first anime image. If the status says *shape*, the download failed (or OpenCV / onnxruntime is missing) and a simpler head-shape mask is used instead.
+
+**Tips for swapping into an image:** describe only the face, hair and the picture's style and lighting in the prompt (e.g. `photo of an adult woman, black hair with bangs, soft daylight, sharp focus`). If the face looks pasted on, lower Denoise to 0.6–0.7; if it doesn't look enough like the source, raise Weight to 0.85–0.9. If skin colour looks off, lower Colour strength; if you can still see an edge, switch Seam blend to Poisson.
 
 ## Civitai checkpoint profiles
 
@@ -297,6 +324,8 @@ Anima needs extra modules in Forge's **VAE / Text Encoder** box (`qwen_image_vae
 
 ![Model error dialog](docs/screenshots/model_error.png)
 
+**Face Swap: the face is ignored / tensor device error in Forge.** See the 8 GB tip in [Face Swap setup](#face-swap-setup) (`--disable-smart-memory`). Also check you use an SDXL-family checkpoint and that ⟳ Check models finds the face model.
+
 **Pose / ControlNet with Anima: errors or the pose is ignored**
 Anima isn't SD or SDXL based, so ordinary SD 1.5/SDXL OpenPose ControlNets don't work with it. Use an Anima **ControlNet-LLLite** model: download `anima-lllite-pose-1.safetensors` from [kohya-ss/Anima-LLLite](https://huggingface.co/kohya-ss/Anima-LLLite), put it in your Forge `models/ControlNet` folder (e.g. `C:\AI\sd-webui-forge-classic\models\ControlNet`) and restart Forge. It needs a **Forge Neo** build with Anima LLLite support (added May 2026); if the model doesn't appear in the Pose page's ControlNet dropdown, update Forge. It's a fairly soft pose guide. If the dropdown is empty, no ControlNet models are installed and PromptMaker won't send a pose.
 
@@ -335,7 +364,7 @@ python -m pyflakes promptmaker tests
 QT_QPA_PLATFORM=offscreen python main.py --smoke-test   # headless UI smoke test
 ```
 
-Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `firstrun.py` (setup wizard), `autorefine.py`, `loras.py`, `presets.py`, `pose.py` / `posecanvas.py`, `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`, `tests/test_civitai.py`, `tests/test_v3.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
+Project layout: `promptmaker/app.py` (UI), `builder.py` (prompt formatting), `scoring.py`, `providers.py` (LLM providers), `ollama.py`, `imagegen.py` (ComfyUI / A1111), `gallery.py`, `community.py`, `abtest.py`, `keystore.py`, `paths.py`, `updates.py`, `i18n.py`, `library.py` (packs), `civitai.py` / `civitai_dialog.py`, `firstrun.py` (setup wizard), `autorefine.py`, `loras.py`, `presets.py`, `pose.py` / `posecanvas.py`, `faceswap.py` / `faceswapui.py` (Face Swap), `faceseg.py` (auto-mask), `faceblend.py` (Auto-blend), `profiles.py`, `storage.py`, `theme.py`, `widgets.py`. All network code is tested against local mock servers (`tests/test_v2.py`, `tests/test_civitai.py`, `tests/test_v3.py`), so the tests don't need Ollama, ComfyUI or an internet connection.
 
 ## Contributing
 
