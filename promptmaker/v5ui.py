@@ -113,7 +113,8 @@ class V5Pages:
         uc.add(hrow(label("Outfit"), self.cr_use_outfit)); uc.add(hrow(label("Into"), self.cr_use_target))
         uc.add(self.cr_preview)
         uc.add(hrow(button("➕ Insert", self.cr_insert, "primary"), button("🖼 Portrait", self.cr_portrait, "ghost",
-                                                                        "Generate a reference portrait of this character")))
+                                                                        "Generate a reference portrait of this character"),
+                    button("🎭 Face Swap", self.cr_to_faceswap, "ghost", "Use this character's reference image as the face in Face Swap")))
         self.cr_ref_status = label(tr("Reference support: not checked"), "hint", wrap=True)
         uc.add(self.cr_ref_status); uc.add(hrow(button("🔎 Check reference support", self.cr_check_ref, "ghost"), None))
         uc.add(label("Gallery auto-tagging", "groupLabel"))
@@ -130,6 +131,16 @@ class V5Pages:
         self.cr_id, self._cr_extra = None, ch.extra({})
         self.cr_load()
         return w
+
+    def cr_to_faceswap(self):
+        if not self.cr_id or not hasattr(self, "fs_char"):
+            return None
+        self.fs_load_characters()
+        i = self.fs_char.findData(self.cr_id)
+        if i < 0:
+            self.notify(tr("Add a reference image to this character first"), error=True); return None
+        self.fs_char.setCurrentIndex(i); self.go("Face Swap")
+        return self.fs_from_character(self.cr_id)
 
     def cr_load(self, select=None):
         self.cr_list.blockSignals(True); self.cr_list.clear()

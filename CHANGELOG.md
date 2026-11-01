@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.1.0] - 2026-11-01
+
+### Added
+- **Face Swap** (Tools): our take on Fooocus' *FaceSwap* image prompt. It uses the same model (IP-Adapter Plus Face SDXL with the CLIP ViT-H encoder) and the same defaults (weight 0.75, stop at 0.9), and adds hair:
+  - **Source face**: open a picture, use the last gallery image, or pick a Character's reference image. The face is detected (OpenCV anime + photo detectors, vision-model fallback) and cropped as a square with an adjustable **hair margin**, so the adapter sees face *and* hair. Fooocus' own crop is tighter and drops most of the hair.
+  - **Generate with face**: a new image from your prompt wearing the source face and hair.
+  - **Swap into an existing image**: one-click **auto-mask of face + hair** (head shape sized by hair length, GrabCut edge refine that follows the hair outline, grow and feather), a live mask preview with brush / eraser / invert fixes, then an inpaint (only masked, denoise 0.8) with the face IP-Adapter.
+  - Works with Forge (ControlNet unit `CLIP-ViT-H (IPAdapter)`, or `InsightFace+CLIP-H (IPAdapter)` for FaceID Plus v2, guidance end = stop at) and ComfyUI (ComfyUI_IPAdapter_plus, `PLUS FACE (portraits)` preset, end_at = stop at).
+  - **⟳ Check models** finds the face model and shows exact Hugging Face links and folders when something is missing. It warns that Anima / Flux and other non-SDXL models can't use it.
+- Characters: a **🎭 Face Swap** button sends the character's reference image to Face Swap.
+- Face Swap **segmentation mask** (swap mode): the mask now follows the real face and hair outline instead of a head-shaped guess.
+  - Faces are found with OpenCV **YuNet** (photos) and deepghs' **YOLOv8 anime face detector**; every face is numbered on the preview, the largest is picked, and **👆 Pick face** + a click chooses another person.
+  - Photos: a **SegFormer face-parsing** model (CelebAMask-HQ classes: skin, eyes, brows, nose, lips, ears, hair, hat, neck) on a crop around the chosen face. Anime: **anime-seg** (ISNet) cuts the character out, then the face plus the hair-coloured strands joined to it are kept.
+  - The mask only covers the chosen person: pixels are split between faces by distance, and only the region joined to the chosen face is kept, never the other person or the background.
+  - Options are now **Include hair** and **Include neck** (plus Style Auto / Photo / Anime, Grow, Feather, brush). Grow / feather changes are instant.
+  - Models (≈ 0.2 + 12 + 90 MB for photos, + 175 MB for anime) download on first use into `data/models` with progress in the status line. Offline or without onnxruntime it falls back to the previous shape + GrabCut mask and says so.
+- Face Swap **Auto-blend** (swap mode, on by default, each step can be switched off): blends the new face into the original picture.
+  - **Harmonise pass** (optional, costs one extra generation): a second inpaint at low denoise (0.25) over the mask plus a ring of ~15 % of the head size, *without* the face IP-Adapter and with the same prompt, so lighting and grain are redrawn as one piece.
+  - **Colour match** (strength 0–1): the new face's skin gets the LAB mean / spread of the original target's skin (skin found inside the mask by colour, hair and eyes excluded).
+  - **Grain / sharpness match** (strength 0–1): measures noise (high-pass std) and sharpness (Laplacian variance) in a ring around the face and adds matching luma grain and a slight blur or sharpen to the swapped area.
+  - **Seam blend** (Laplacian pyramid, Poisson or Poisson mixed): the result is composited onto the *original* target at its full resolution; pixels outside the mask are copied unchanged.
+  - Result panel: **Show before** toggles between the blended result and the original.
+- Swap inpaint: "only masked" padding now scales with the head (20 %, 32–160 px), and big targets render at about 1 MP in their own aspect ratio instead of full size, so the head is redrawn at SDXL's native resolution, like ADetailer. With Auto-blend's seam blend the final image is put back at the original size.
+
+### Changed
+- Auto-blend uses OpenCV + numpy only (no torch); without OpenCV the swap result is shown unblended.
+- New optional dependencies `opencv-python-headless` (face detection and masks) and `onnxruntime` (CPU, the segmentation models). Without them Face Swap still works with a simpler oval mask.
+
 ## [5.0.0] - 2026-10-31
 
 ### Added

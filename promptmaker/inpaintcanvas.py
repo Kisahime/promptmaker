@@ -16,6 +16,7 @@ class InpaintCanvas(QWidget):
     regions_changed = Signal()
     selection_changed = Signal(int)
     file_dropped = Signal(str)  # 4.1: a gallery thumbnail / image file dropped on the canvas
+    face_clicked = Signal(float, float)  # 5.1: mode "pick" – image pixel clicked
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
@@ -34,7 +35,9 @@ class InpaintCanvas(QWidget):
         self.mask = self._blank_mask()
         self.regions = []             # [{prompt, x, y, w, h, weight}] normalised
         self.selected = -1
-        self.mode = "brush"           # brush | erase | region
+        self.mode = "brush"           # brush | erase | region | pick (5.1: click a face)
+        self.faces = []               # 5.1 Face Swap: [(x, y, w, h)] numbered boxes drawn over the image
+        self.face_sel = -1
         self.brush = 48               # in image pixels
         self._last = None
         self._drag = None
@@ -146,6 +149,8 @@ class InpaintCanvas(QWidget):
 
     def mousePressEvent(self, e):
         pos = e.position()
+        if self.mode == "pick":
+            pt = self.to_img(pos); self.face_clicked.emit(pt.x(), pt.y()); return
         if self.mode in ("brush", "erase"):
             self._last = self.to_img(pos); self._stroke(self._last, self._last); return
         nx, ny = self.to_norm(pos)
@@ -208,4 +213,14 @@ class InpaintCanvas(QWidget):
             p.drawText(rr.adjusted(6, 4, -6, -4), Qt.AlignTop | Qt.AlignLeft | Qt.TextWordWrap, txt)
             if i == self.selected:
                 p.fillRect(QRectF(rr.right() - 7, rr.bottom() - 7, 10, 10), col)
+        if self.faces:
+            iw, ih = self.img_size(); sx, sy = a.width() / max(iw, 1), a.height() / max(ih, 1)
+            f = p.font(); f.setBold(True); f.setPointSize(max(10, f.pointSize() + 3)); p.setFont(f)
+            for i, (fx, fy, fw, fh) in enumerate(self.faces):
+                col = QColor("#35d39a") if i == self.face_sel else QColor("#ffc34d")
+                rr = QRectF(a.x() + fx * sx, a.y() + fy * sy, fw * sx, fh * sy)
+                p.setPen(QPen(col, 3 if i == self.face_sel else 2, Qt.SolidLine if i == self.face_sel else Qt.DashLine))
+                p.setBrush(Qt.NoBrush); p.drawRect(rr)
+                tag = QRectF(rr.x(), rr.y() - 24, 26, 22)
+                p.fillRect(tag, col); p.setPen(QColor("#111")); p.drawText(tag, Qt.AlignCenter, str(i + 1))
         p.setPen(QPen(QColor("#5b5f7a"), 1)); p.drawRect(a)
