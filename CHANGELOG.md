@@ -2,6 +2,49 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.2.0] - 2026-11-02
+
+### Added
+- **Better model profiles from Civitai** (new `profilenorm` module):
+  - Version-aware parsing of the creator's description: in multi-version descriptions the section matching the selected version (V5, turbo / no turbo) is used and other versions' settings are never copied; inline settings (`dpmpp_2m_sde_gpu + beta1_1, steps: 25, cfg: 4`), labelled lines, ranges (`CFG 3.5 - 5.0`), Chinese labels and typos (`nomal`, `karas`, `beta)`) are understood.
+  - Normalised sampler + scheduler (`Euler Simple` → euler + simple) with both ComfyUI and Forge names (`a1111_sampler`, `a1111_scheduler`) from fixed tables; unknown values are never stored (family default + a warning instead). CFG ranges keep a default plus `cfg_range`.
+  - A `source` map records which values came from the creator, sample images, the family default or you. No invented negatives (`civitai.author_negative` only when the creator gave one; "no negative needed" is respected), no "(n/a)" tips, no dangling text.
+  - The actual downloaded file name, Checkpoint vs Diffusion model detection, and workflow / text encoder / VAE defaults for split MOSS, Anima, Qwen-Image and FLUX.1 files; per-family resolutions (multiples of 16 for MOSS/FLUX/Qwen/Anima).
+  - Schema validation before every profile save; **review dialog** for the Model browser's *Create model profile* (editable, highlighted where defaulted); the Civitai import screen gains a Scheduler field and a live normalised preview; **Re-check from Civitai** and a one-off **Repair profiles** (Settings → Model profiles) that fixes saved profiles with a timestamped backup.
+  - The profile's `gen.text_encoder` / `gen.vae` are now used by the MOSS workflow when ComfyUI has those files, and `gen.workflow` drives the workflow suggestion.
+- **Wallpaper mode** (Tools → Wallpaper): wallpapers at the exact screen size.
+  - Targets: 1920×1080, 2560×1440, 3840×2160, 2560×1080 and 3440×1440 ultrawide, 1080×1920 phone, or a custom width × height.
+  - Picks a base size of about 1 MP in the screen's aspect for the target model's family (multiples of 8, preferring exact-aspect sizes and 64 px buckets for SDXL / Illustrious / Pony / Anima; multiples of 16 for FLUX, Qwen, MOSS and HiDream) and a hires-fix scale in 0.05 steps so the result is at or just over the target – 1920×1080 → 1280×720 ×1.5.
+  - Never more than ×2 in one hires pass: when more is needed (4K, 3440×1440) hires stays at ×1.5 and a final upscale follows – Forge's upscaler model through Extras, or a local Lanczos resize – then a centre crop to the exact size.
+  - **Icon-safe composition**: subject on the right, left or centre, written in the model's prompt style (tags, natural language, or both for Anima).
+  - Saves to `data/Wallpapers`, **Save to Gallery**, and on Windows **Set as desktop wallpaper**.
+  - Works with Forge (enable_hr + Extras upscale) and ComfyUI (LatentUpscaleBy hires pass + local resize).
+- **MOSS Image workflow for ComfyUI** (`moss_txt2img`, Settings → Image generation → Workflow), based on Comfy-Org's official `image_moss_image_t2i` template.
+  - UNETLoader (models/diffusion_models) → optional SkipLayerGuidanceDiTSimple (layer 22, 0–50 %) → KSampler; CLIPLoader type `moss_image`; VAELoader; EmptyFlux2LatentImage.
+  - The model picker lists `models/diffusion_models` (ComfyUI `/object_info/UNETLoader`) instead of checkpoints for this workflow.
+  - Text encoder and VAE are auto-detected: `qwen3.5_9b_w4a8_gptq.safetensors` and `flux2-vae_small.safetensors` when present (also in sub-folders), else another Qwen3.5 / FLUX.2 file.
+  - Defaults: 25 steps, CFG 3.5, euler / simple, 1024×1024, negative `worst quality, bad anatomy, watermark, jpeg artifact`.
+  - Skip layer guidance is off by default (it can overblow anime styles); a Settings checkbox turns it on.
+  - Hires fix and Wallpaper mode work with it (multiples of 16). Picking a MOSS target model on ComfyUI suggests this workflow.
+  - Workflows can use new `{{text_encoder}}` / `{{vae}}` placeholders and `_meta` keys `model_loader` and `slg_node`.
+- **Civitai Model browser** (Library → Model browser): search and download Civitai models inside the app.
+  - Uses the public API v1 (`/models` with query, types, baseModels, sort, period, nsfw, limit and cursor paging; `/models/{id}` for full details). The host comes from Settings → Civitai → Host (civitai.com, or civitai.red).
+  - Filters for type (Checkpoint, LoRA, LoCon, DoRA, Embedding, VAE, ControlNet, Upscaler …), base model (SDXL 1.0, Pony, Illustrious, NoobAI, Anima, MOSS Image, Flux.1 / Flux.2, Qwen, HiDream …), sort (Highest Rated, Most Downloaded, Newest) and period.
+  - **Show NSFW is off by default.** When it's off, requests send `nsfw=false`, NSFW-flagged models are dropped, and any preview with `nsfwLevel` above 1 (or no level) is never downloaded. Its card shows a "Preview hidden" placeholder instead.
+  - Results show as a card grid with lazy-loaded thumbnails (cached in `data/cache/civitai_thumbs`), name, creator, type, base model and download / like counts. More results load when you scroll to the bottom or press Load more.
+  - The detail panel has a versions dropdown, files (name, size, fp, pruned / full, format), a sanitised description (no scripts, iframes, remote images or non-http links), trained words, the creator's settings and Open on Civitai.
+  - **Download**: the destination is picked from the type, base model and active backend. Checkpoints go to Forge `models\Stable-diffusion` or ComfyUI `checkpoints`. MOSS, Anima, FLUX, Qwen, HiDream and Wan files that are only the diffusion model (judged by GGUF format, the file name, or a size below model + half text encoder at the file's precision) go to ComfyUI `diffusion_models`. LoRA / LoCon / DoRA go to `Lora` / `loras`, and VAE, ControlNet, embeddings, upscalers and hypernetworks to their own folders, with `data/downloads` as a fallback. You can change the folder.
+  - Downloads run in the background with progress, cancel and **resume** (`.part` + HTTP Range) and retries on 429 / 5xx / dropped connections. The file is checked against Civitai's SHA256 and a corrupt file is deleted. The Civitai API key is sent as `Authorization: Bearer` and is never forwarded on the redirect to file storage. A 401 / 403 or a login page gives a clear "add your API key" message.
+  - After a download: **Refresh models** and **Create model profile**, which builds `civitai_<versionId>` from the version (chosen file name, family from the base model, ComfyUI sampler / scheduler and Forge sampler names, `moss_txt2img` workflow for MOSS, the family's resolutions, creator settings in the tips).
+- Settings → Civitai: **Host**, **Forge folder** and **ComfyUI folder** fields (the folders are guessed when empty).
+
+- **Early Access / paid badges** in the Model browser: EA and paid versions are flagged on cards and in the versions list with the free-from date and Buzz price, a *Download anyway* warning, *Use latest free version*, and a friendly message for Early Access 403s.
+
+### Fixed
+- Civitai downloads: the API key is sent both as `?token=` and a Bearer header, fixing 403s on downloads that need login.
+- Profile parsing: sampler/scheduler slash pairs (`er_sde/bong_tangent`), step ranges with odd spacing (`4- 9 steps`), RES4LYF / custom-node samplers and schedulers kept with a custom-nodes note, honest *Creator's settings* vs *Defaults used* tips, dated changelog sections in descriptions, and **Repair profiles** now recovers values that were wrongly rejected.
+- Civitai import maps "MOSS Image" base models to the MOSS profile (it used to fall back to Generic).
+
 ## [5.1.0] - 2026-11-01
 
 ### Added

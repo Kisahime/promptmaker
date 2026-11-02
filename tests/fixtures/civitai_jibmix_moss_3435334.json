@@ -1,0 +1,54 @@
+{
+ "_source": "https://civitai.com/api/v1/models/3016339 + /api/v1/model-versions/3435334, fetched 2026-11-02 (images trimmed)",
+ "model": {
+  "id": 3016339,
+  "name": "Jib Mix Moss Realistic",
+  "type": "Checkpoint",
+  "description": "<p>28/10/2026 -V2<br />V2 Improves the overall look by:</p><p>Makes it more amateur photo style (but can be taken further with loras)<br />Lightens the default skin tone</p><p>Closer shots by default</p><p>Reduced grain.</p><p>Improves eyes.<br />Recommended 12 steps, no extra speed LoRA needed. </p><hr /><p></p><p><br />24/10/2026 - I uploaded a new version of int8 as the old version had learned_rounding turned on (to improve quality) that made it nearly 4 times slower at inference.<br /><br />Also now fixed my workflows , as they had been exported in API mode.<br /></p><p>Makes realistic, sharper images with Moss Image<br />It has the 8 step Lora merged in , I run it at 4- 9 steps er_sde/Bong_tangent, cfg =1<br /><br /><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">-can ignore other artistic styles in the prompt.</span><br /><br /><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">I think it is a banging good model :)</span><br /><br /><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">Check out my </span><a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.red/api/download/models/3424160?fileId=3319241\"><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">Basic </span></a><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">and </span><a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.red/api/download/models/3424160?fileId=3319240\"><span style=\"background-color:rgb(26, 27, 30);color:rgb(193, 194, 197);font-family:-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif, &quot;Apple Color Emoji&quot;, &quot;Segoe UI Emoji&quot;;font-size:16px\">Advanced workflows &gt;</span></a></p>",
+  "nsfw": true,
+  "modelVersions": [
+   {
+    "id": 3435334,
+    "name": "V2 - Reality Renew",
+    "baseModel": "MOSS Image"
+   },
+   {
+    "id": 3424160,
+    "name": "V1: One to One",
+    "baseModel": "MOSS Image"
+   }
+  ]
+ },
+ "version": {
+  "id": 3435334,
+  "modelId": 3016339,
+  "name": "V2 - Reality Renew",
+  "baseModel": "MOSS Image",
+  "trainedWords": [],
+  "description": "<p>V2 Improves the overall look, </p><p>Makes it more amateur photo style</p><p>Improves eyes.<br />Lightens the default skin tone</p><p>Closer shots by default </p><p>Reduced grain.</p>",
+  "files": [
+   {
+    "id": 3332190,
+    "name": "jibMixMossRealistic_v2RealityRenew.safetensors",
+    "sizeKB": 5287144.287109375,
+    "type": "Model",
+    "primary": true,
+    "metadata": {
+     "format": "SafeTensor",
+     "fp": "int8"
+    },
+    "hashes": {
+     "AutoV1": "B0BE6219",
+     "AutoV2": "4B504C9BF2",
+     "SHA256": "4B504C9BF2F2DDE23840E7CAA8354D66FF6453C122EC0C37B54F46E7E170C198",
+     "CRC32": "26D689F7",
+     "BLAKE3": "FAB2AC4799FD67628AC05DBADC8783C20101039519ABF04527303F543B5B45CA",
+     "AutoV3": "E567BDEEBEED",
+     "SHA256_12": "4B504C9BF2F2"
+    }
+   }
+  ],
+  "publishedAt": "2026-10-28T16:42:17.128Z",
+  "availability": null
+ }
+}

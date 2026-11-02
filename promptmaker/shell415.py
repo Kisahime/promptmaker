@@ -15,8 +15,8 @@ SECTIONS = [("⌂", "Home", ["Home"]),
             ("✦", "Studio", ["Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"]),
             ("☺", "Characters", ["Characters", "Storyboard", "LoRA training"]),
             ("▦", "Gallery", ["Gallery", "A/B Test"]),
-            ("◐", "Tools", ["Image to Prompt", "Auto-refine", "Pose", "Inpaint & Regions", "Face Swap", "Video", "Analyse", "Score"]),
-            ("❖", "Library", ["Presets", "Wildcards", "LoRAs", "History", "Favourites", "Packs", "Community"]),
+            ("◐", "Tools", ["Image to Prompt", "Auto-refine", "Pose", "Inpaint & Regions", "Face Swap", "Wallpaper", "Video", "Analyse", "Score"]),
+            ("❖", "Library", ["Presets", "Wildcards", "LoRAs", "History", "Favourites", "Packs", "Community", "Model browser"]),
             ("⚙", "Settings", ["Settings", "Model profiles", "Library sync"])]
 STUDIO_PAGES = {"Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"}
 RAIL_W, RAIL_W_COLLAPSED = 184, 64

@@ -43,6 +43,10 @@ class CivitaiDialog(QDialog):
             row.addWidget(label(lab)); row.addWidget(wdg)
         row.addStretch(); f.addRow(label("Settings"), row)
         self.sampler = QLineEdit(); f.addRow(label("Sampler"), self.sampler)
+        self.scheduler = QLineEdit(); self.scheduler.setPlaceholderText("e.g. simple, karras, beta")
+        f.addRow(label("Scheduler"), self.scheduler)
+        self.parsed = label("", "hint", wrap=True); f.addRow(label("Normalised"), self.parsed)
+        self.sampler.textChanged.connect(self._preview); self.scheduler.textChanged.connect(self._preview)
         self.res = QLineEdit(); self.res.setPlaceholderText("e.g. 832x1216"); f.addRow(label("Resolution"), self.res)
         self.trained = QLineEdit(); self.trained.setPlaceholderText(tr("trigger words, comma separated (LoRAs)"))
         f.addRow(label("Trained words"), self.trained)
@@ -74,7 +78,14 @@ class CivitaiDialog(QDialog):
         self.pos.setPlainText(s["positive"]); self.neg.setPlainText(s["negative"])
         self.steps.setValue(int(s.get("steps") or 0)); self.cfg.setValue(float(s.get("cfg") or 0))
         self.clip.setValue(int(s.get("clip_skip") or 0))
-        self.sampler.setText(s.get("sampler") or ""); self.res.setText(s.get("resolution") or "")
+        self.sampler.setText(s.get("sampler") or ""); self.scheduler.setText(s.get("scheduler") or "")
+        src = s.get("setting_source") or {}
+        for key, wdg in (("steps", self.steps), ("cfg", self.cfg), ("sampler", self.sampler), ("scheduler", self.scheduler)):
+            uncertain = src.get(key) not in ("author",)
+            wdg.setStyleSheet("background: rgba(255, 170, 0, 0.18);" if uncertain else "")
+            wdg.setToolTip(tr("Source") + ": " + (src.get(key) or tr("not stated – the family default is used")))
+        self._preview()
+        self.res.setText(s.get("resolution") or "")
         self.trained.setText(", ".join(s.get("trained_words") or []))
         src = lambda k: s.get(k + "_source") or "not found"  # noqa: E731
         self.summary.setHtml(
@@ -89,14 +100,26 @@ class CivitaiDialog(QDialog):
         self.status.setText(tr("Fetched – review and save") if not self.existing else tr("Fetched again – review the changes and save"))
         self.save_btn.setEnabled(True)
 
+    def _preview(self, *_):
+        from . import profilenorm as pn
+        fam = (self.win.profiles.get(self.base.currentData()) or {}).get("family", "")
+        g, src, warn = pn.normalise_gen({"sampler": self.sampler.text(), "scheduler": self.scheduler.text()}, fam)
+        txt = f"ComfyUI {g.get('sampler', '–')} + {g.get('scheduler', '–')} · Forge {g.get('a1111_sampler', '–')}" + \
+            (f" / {g['a1111_scheduler']}" if g.get("a1111_scheduler") else "")
+        txt += "".join(f" ({k}: {v})" for k, v in src.items() if v == "family default" and k in ("sampler", "scheduler"))
+        self.parsed.setText(txt + ("".join("<br>⚠️ " + html.escape(w) for w in warn)))
+
     # -------------------------------------------------------------- saving
     def profile(self):
         s = dict(self.sugg)
         orig_steps, orig_cfg = s.get("steps"), s.get("cfg")
         s.update(positive=self.pos.toPlainText().strip(), negative=self.neg.toPlainText().strip(),
                  steps=self.steps.value() or None, cfg=self.cfg.value() or None, clip_skip=self.clip.value() or None,
-                 sampler=self.sampler.text().strip(), resolution=self.res.text().strip().lower().replace(" ", ""),
+                 sampler=self.sampler.text().strip(), scheduler=self.scheduler.text().strip(), resolution=self.res.text().strip().lower().replace(" ", ""),
                  trained_words=[t.strip() for t in self.trained.text().split(",") if t.strip()])
+        s["user_edited"] = [k for k, a, b in (("steps", s["steps"], orig_steps), ("cfg", s["cfg"], float(orig_cfg) if orig_cfg else None),
+                                               ("sampler", s["sampler"], self.sugg.get("sampler") or ""),
+                                               ("scheduler", s["scheduler"], self.sugg.get("scheduler") or "")) if a != b]
         if s["steps"] != orig_steps:
             s["steps_text"] = ""  # edited by hand – describe the new value, not the creator's range
         if s["cfg"] != (float(orig_cfg) if orig_cfg else None):
@@ -109,4 +132,10 @@ class CivitaiDialog(QDialog):
     def save(self):
         if not self.info:
             return
-        self.saved.emit(self.profile()); self.close()
+        from . import profilenorm as pn
+        prof = self.profile()
+        errs = pn.validate(prof)
+        if errs:
+            self.status.setText("⚠️ " + tr("Not saved") + ": " + "; ".join(errs)); return None
+        self.saved.emit(prof); self.close()
+        return prof

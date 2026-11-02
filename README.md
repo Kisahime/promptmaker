@@ -4,14 +4,16 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.1** adds **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.2** adds **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v5.1.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.1.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v5.2.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.2.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
 ## Features
 
+- **🖥 Wallpaper mode** *(5.2, Tools)*: pick your screen – 1920×1080, 2560×1440, 3840×2160, 2560×1080 / 3440×1440 ultrawide, 1080×1920 phone or a custom size – and the app works out the sizes for your target model. It renders at about 1 MP in the screen's shape (1920×1080 → **1280×720 with hires fix ×1.5**), never asks for more than ×2 in one hires pass (4K = hires ×1.5, then Forge's upscaler ×2) so 8 GB cards cope, then Lanczos-resizes and centre-crops to the exact pixel size. See [Wallpaper mode](#wallpaper-mode).
+- **🛍 Civitai Model browser** *(5.2, Library)*: search and filter Civitai models, see versions, files and the creator's settings, and download into your Forge / ComfyUI folders with resume and SHA256 checks. NSFW is off by default. See [Civitai Model browser](#civitai-model-browser).
 - **🎭 Face Swap** *(5.1, Tools)*: our take on Fooocus' FaceSwap, using IP-Adapter Plus Face SDXL (weight 0.75, stop at 0.9 by default). Take the source face from a file, your last image, or a Character's reference image (Characters have a **🎭 Face Swap** button); it is cropped with an adjustable **hair margin** so the whole head and hair are used.
   - **Generate with face**: a new image from your prompt wearing the source face and hair.
   - **Swap into an existing image**: **Auto-mask face + hair** follows the real outline with segmentation models (YuNet / anime YOLO face detection, SegFormer face parsing for photos, anime-seg for anime). Every face is numbered; **👆 Pick face** chooses another person in group pictures. **Include hair** / **Include neck**, Style (Auto / Photo / Anime), Grow, Feather and a brush / eraser for touch-ups. The head is redrawn at SDXL's native resolution, like ADetailer.
@@ -191,6 +193,27 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
 
+## Wallpaper mode
+
+**Tools → Wallpaper.** Choose the screen, write (or **↙ Use Refine prompt**) a scene and press **🖼 Make wallpaper**. The plan line shows every step, e.g. `1280×720 → hires ×1.5 = 1920×1080 → 1920×1080`.
+
+| Screen | SDXL / Illustrious / Pony / Anima | FLUX / Qwen / MOSS / HiDream |
+|---|---|---|
+| 1920×1080 | 1280×720, hires ×1.5 | 1280×720, hires ×1.5 |
+| 2560×1440 | 1280×720, hires ×2 | 1280×720, hires ×2 |
+| 3840×2160 | 1280×720, hires ×1.5, upscale ×2 | 1280×720, hires ×1.5, upscale ×2 |
+| 2560×1080 | 1536×648, hires ×1.7, crop | 1632×688, hires ×1.6, crop |
+| 3440×1440 | 1528×640, hires ×1.5, upscale ×1.55, crop | 1568×656, hires ×1.5, upscale ×1.5, crop |
+| 1080×1920 | 720×1280, hires ×1.5 | 720×1280, hires ×1.5 |
+
+- **Composition** keeps your desktop icons off the subject: *Subject on the right / left / centre* adds wording in your model's style – tags for SDXL (`wide shot, scenery, negative space, character on right side, empty left side`), a sentence for natural-language models, both for Anima.
+- **Hires denoise** (0.35 by default) and the hires upscaler / steps from the inspector are used. **Final step**: on Forge, sizes over ×2 use Forge's upscaler (your hires upscaler if it's a model such as 4x-UltraSharp, else R-ESRGAN 4x+); ComfyUI and *Lanczos resize only* resize locally.
+- Results are saved to `data/Wallpapers` (untick to skip) and can go to the Gallery. On Windows, **🖥 Set as desktop wallpaper** applies it straight away.
+
+## MOSS Image on ComfyUI
+
+*(5.2)* Choose **Settings → Image generation → Workflow → `moss_txt2img`**. Put the model in `models\diffusion_models` (e.g. `moss_image_sft_int8_convrot.safetensors` or a MOSS mix), `qwen3.5_9b_w4a8_gptq.safetensors` in `models\text_encoders` and `flux2-vae_small.safetensors` in `models\vae` (all from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image)), and update ComfyUI. The model picker then lists your diffusion models; the text encoder and VAE are found automatically. Defaults: 25 steps, CFG 3.5, euler / simple, 1024×1024, negative `worst quality, bad anatomy, watermark, jpeg artifact`. **Skip layer guidance** is off by default because it can overblow anime styles; tick it for crisper photoreal. Hires fix and Wallpaper mode work as usual, and choosing a MOSS target model suggests this workflow.
+
 ## Face Swap setup
 
 1. Download [ip-adapter-plus-face_sdxl_vit-h.safetensors](https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors) and put it in Forge's `models\ControlNet` folder (e.g. `C:\AI\sd-webui-forge-classic\models\ControlNet`), then restart Forge. On ComfyUI, install ComfyUI_IPAdapter_plus and its models.
@@ -203,6 +226,16 @@ Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Imag
 **Auto-mask models** download on first use into `data/models`, with progress in the status line: about 100 MB the first time you mask a photo, and about 175 MB more for the first anime image. If the status says *shape*, the download failed (or OpenCV / onnxruntime is missing) and a simpler head-shape mask is used instead.
 
 **Tips for swapping into an image:** describe only the face, hair and the picture's style and lighting in the prompt (e.g. `photo of an adult woman, black hair with bangs, soft daylight, sharp focus`). If the face looks pasted on, lower Denoise to 0.6–0.7; if it doesn't look enough like the source, raise Weight to 0.85–0.9. If skin colour looks off, lower Colour strength; if you can still see an edge, switch Seam blend to Poisson.
+
+## Civitai Model browser
+
+**Library → Model browser** searches Civitai without leaving PromptMaker. Type a search, pick a type, base model, sort and period, and click a card to see its versions, files, description, trained words and the creator's settings.
+
+- **NSFW is off by default.** When it's off, PromptMaker asks Civitai for SFW models only and never loads a preview rated above PG. Tick **Show NSFW** to change that.
+- **⬇ Download** saves the chosen file straight into the right folder for your backend, such as Forge `models\Stable-diffusion` / `models\Lora` or ComfyUI `checkpoints` / `diffusion_models` / `loras` / `vae`. MOSS, Anima, FLUX and Qwen files that hold only the diffusion model go to ComfyUI `diffusion_models`. You can pick another folder.
+- Downloads run in the background and can be cancelled. Download again to resume from where it stopped. Every file is checked against Civitai's SHA256.
+- Many downloads need you to be signed in: add a Civitai API key in **Settings → Civitai** (civitai.com/user/account → API Keys). It is stored in your OS keyring when one is available. The same card has the host (civitai.com or civitai.red) and your Forge / ComfyUI folders.
+- After a download, **Refresh models** reloads your backend's model list and **Create model profile** makes a `civitai_<versionId>` profile with the creator's settings, the right sampler / scheduler and, for MOSS, the `moss_txt2img` workflow.
 
 ## Civitai checkpoint profiles
 

@@ -29,6 +29,8 @@ from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
 from .v5ui import V5Pages
 from .faceswapui import FaceSwapPage
+from .wallpaperui import WallpaperPage
+from .civitaibrowserui import CivitaiBrowserPage
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +46,7 @@ NEGATIVE_PRESETS = {
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
        ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
-       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap")]
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser")]
 
 
 def copy(text):
@@ -80,7 +82,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -122,7 +124,7 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
                            self._characters_page, self._storyboard_page, self._sketch_page, self._training_page,
-                           self._faceswap_page):
+                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
@@ -169,6 +171,8 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
             self.sy_refresh()
         elif name == "Wildcards":
             self.wc_reload()
+        elif name == "Model browser" and not self.cvb_items and not os.environ.get("PROMPTMAKER_NO_NET"):
+            self.cvb_search()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -195,6 +199,8 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
     def _profile_changed(self, *_):
         self.store.set("profile", self.profile["id"])
         p = self.profile
+        if hasattr(self, "wp_update_plan"):  # 5.2: Wallpaper plan follows the target model's family
+            self.wp_update_plan()
         self.mj_box.setVisible(p.get("param_style") == "midjourney")
         neg_ok = p.get("negative") != "unsupported" or p.get("family") in ("OpenAI", "Google")
         self.neg_hint.setText({"unsupported": "No negative prompt for this model" + (
@@ -206,6 +212,7 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
             self.negative.blockSignals(True); self._neg_preset("Model default"); self.negative.blockSignals(False)
         self.profile_tips.setText(" · ".join(p.get("tips", [])[:3]))
         self.apply_profile_checkpoint()
+        self.suggest_profile_workflow()
         if hasattr(self, "sidebar_w"):
             self.apply_profile_image_settings()
             self._update_ckpt_link_label()
@@ -1473,8 +1480,11 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         self.prof_list = QListWidget(); self.prof_list.currentRowChanged.connect(self._prof_selected)
         left.add(self.prof_list, 1)
         left.add(hrow(button("Use as target", self._prof_use, "primary"), button("Duplicate", self._prof_dup)))
-        self.cv_refresh_btn = button("⟳ Refresh from Civitai", self.civitai_refresh, tip="Re-fetch this checkpoint's recommendations")
+        self.cv_refresh_btn = button("⟳ Re-check from Civitai", self.civitai_refresh,
+                                     tip="Re-fetch this checkpoint's recommendations and review the changes before saving")
         left.add(hrow(button("🌐 Import from Civitai…", self.civitai_import, "primary"), self.cv_refresh_btn))
+        left.add(hrow(button("🛠 Repair profiles", self.prof_repair, tip="Fix saved profiles (scheduler typos, combined sampler "
+                             "names, Forge names, 'n/a' tips) – the old file is backed up first"), None))
         row.addWidget(left, 1)
         right = Card("Details")
         self.prof_view = QTextBrowser(); self.prof_view.setOpenExternalLinks(True)
@@ -1544,10 +1554,27 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         try:
             p = json.loads(self.prof_json.toPlainText())
             assert p.get("id") and p.get("name"), "profile needs 'id' and 'name'"
+            from . import profilenorm
+            errs = profilenorm.validate(p)
+            assert not errs, "; ".join(errs)
             profiles.save_profile(self.profiles_path, p)
         except (ValueError, AssertionError, OSError) as e:
             self.notify(f"Not saved: {e}", error=True); return
         self._prof_reload(p["id"]); self.notify("Profile saved")
+
+    def prof_repair(self):
+        """5.2: one-off repair of saved profiles, with a timestamped backup of profiles.json."""
+        from . import profilenorm
+        try:
+            report = profilenorm.repair_file(self.profiles_path, profiles.load())
+        except (OSError, ValueError) as e:
+            self.notify(f"Repair failed: {e}", error=True); return None
+        if report:
+            self._prof_reload()
+            self.notify(tr("Repaired") + f" {len(report)} " + tr("profile(s); backup saved next to profiles.json"))
+        else:
+            self.notify(tr("All profiles look fine"))
+        return report
 
     def _prof_reload(self, select=None):
         try:
@@ -1632,7 +1659,32 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         if kind == "none":
             return None
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
-        return imagegen.make_backend(kind, self.store.get(f"img_url:{kind}", default))
+        b = imagegen.make_backend(kind, self.store.get(f"img_url:{kind}", default))
+        if kind == "comfyui":
+            b.model_loader = self._workflow_loader(self.store.get("img_workflow", "sdxl_txt2img"))
+        return b
+
+    def _workflow_loader(self, name):
+        """5.2: the loader node whose file list fills the model picker for a workflow (UNETLoader for MOSS)."""
+        path = imagegen.list_workflows(os.path.join(self.data_dir, "workflows")).get(name)
+        try:
+            return (imagegen.load_workflow(path)[1].get("model_loader") if path else None) or "CheckpointLoaderSimple"
+        except (OSError, ValueError):
+            return "CheckpointLoaderSimple"
+
+    def suggest_profile_workflow(self):
+        """5.2: a MOSS target model on ComfyUI needs moss_txt2img (separate UNET / text encoder / VAE loaders)."""
+        if self.store.get("img_backend", "none") != "comfyui":
+            return None
+        want = ((self.profile or {}).get("gen") or {}).get("workflow")
+        want = want if want and want != self.store.get("img_workflow", "sdxl_txt2img") else None
+        want = want or imagegen.suggest_workflow((self.profile or {}).get("family", ""), self.store.get("img_workflow", "sdxl_txt2img"))
+        if want and want in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")) and \
+                getattr(self, "_wf_suggested", None) != (self.profile.get("id"), want):
+            self._wf_suggested = (self.profile.get("id"), want)
+            self.notify(tr("Tip") + f": {self.profile.get('family')} " + tr("models need the workflow") +
+                        f" '{want}' – Settings → Image generation → Workflow")
+        return want
 
     def _workflow(self):
         wfs = imagegen.list_workflows(os.path.join(self.data_dir, "workflows"))
@@ -1703,7 +1755,8 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         for cb in getattr(self, "_job_callbacks", {}).pop(job.id, []):
             cb(job)
         self._v5_job_done(job)  # 5.0: tag images with Characters
-        self.notify(tr("Image ready") + " – " + tr("saved to Gallery"))
+        ws = getattr(job, "warnings", None) or []
+        self.notify(tr("Image ready") + " – " + tr("saved to Gallery") + ("" if not ws else " · ⚠️ " + "; ".join(ws)), error=bool(ws))
 
     def _gen_failed(self, job, err):
         job.state, job.error = "failed", err
@@ -2153,6 +2206,11 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         self._ckpt_combos_list().append(self.img_ckpt)
         self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
         wl.addLayout(_frow("Workflow", self.img_wf))
+        self.img_slg = QCheckBox(tr("Skip layer guidance (MOSS – crisper photoreal, can overblow anime)"))
+        self.img_slg.toggled.connect(lambda on: self.store.set(f"img_slg:{self.img_wf.currentText()}", bool(on)))
+        wl.addWidget(self.img_slg)
+        self.img_wf.currentTextChanged.connect(self._img_wf_changed)
+        self._img_wf_changed(self.img_wf.currentText(), reload=False)
         im.add(self.wf_row)
         self.img_steps = QSpinBox(); self.img_steps.setRange(0, 150); self.img_steps.setSpecialValueText("default")
         self.img_steps.setValue(self.store.get("img_steps") or 0)
@@ -2197,7 +2255,17 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         self.cv_key = QLineEdit(); self.cv_key.setEchoMode(QLineEdit.Password)
         self.cv_key.setPlaceholderText(tr("key saved") if self.keys.get("api_key:civitai") else tr("Optional – needed only for NSFW / gated models"))
         cv.add(hrow(label("API key"), self.cv_key, button("Save key", self._cv_key_save), button("Clear key", self._cv_key_clear, "ghost")))
-        cv.add(label("Used by Model profiles → Import from Civitai. Create a key at civitai.com/user/account (API Keys). "
+        self.cv_host = QComboBox(); self.cv_host.setEditable(True)
+        from . import civitai_browser as _cvb
+        for h_ in _cvb.HOSTS:
+            self.cv_host.addItem(h_)
+        self.cv_host.setCurrentText(_cvb.host_of(self.store.get("civitai_api") or civitai.API))
+        self.cv_forge = QLineEdit(self.store.get("forge_dir", "")); self.cv_forge.setPlaceholderText(r"C:\AI\sd-webui-forge-classic")
+        self.cv_comfy = QLineEdit(self.store.get("comfy_dir", "")); self.cv_comfy.setPlaceholderText(r"C:\AI\ComfyUI\ComfyUI_windows_portable\ComfyUI")
+        cv.add(hrow(label("Host"), self.cv_host, button("Save", self._cv_folders_save), None))
+        cv.add(hrow(label("Forge folder"), self.cv_forge))
+        cv.add(hrow(label("ComfyUI folder"), self.cv_comfy))
+        cv.add(label("Used by Model profiles → Import from Civitai and Library → Model browser (most downloads need a key). Create a key at civitai.com/user/account (API Keys). "
                      "Keys are stored in " + self.keys.backend + ". Responses are cached for 24 h in data/cache/civitai.", "hint", wrap=True))
         iv.addWidget(cv)
         cm = Card("Community gallery")
@@ -2222,6 +2290,14 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
     def _cv_key_clear(self):
         self.keys.delete("api_key:civitai"); self.cv_key.setPlaceholderText(tr("Optional – needed only for NSFW / gated models"))
         self.notify(tr("Key removed"))
+
+    def _cv_folders_save(self):
+        from . import civitai_browser as _cvb
+        self.store.set("civitai_api", _cvb.api_base(self.cv_host.currentText()))
+        self.store.set("forge_dir", self.cv_forge.text().strip()); self.store.set("comfy_dir", self.cv_comfy.text().strip())
+        if hasattr(self, "cvb_host_lbl"):
+            self._cvb_host_label()
+        self.notify(tr("Saved"))
 
     # ---------------------------------------------------------------- Civitai import
     def civitai_client(self):
@@ -2248,6 +2324,10 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
                                    existing=profiles.raw_profile(self.profiles_path, p["id"]) or p)
 
     def _civitai_saved(self, prof):
+        from . import profilenorm
+        errs = profilenorm.validate(prof)
+        if errs:
+            self.notify(tr("Not saved") + ": " + "; ".join(errs)[:300], error=True); return
         profiles.save_profile(self.profiles_path, prof)
         self._prof_reload(prof["id"])
         i = self.profile_combo.findData(prof["id"])
@@ -2330,6 +2410,20 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         wk.ok.connect(done); self._keep(wk); wk.start()
         return wk
 
+    def _img_wf_changed(self, name, reload=True):
+        """5.2: show the SLG toggle only for workflows that have it; reload the model list (UNET vs checkpoints)."""
+        p = imagegen.list_workflows(os.path.join(self.data_dir, "workflows")).get(name)
+        meta = imagegen.load_workflow(p)[1] if p else {}
+        self.img_slg.setVisible(bool(meta.get("slg_node")))
+        self.img_slg.blockSignals(True)
+        self.img_slg.setChecked(bool(self.store.get(f"img_slg:{name}", meta.get("defaults", {}).get("slg", False))))
+        self.img_slg.blockSignals(False)
+        if not reload:
+            return
+        self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{name}", ""))
+        if self.img_kind.currentData() == "comfyui" and not os.environ.get("PROMPTMAKER_NO_NET"):
+            self._img_ckpts()
+
     def _img_form(self, *_):
         kind = self.img_kind.currentData()
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
@@ -2404,8 +2498,11 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
         if kind == "none":
             return
         same = kind == self.store.get("img_backend", "none") and self.img_url.text().strip() == self.store.get(f"img_url:{kind}", self.img_url.text().strip())
-        self.load_checkpoints(imagegen.make_backend(kind, self.img_url.text().strip()),
-                              None if same else [self.img_ckpt], force=True)
+        b = imagegen.make_backend(kind, self.img_url.text().strip())
+        if kind == "comfyui":
+            b.model_loader = self._workflow_loader(self.img_wf.currentText())
+            same = same and self.img_wf.currentText() == self.store.get("img_workflow", "sdxl_txt2img")
+        self.load_checkpoints(b, None if same else [self.img_ckpt], force=True)
 
     # ------------------------------------------------- shared checkpoint pickers (Settings / Pose / Auto-refine)
     def _ckpt_combos_list(self):

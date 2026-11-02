@@ -258,7 +258,7 @@ def mine_images(items, min_share=0.4, min_images=2):
 
 
 # ---------------------------------------------------------------- base model → profile
-BASE_MAP = [("illustrious", "illustrious"), ("noobai", "illustrious"), ("pony", "pony"), ("anima", "anima"),
+BASE_MAP = [("moss", "moss"), ("illustrious", "illustrious"), ("noobai", "illustrious"), ("pony", "pony"), ("anima", "anima"),
             ("flux.2", "flux2"), ("flux2", "flux2"), ("flux.1 kontext", "flux_kontext"), ("flux", "flux1"),
             ("sd 3.5", "sd35"), ("sd3.5", "sd35"), ("qwen", "qwen_image"), ("hidream", "hidream"),
             ("sdxl", "sdxl"), ("sd 1", "sdxl")]
@@ -297,22 +297,41 @@ def a1111_sampler(name):
 
 # ---------------------------------------------------------------- suggestion + profile
 def suggest(info):
-    """Merge description parsing (preferred) with sample-image mining into editable suggestions."""
+    """Merge description parsing (preferred) with sample-image mining into editable suggestions.
+    5.2: settings come from the description section that matches the selected version (V5 / no turbo …)."""
+    from . import profilenorm as pn
     v, m = info["version"], info["model"]
     desc = parse_description(v.get("description") or "")
     mdesc = parse_description(m.get("description") or "")
     for k, val in mdesc.items():
         desc.setdefault(k, val)
+    vname = v.get("name") or ""
+    st = pn.parse_settings(html_to_lines(v.get("description") or ""), vname)
+    for k, val in pn.parse_settings(html_to_lines(m.get("description") or ""), vname).items():
+        st.setdefault(k, val)
     mined = mine_images(info.get("images"))
+    neg_none = bool(st.get("negative_none")) and not desc.get("negative")
     s = {"positive": desc.get("positive", ""), "negative": desc.get("negative", ""),
          "positive_source": "description" if desc.get("positive") else "", "negative_source": "description" if desc.get("negative") else ""}
     if not s["positive"] and mined.get("positive_common"):
         s["positive"] = ", ".join(t for t, _ in mined["positive_common"][:20]); s["positive_source"] = "sample images"
-    if not s["negative"] and mined.get("negative_common"):
+    if neg_none:
+        s["negative_source"] = "author: not needed"
+    elif not s["negative"] and mined.get("negative_common"):
         s["negative"] = ", ".join(t for t, _ in mined["negative_common"][:30]); s["negative_source"] = "sample images"
+    s["setting_source"] = {}
     for k in ("steps", "cfg", "sampler", "clip_skip", "resolution", "scheduler"):
-        s[k] = desc.get(k) if desc.get(k) is not None else mined.get(k)
-    s["steps_text"], s["cfg_text"] = desc.get("steps_text", ""), desc.get("cfg_text", "")
+        if st.get(k) is not None:
+            s[k] = st[k]; s["setting_source"][k] = "author"
+        elif mined.get(k) is not None:
+            s[k] = mined[k]; s["setting_source"][k] = "sample images"
+        else:
+            s[k] = None
+    if s.get("sampler") and s["setting_source"].get("sampler") == "author":
+        s["sampler_text"] = st.get("sampler_text", "")
+    s["steps_text"], s["cfg_text"] = st.get("steps_text", ""), st.get("cfg_text", "")
+    s["section"] = st.get("section", "")
+    s["other_author"] = st.get("other_author") or {}
     s["trained_words"] = [w for w in (v.get("trainedWords") or []) if w]
     s["mined"] = mined
     s["base_model"] = v.get("baseModel", "")
@@ -325,62 +344,89 @@ def slug(text):
     return re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")[:40] or "model"
 
 
-def build_profile(info, s, base_id, profiles_by_id, pid=None):
-    """New profile that inherits from base_id and overrides prefix / negative / settings."""
+def build_profile(info, s, base_id, profiles_by_id, pid=None, file=None, file_name=None):
+    """New profile that inherits from base_id and overrides prefix / negative / settings.
+    5.2: normalised sampler/scheduler (ComfyUI + Forge names), 'source' map (author / sample images / family default /
+    user), never an invented negative or 'n/a' tip, actual downloaded file name, Checkpoint vs Diffusion model,
+    split-model workflow / text encoder / VAE and per-family resolutions."""
+    from . import profilenorm as pn
     base = profiles_by_id.get(base_id) or {}
     v, m = info["version"], info["model"]
     pid = pid or f"civitai_{v['id']}"
+    fam = base.get("family", "Civitai")
     prefix = s.get("positive", "").strip()
     trained = [w for w in s.get("trained_words") or [] if w.lower() not in prefix.lower()]
-    settings = []
-    if s.get("steps_text") or s.get("steps"):
-        settings.append(f"Steps {s.get('steps_text') or s['steps']}")
-    if s.get("cfg_text") or s.get("cfg"):
-        settings.append(f"CFG {s.get('cfg_text') or s['cfg']}")
-    if s.get("sampler"):
-        settings.append(f"Sampler {s['sampler']}")
-    if s.get("clip_skip"):
-        settings.append(f"Clip skip {s['clip_skip']}")
-    if s.get("resolution"):
-        settings.append(f"Resolution {s['resolution']}")
-    gen = {}
-    if s.get("steps"):
-        gen["steps"] = int(s["steps"])
-    if s.get("cfg"):
-        gen["cfg"] = float(s["cfg"])
-    if s.get("sampler"):
-        cs, sch = comfy_sampler(s["sampler"])
-        gen.update({k: val for k, val in (("sampler", cs), ("scheduler", s.get("scheduler") or sch),
-                                          ("a1111_sampler", a1111_sampler(s["sampler"]))) if val})
-    if s.get("clip_skip"):
-        gen["clip_skip"] = int(s["clip_skip"])
-    guide = (base.get("ai_guidance", "") + f" Checkpoint '{s.get('name')}' (Civitai, base {v.get('baseModel', '?')}): "
-             + (f"always start with the creator's quality tags: {prefix}. " if prefix else "")
-             + (f"Trigger words: {', '.join(trained)}. " if trained else "")).strip()
+    raw = {k: s.get(k) for k in ("steps", "cfg", "sampler", "scheduler", "clip_skip", "cfg_text", "steps_text")}
+    gen, src, warn = pn.normalise_gen(raw, fam, base.get("gen"))
+    # 'user' only where the value the user typed in the dialog was actually accepted (src 'author' = came from raw);
+    # a rejected entry keeps its real source (family default) and a warning.
+    edited = set(s.get("user_edited") or ())
+    for k in list(src):
+        base_k = {"a1111_sampler": "sampler", "a1111_scheduler": "scheduler"}.get(k, k)
+        if src[k] != "author":
+            continue
+        if base_k in edited:
+            src[k] = "user"
+        elif (s.get("setting_source") or {}).get(base_k):
+            src[k] = s["setting_source"][base_k]
+        elif base_k == "scheduler" and src.get("sampler") != "author" and (s.get("setting_source") or {}).get("sampler"):
+            src[k] = s["setting_source"]["sampler"]  # scheduler read from the sampler text ('er_sde/bong_tangent')
+    if "steps" in edited:
+        gen.pop("steps_range", None)
+    files = [fl for fl in (v.get("files") or []) if isinstance(fl, dict)]
+    file = file or next((fl for fl in files if fl.get("primary")), None) or (files[0] if files else {})
+    ctype = pn.detect_type(m.get("type") or "Checkpoint", file, v.get("baseModel"))
+    if ctype == "Diffusion model":
+        for k, val in pn.SPLIT_FILES.get(base_id, {}).items():
+            gen[k] = val; src[k] = "family default"
+    author = {k: val for k, val in src.items() if val in ("author", "user")}
+    guide = (base.get("ai_guidance", "") + f" Checkpoint '{s.get('name')}' (Civitai, base {v.get('baseModel', '?')})."
+             + (f" Always start with the creator's quality tags: {prefix}." if prefix else "")
+             + (f" Trigger words: {', '.join(trained)}." if trained else "")).strip()
+    tips = pn.creator_tips(gen, src, s, s.get("other_author")) if author or gen else []
+    if s.get("negative_source") == "author: not needed":
+        tips.append("The creator says no negative prompt is needed.")
+    if gen.get("workflow"):
+        tips.append(f"Use the {gen['workflow']} ComfyUI workflow; it does not run in Forge.")
+    elif ctype == "Diffusion model":
+        tips.append("Diffusion-model-only file: load it in ComfyUI with separate text encoder and VAE loaders.")
+    tips += [t for t in base.get("tips", []) if t not in tips][:3]
+    neg_author = s.get("negative", "").strip() if s.get("negative_source") == "description" else ""
+    neg = s.get("negative", "").strip() if s.get("negative_source") != "author: not needed" else ""
     prof = {
         "id": pid, "name": f"{s.get('name')} (Civitai)", "inherits": base_id,
-        "family": base.get("family", "Civitai"),
+        "family": fam,
         "quality_prefix": ", ".join(clean_tags(", ".join([prefix] + trained))) if (prefix or trained) else base.get("quality_prefix", ""),
-        "negative_default": s.get("negative", "").strip() or base.get("negative_default", ""),
-        "settings": " · ".join(settings) or base.get("settings", ""),
-        "ai_guidance": guide,
-        "tips": [f"Recommended by the model creator on Civitai ({s.get('positive_source') or 'n/a'})."] + list(base.get("tips", []))[:3],
-        "sources": [info["url"]] + [x for x in base.get("sources", []) if x != info["url"]][:2],
+        "negative_default": neg or ("" if s.get("negative_source") == "author: not needed" else base.get("negative_default", "")),
+        "settings": pn.settings_line(gen, src, s) or base.get("settings", ""),
+        "ai_guidance": pn.dangling(guide),
+        "tips": [t for t in tips if t and "(n/a)" not in t],
+        "sources": [info["url"]] + [x for x in base.get("sources", []) if x != info["url"]][:3],
         "gen": gen,
+        "source": dict(src, negative_default=(s.get("negative_source") or "family default") if neg or s.get("negative_source") else "family default",
+                       quality_prefix=s.get("positive_source") or "family default"),
         "civitai": {"model_id": m.get("id") or v.get("modelId"), "version_id": v["id"], "version_name": v.get("name"),
-                    "model_name": m.get("name"), "type": m.get("type"),
-                    "file_name": next((fl.get("name") for fl in (v.get("files") or [])
-                                       if isinstance(fl, dict) and fl.get("primary")), None)
-                    or next((fl.get("name") for fl in (v.get("files") or []) if isinstance(fl, dict)), None), "base_model": v.get("baseModel"),
+                    "model_name": m.get("name"), "type": ctype,
+                    "file_name": file_name or file.get("name"), "base_model": v.get("baseModel"),
                     "trained_words": s.get("trained_words") or [], "url": info["url"],
-                    "fetched": time.strftime("%Y-%m-%d"), "positive_source": s.get("positive_source"),
-                    "negative_source": s.get("negative_source")},
+                    "fetched": time.strftime("%Y-%m-%d"), "positive_source": s.get("positive_source") or "",
+                    "negative_source": s.get("negative_source") or "", "author_negative": neg_author},
     }
+    if s.get("section"):
+        prof["civitai"]["matched_section"] = s["section"]
+    if s.get("other_author"):
+        prof["civitai"]["other_author_values"] = s["other_author"]
+    if warn:
+        prof["civitai"]["warnings"] = warn
+    res = pn.family_resolutions(fam, base.get("resolutions", {}))
     if s.get("resolution") and re.fullmatch(r"\d+x\d+", str(s["resolution"])):
         w, h = map(int, s["resolution"].split("x"))
-        res = dict(base.get("resolutions", {}))
-        key = {1: "1:1"}.get(1 if w == h else 0)
-        if key:
-            res[key] = s["resolution"]
+        mult = pn.FAMILY_RES_MULTIPLE.get(fam)
+        r = pn.snap_res(s["resolution"], mult) if mult else s["resolution"]
+        ratio = w / h
+        key = min(res or {"1:1": ""}, key=lambda a: abs(ratio - (lambda x, y: x / y)(*map(int, a.split(":")))))
+        if abs(ratio - (lambda x, y: x / y)(*map(int, key.split(":")))) < 0.06:
+            res[key] = r; prof["source"]["resolution"] = s.get("setting_source", {}).get("resolution", "author")
+    if res:
         prof["resolutions"] = res
     return prof

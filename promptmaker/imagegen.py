@@ -11,7 +11,8 @@ import urllib.request
 import uuid
 
 WORKFLOW_DIR = os.path.join(os.path.dirname(__file__), "workflows")
-PLACEHOLDERS = ("prompt", "negative", "width", "height", "seed", "steps", "cfg", "checkpoint", "sampler", "scheduler")
+PLACEHOLDERS = ("prompt", "negative", "width", "height", "seed", "steps", "cfg", "checkpoint", "sampler", "scheduler",
+                "text_encoder", "vae")
 NUMERIC = {"width", "height", "seed", "steps", "cfg"}
 
 
@@ -142,6 +143,46 @@ def inject(workflow, values):
     return walk(wf)
 
 
+# 5.2: model family -> the bundled workflow that loads it properly (MOSS needs separate UNET / TE / VAE loaders).
+FAMILY_WORKFLOWS = {"MOSS": "moss_txt2img"}
+
+
+def suggest_workflow(family, current=""):
+    """The workflow to suggest for a target-model family, or None when the current one is already right / no opinion."""
+    want = FAMILY_WORKFLOWS.get(family or "")
+    return want if want and want != current else None
+
+
+def bypass_node(wf, node_id, input_name="model"):
+    """Remove a pass-through node (e.g. SkipLayerGuidanceDiTSimple): everything that used it is rewired to its input."""
+    wf = copy.deepcopy(wf)
+    n = wf.pop(str(node_id), None)
+    if not n:
+        return wf
+    src = n.get("inputs", {}).get(input_name)
+    for node in wf.values():
+        for k, v in list(node.get("inputs", {}).items()):
+            if isinstance(v, list) and len(v) == 2 and str(v[0]) == str(node_id):
+                node["inputs"][k] = src
+    return wf
+
+
+def pick_file(names, default, hints=()):
+    """Auto-detect a model file: the default if ComfyUI has it, else the first name containing a hint, else the default."""
+    names = list(names or [])
+    if default in names:
+        return default
+    low = default.lower()
+    for nm in names:  # same file in a sub-folder (e.g. 'moss/qwen3.5_9b_w4a8_gptq.safetensors')
+        if nm.replace("\\", "/").split("/")[-1].lower() == low:
+            return nm
+    for h in hints:
+        for nm in names:
+            if h in nm.lower():
+                return nm
+    return default
+
+
 def list_workflows(extra_dir=None):
     out = {}
     for d in [WORKFLOW_DIR] + ([extra_dir] if extra_dir else []):
@@ -167,6 +208,10 @@ class Job:
         self.steps, self.cfg = int(steps), float(cfg)
         self.profile, self.checkpoint, self.workflow = profile, checkpoint, workflow
         self.sampler, self.scheduler, self.tag = sampler, scheduler, tag
+        self.text_encoder_pref, self.vae_pref = "", ""  # 5.2: profile preference, used when ComfyUI has the file
+        self.text_encoder, self.vae = "", ""  # 5.2: MOSS-style workflows; empty = auto-detect from ComfyUI
+        self.slg = None         # 5.2: skip layer guidance on/off for workflows with a _meta slg_node (None = workflow default)
+        self.workflow_meta = {}
         self.clip_skip = None
         self.controlnet_applied = None  # True/False/None after a Forge run with ControlNet
         self.controlnet = None  # {"image": png bytes, "model": str, "weight": float} – OpenPose from the sketcher
@@ -200,6 +245,7 @@ class ComfyUI:
         self.url = url.rstrip("/")
         self.client_id = uuid.uuid4().hex
         self._prompt_id = None
+        self.model_loader = "CheckpointLoaderSimple"  # 5.2: 'UNETLoader' for workflows that load models/diffusion_models
 
     def test(self):
         s = _http(self.url + "/system_stats", timeout=5)
@@ -207,12 +253,34 @@ class ComfyUI:
         ver = s.get("system", {}).get("comfyui_version", "")
         return f"ComfyUI {ver} connected" + (f" · {dev}" if dev else "")
 
-    def checkpoints(self):
+    LOADER_INPUTS = {"CheckpointLoaderSimple": "ckpt_name", "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
+                     "VAELoader": "vae_name"}
+
+    def node_files(self, node, key=None):
+        """File list of a loader node from /object_info (e.g. UNETLoader → models/diffusion_models)."""
+        key = key or self.LOADER_INPUTS.get(node, "ckpt_name")
         try:
-            info = _http(self.url + "/object_info/CheckpointLoaderSimple", timeout=10)
-            return info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0]
+            info = _http(self.url + "/object_info/" + node, timeout=10)
+            return list(info[node]["input"]["required"][key][0])
         except (BackendError, KeyError, IndexError, TypeError):
             return []
+
+    def checkpoints(self):
+        return self.node_files(self.model_loader or "CheckpointLoaderSimple")
+
+    def resolve_files(self, job, meta):
+        """Fill job.text_encoder / job.vae from the workflow defaults, auto-detected against what ComfyUI has."""
+        d = (meta or {}).get("defaults", {})
+        for attr, node, hints in (("text_encoder", "CLIPLoader", ("qwen3.5", "qwen3_5")), ("vae", "VAELoader", ("flux2",))):
+            if getattr(job, attr) or not d.get(attr):
+                continue
+            files = self.node_files(node)
+            pref = getattr(job, attr + "_pref", "")  # 5.2: from the model profile (gen.text_encoder / gen.vae)
+            if pref:
+                hit = pick_file(files, pref, ())
+                if hit in files:
+                    setattr(job, attr, hit); continue
+            setattr(job, attr, pick_file(files, d[attr], hints))
 
     def status(self):
         """Cheap poll for the sidebar: ('online', label). Raises BackendError when offline."""
@@ -229,6 +297,33 @@ class ComfyUI:
 
     def samplers(self):
         return self._ksampler("sampler_name")
+
+    def check_installed(self, job, vals):
+        """5.2: a profile may name a custom-node sampler/scheduler (RES4LYF bong_tangent, res_2s …). If this ComfyUI does
+        not list it in /object_info KSampler, fall back to a core value now (not at save time) and record a warning."""
+        from . import profilenorm as pn
+        fb = {"sampler": "euler", "scheduler": "simple"}
+        for key, enum in (("sampler", "sampler_name"), ("scheduler", "scheduler")):
+            val = vals.get(key)
+            if not val:
+                continue
+            cache = getattr(self, "_ks_cache", None) or {}
+            if enum not in cache:
+                cache[enum] = self._ksampler(enum); self._ks_cache = cache
+            have = cache[enum]
+            if have and val not in have:
+                new = fb[key] if fb[key] in have else have[0]
+                pack = pn.needs_node(val) or ((getattr(job, "custom_nodes", None) or {}).get(val)) or "a custom node"
+                msg = f"ComfyUI has no {key} '{val}' (needs {pack}) – used '{new}' instead"
+                vals[key] = new
+                ws = getattr(job, "warnings", None)
+                if isinstance(ws, list):
+                    ws.append(msg)
+                else:
+                    try:
+                        job.warnings = [msg]
+                    except AttributeError:
+                        pass
 
     def schedulers(self):
         return self._ksampler("scheduler")
@@ -269,7 +364,17 @@ class ComfyUI:
             workflow = comfy_upscale_workflow(self.upload_image(up["image"], f"pm_upscale_{job.id}.png"), up.get("scale", 1.5))
         vals = job.values()
         vals["sampler"], vals["scheduler"] = comfy_names(vals.get("sampler"), vals.get("scheduler"))
+        self.check_installed(job, vals)
+        meta = getattr(job, "workflow_meta", None) or {}
+        if "{{text_encoder}}" in json.dumps(workflow) or "{{vae}}" in json.dumps(workflow):
+            self.resolve_files(job, meta)
+            vals.update(text_encoder=job.text_encoder, vae=job.vae)
         wf = inject(workflow, vals)
+        slg_node = meta.get("slg_node")
+        if slg_node and slg_node in wf:
+            slg = getattr(job, "slg", None)
+            if not (meta.get("defaults", {}).get("slg", False) if slg is None else slg):
+                wf = bypass_node(wf, slg_node)
         rg = getattr(job, "regions", None)
         ip = getattr(job, "inpaint", None)
         if rg or ip:
