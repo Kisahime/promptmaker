@@ -356,11 +356,8 @@ class CivitaiBrowserPage:
         if os.path.exists(dest):
             self.cvb_dl_status.setText("✓ " + tr("Already downloaded") + f": {dest}")
             self._cvb_finished(dest); return None
-        url = f["url"]
-        host = self.cvb_host()
-        if host != "civitai.com":
-            url = url.replace("://civitai.com/", f"://{host}/")
-        wk = DownloadWorker(url, dest, self.keys.get("api_key:civitai"), f.get("sha256", ""), self.cvb_opener)
+        url = cb.download_url(f["url"], self.cvb_host())
+        wk = DownloadWorker(url, dest, (self.keys.get("api_key:civitai") or "").strip(), f.get("sha256", ""), self.cvb_opener)
         wk.progress.connect(self._cvb_progress)
         wk.ok.connect(self._cvb_finished)
         wk.failed.connect(self._cvb_failed)

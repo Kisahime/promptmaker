@@ -314,7 +314,56 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
                 if k.lower() == "authorization":
                     del new.headers[k]
             new.unredirected_hdrs.pop("Authorization", None)
+            new.full_url = strip_token(new.full_url)
         return new
+
+
+CIVITAI_HOSTS = ("civitai.com", "civitai.red")
+
+
+def _is_civitai(url):
+    h = (urllib.parse.urlparse(url).hostname or "").lower()
+    return any(h == c or h.endswith("." + c) for c in CIVITAI_HOSTS)
+
+
+def strip_token(url):
+    """Remove any token= query parameter (used for logging and cross-host redirects)."""
+    u = urllib.parse.urlsplit(url)
+    if "token=" not in u.query:
+        return url
+    q = [(k, v) for k, v in urllib.parse.parse_qsl(u.query, keep_blank_values=True) if k.lower() != "token"]
+    return urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q)))
+
+
+def with_token(url, api_key):
+    """Civitai's documented download auth: ?token=<key> on the /api/download URL. Only added for Civitai hosts."""
+    url = strip_token(url)
+    if not api_key or not _is_civitai(url):
+        return url
+    u = urllib.parse.urlsplit(url)
+    q = urllib.parse.parse_qsl(u.query, keep_blank_values=True) + [("token", api_key)]
+    return urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q)))
+
+
+def download_url(file_url, host="civitai.com"):
+    """Point a file's downloadUrl at the chosen Civitai host (only Civitai hosts are rewritten)."""
+    u = urllib.parse.urlsplit(file_url)
+    if _is_civitai(file_url) and host in CIVITAI_HOSTS:
+        u = u._replace(scheme="https", netloc=host)
+    return urllib.parse.urlunsplit(u)
+
+
+def _err_detail(e):
+    try:
+        body = e.read(2000).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        import json as _json
+        d = _json.loads(body)
+        return str(d.get("message") or d.get("error") or "")[:200]
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def default_opener(req, timeout):
@@ -337,6 +386,25 @@ def safe_name(name):
 
 def download(url, dest, api_key="", sha256="", progress=None, cancel=None, opener=default_opener, timeout=30,
              chunk=1 << 20, retries=3, user_agent=civitai.UA):
+    """Like _download, but if a civitai.red download is refused (401/403) retry once via civitai.com
+    (same accounts and API keys)."""
+    api_key = (api_key or "").strip()
+    kw = dict(api_key=api_key, sha256=sha256, progress=progress, cancel=cancel, opener=opener, timeout=timeout,
+              chunk=chunk, retries=retries, user_agent=user_agent)
+    try:
+        return _download(url, dest, **kw)
+    except AuthError:
+        if urllib.parse.urlparse(url).hostname == "civitai.red":
+            return _download(download_url(url, "civitai.com"), dest, **kw)
+        raise
+
+
+class AuthError(CivitaiError):
+    pass
+
+
+def _download(url, dest, api_key="", sha256="", progress=None, cancel=None, opener=default_opener, timeout=30,
+              chunk=1 << 20, retries=3, user_agent=civitai.UA):
     """Download to dest (via dest.part, resumed with a Range request), verify SHA256, then move into place.
     progress(done, total); cancel is a threading.Event – on cancel the .part is kept for resuming."""
     part = dest + ".part"
@@ -350,13 +418,25 @@ def download(url, dest, api_key="", sha256="", progress=None, cancel=None, opene
         if have:
             headers["Range"] = f"bytes={have}-"
         try:
-            r = opener(urllib.request.Request(url, headers=headers), timeout)
+            r = opener(urllib.request.Request(with_token(url, api_key), headers=headers), timeout)
         except urllib.error.HTTPError as e:
             if e.code == 416 and have:  # already complete
                 break
             if e.code in (401, 403):
-                raise CivitaiError("Civitai needs you to be signed in for this download (HTTP %d). Add your Civitai API key in "
-                                   "Settings → Civitai (civitai.com/user/account → API Keys)." % e.code) from e
+                where = urllib.parse.urlparse(getattr(e, "url", None) or getattr(e, "filename", None) or url).hostname or "?"
+                detail = _err_detail(e)
+                detail = f" Server said: “{detail}”." if detail else ""
+                if not api_key:
+                    msg = (f"Civitai needs you to be signed in for this download (HTTP {e.code}, no API key was sent).{detail} "
+                           "Add your Civitai API key in Settings → Civitai (civitai.com/user/account → API Keys).")
+                elif e.code == 401:
+                    msg = (f"Civitai rejected your API key (HTTP 401 from {where}; a key was sent).{detail} Check the key in "
+                           "Settings → Civitai – it may have been deleted or mistyped; create a new one at civitai.com/user/account.")
+                else:
+                    msg = (f"Civitai refused this download even with your API key (HTTP 403 from {where}; a key was sent).{detail} "
+                           "It may be early access, need you to accept the model's terms on the website, or be restricted "
+                           "for your account or region. Try downloading it once in your browser.")
+                raise AuthError(msg) from e
             if e.code == 404:
                 raise CivitaiError("Civitai: file not found (HTTP 404)") from e
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
