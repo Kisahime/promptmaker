@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.2.0] - 2026-11-02
+
+### Added
+- **Wallpaper mode** (Tools → Wallpaper): wallpapers at the exact screen size.
+  - Targets: 1920×1080, 2560×1440, 3840×2160, 2560×1080 and 3440×1440 ultrawide, 1080×1920 phone, or a custom width × height.
+  - Picks a base size of about 1 MP in the screen's aspect for the target model's family (multiples of 8, preferring exact-aspect sizes and 64 px buckets for SDXL / Illustrious / Pony / Anima; multiples of 16 for FLUX, Qwen, MOSS and HiDream) and a hires-fix scale in 0.05 steps so the result is at or just over the target – 1920×1080 → 1280×720 ×1.5.
+  - Never more than ×2 in one hires pass: when more is needed (4K, 3440×1440) hires stays at ×1.5 and a final upscale follows – Forge's upscaler model through Extras, or a local Lanczos resize – then a centre crop to the exact size.
+  - **Icon-safe composition**: subject on the right, left or centre, written in the model's prompt style (tags, natural language, or both for Anima).
+  - Saves to `data/Wallpapers`, **Save to Gallery**, and on Windows **Set as desktop wallpaper**.
+  - Works with Forge (enable_hr + Extras upscale) and ComfyUI (LatentUpscaleBy hires pass + local resize).
+
 ## [5.1.0] - 2026-11-01
 
 ### Added

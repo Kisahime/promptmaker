@@ -29,6 +29,7 @@ from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
 from .v5ui import V5Pages
 from .faceswapui import FaceSwapPage
+from .wallpaperui import WallpaperPage
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +45,7 @@ NEGATIVE_PRESETS = {
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
        ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
-       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap")]
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper")]
 
 
 def copy(text):
@@ -80,7 +81,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -122,7 +123,7 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
                            self._characters_page, self._storyboard_page, self._sketch_page, self._training_page,
-                           self._faceswap_page):
+                           self._faceswap_page, self._wallpaper_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
@@ -195,6 +196,8 @@ class MainWindow(Shell415, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QM
     def _profile_changed(self, *_):
         self.store.set("profile", self.profile["id"])
         p = self.profile
+        if hasattr(self, "wp_update_plan"):  # 5.2: Wallpaper plan follows the target model's family
+            self.wp_update_plan()
         self.mj_box.setVisible(p.get("param_style") == "midjourney")
         neg_ok = p.get("negative") != "unsupported" or p.get("family") in ("OpenAI", "Google")
         self.neg_hint.setText({"unsupported": "No negative prompt for this model" + (
