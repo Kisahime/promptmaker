@@ -273,6 +273,8 @@ class V3Pages:
         clean = re.sub(r"\s--\w+(\s+[^-\s][^\s]*)?", "", prompt) if "--" in prompt else prompt
         g = self.profile.get("gen") or {}
         ps = self.image_settings_for() if hasattr(self, "image_settings_for") else {}  # 4.1: remembered per target model
+        if not (negative or "").strip() and d.get("negative"):
+            negative = d["negative"]  # 5.2: workflow's recommended negative (MOSS)
         job = imagegen.Job(clean, negative, w, h, seed, ps.get("steps") or g.get("steps") or self.store.get("img_steps") or d.get("steps", 25),
                            ps.get("cfg") or g.get("cfg") or self.store.get("img_cfg") or d.get("cfg", 6.0), self.profile["name"],
                            self.store.get(f"img_checkpoint:{wf_name or 'a1111'}") or d.get("checkpoint", ""), wf_name or "a1111",
@@ -285,6 +287,12 @@ class V3Pages:
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
         job.profile_family = self.profile.get("family", "")
+        job.workflow_meta = meta
+        if wf_name:  # 5.2: optional per-workflow text encoder / VAE override; empty = auto-detect
+            job.text_encoder = self.store.get(f"img_text_encoder:{wf_name}", "") or ""
+            job.vae = self.store.get(f"img_vae:{wf_name}", "") or ""
+            if meta.get("slg_node"):
+                job.slg = bool(self.store.get(f"img_slg:{wf_name}", meta.get("defaults", {}).get("slg", False)))
         try:
             from . import loras as _lo
             job.profile_base = _lo.base_id_of(self.profile, getattr(self, "profiles", None))

@@ -209,6 +209,7 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
             self.negative.blockSignals(True); self._neg_preset("Model default"); self.negative.blockSignals(False)
         self.profile_tips.setText(" · ".join(p.get("tips", [])[:3]))
         self.apply_profile_checkpoint()
+        self.suggest_profile_workflow()
         if hasattr(self, "sidebar_w"):
             self.apply_profile_image_settings()
             self._update_ckpt_link_label()
@@ -1635,7 +1636,30 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
         if kind == "none":
             return None
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
-        return imagegen.make_backend(kind, self.store.get(f"img_url:{kind}", default))
+        b = imagegen.make_backend(kind, self.store.get(f"img_url:{kind}", default))
+        if kind == "comfyui":
+            b.model_loader = self._workflow_loader(self.store.get("img_workflow", "sdxl_txt2img"))
+        return b
+
+    def _workflow_loader(self, name):
+        """5.2: the loader node whose file list fills the model picker for a workflow (UNETLoader for MOSS)."""
+        path = imagegen.list_workflows(os.path.join(self.data_dir, "workflows")).get(name)
+        try:
+            return (imagegen.load_workflow(path)[1].get("model_loader") if path else None) or "CheckpointLoaderSimple"
+        except (OSError, ValueError):
+            return "CheckpointLoaderSimple"
+
+    def suggest_profile_workflow(self):
+        """5.2: a MOSS target model on ComfyUI needs moss_txt2img (separate UNET / text encoder / VAE loaders)."""
+        if self.store.get("img_backend", "none") != "comfyui":
+            return None
+        want = imagegen.suggest_workflow((self.profile or {}).get("family", ""), self.store.get("img_workflow", "sdxl_txt2img"))
+        if want and want in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")) and \
+                getattr(self, "_wf_suggested", None) != (self.profile.get("id"), want):
+            self._wf_suggested = (self.profile.get("id"), want)
+            self.notify(tr("Tip") + f": {self.profile.get('family')} " + tr("models need the workflow") +
+                        f" '{want}' – Settings → Image generation → Workflow")
+        return want
 
     def _workflow(self):
         wfs = imagegen.list_workflows(os.path.join(self.data_dir, "workflows"))
@@ -2156,6 +2180,11 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
         self._ckpt_combos_list().append(self.img_ckpt)
         self.wf_row = QWidget(); wl = QHBoxLayout(self.wf_row); wl.setContentsMargins(0, 0, 0, 0)
         wl.addLayout(_frow("Workflow", self.img_wf))
+        self.img_slg = QCheckBox(tr("Skip layer guidance (MOSS – crisper photoreal, can overblow anime)"))
+        self.img_slg.toggled.connect(lambda on: self.store.set(f"img_slg:{self.img_wf.currentText()}", bool(on)))
+        wl.addWidget(self.img_slg)
+        self.img_wf.currentTextChanged.connect(self._img_wf_changed)
+        self._img_wf_changed(self.img_wf.currentText(), reload=False)
         im.add(self.wf_row)
         self.img_steps = QSpinBox(); self.img_steps.setRange(0, 150); self.img_steps.setSpecialValueText("default")
         self.img_steps.setValue(self.store.get("img_steps") or 0)
@@ -2333,6 +2362,20 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
         wk.ok.connect(done); self._keep(wk); wk.start()
         return wk
 
+    def _img_wf_changed(self, name, reload=True):
+        """5.2: show the SLG toggle only for workflows that have it; reload the model list (UNET vs checkpoints)."""
+        p = imagegen.list_workflows(os.path.join(self.data_dir, "workflows")).get(name)
+        meta = imagegen.load_workflow(p)[1] if p else {}
+        self.img_slg.setVisible(bool(meta.get("slg_node")))
+        self.img_slg.blockSignals(True)
+        self.img_slg.setChecked(bool(self.store.get(f"img_slg:{name}", meta.get("defaults", {}).get("slg", False))))
+        self.img_slg.blockSignals(False)
+        if not reload:
+            return
+        self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{name}", ""))
+        if self.img_kind.currentData() == "comfyui" and not os.environ.get("PROMPTMAKER_NO_NET"):
+            self._img_ckpts()
+
     def _img_form(self, *_):
         kind = self.img_kind.currentData()
         default = "http://127.0.0.1:8188" if kind == "comfyui" else "http://127.0.0.1:7860"
@@ -2407,8 +2450,11 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
         if kind == "none":
             return
         same = kind == self.store.get("img_backend", "none") and self.img_url.text().strip() == self.store.get(f"img_url:{kind}", self.img_url.text().strip())
-        self.load_checkpoints(imagegen.make_backend(kind, self.img_url.text().strip()),
-                              None if same else [self.img_ckpt], force=True)
+        b = imagegen.make_backend(kind, self.img_url.text().strip())
+        if kind == "comfyui":
+            b.model_loader = self._workflow_loader(self.img_wf.currentText())
+            same = same and self.img_wf.currentText() == self.store.get("img_workflow", "sdxl_txt2img")
+        self.load_checkpoints(b, None if same else [self.img_ckpt], force=True)
 
     # ------------------------------------------------- shared checkpoint pickers (Settings / Pose / Auto-refine)
     def _ckpt_combos_list(self):

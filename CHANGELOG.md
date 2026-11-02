@@ -12,6 +12,14 @@ All notable changes to this project are documented here. The format follows [Kee
   - **Icon-safe composition**: subject on the right, left or centre, written in the model's prompt style (tags, natural language, or both for Anima).
   - Saves to `data/Wallpapers`, **Save to Gallery**, and on Windows **Set as desktop wallpaper**.
   - Works with Forge (enable_hr + Extras upscale) and ComfyUI (LatentUpscaleBy hires pass + local resize).
+- **MOSS Image workflow for ComfyUI** (`moss_txt2img`, Settings → Image generation → Workflow), based on Comfy-Org's official `image_moss_image_t2i` template.
+  - UNETLoader (models/diffusion_models) → optional SkipLayerGuidanceDiTSimple (layer 22, 0–50 %) → KSampler; CLIPLoader type `moss_image`; VAELoader; EmptyFlux2LatentImage.
+  - The model picker lists `models/diffusion_models` (ComfyUI `/object_info/UNETLoader`) instead of checkpoints for this workflow.
+  - Text encoder and VAE are auto-detected: `qwen3.5_9b_w4a8_gptq.safetensors` and `flux2-vae_small.safetensors` when present (also in sub-folders), else another Qwen3.5 / FLUX.2 file.
+  - Defaults: 25 steps, CFG 3.5, euler / simple, 1024×1024, negative `worst quality, bad anatomy, watermark, jpeg artifact`.
+  - Skip layer guidance is off by default (it can overblow anime styles); a Settings checkbox turns it on.
+  - Hires fix and Wallpaper mode work with it (multiples of 16). Picking a MOSS target model on ComfyUI suggests this workflow.
+  - Workflows can use new `{{text_encoder}}` / `{{vae}}` placeholders and `_meta` keys `model_loader` and `slg_node`.
 
 ## [5.1.0] - 2026-11-01
 

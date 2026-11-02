@@ -209,6 +209,10 @@ Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Imag
 - **Hires denoise** (0.35 by default) and the hires upscaler / steps from the inspector are used. **Final step**: on Forge, sizes over ×2 use Forge's upscaler (your hires upscaler if it's a model such as 4x-UltraSharp, else R-ESRGAN 4x+); ComfyUI and *Lanczos resize only* resize locally.
 - Results are saved to `data/Wallpapers` (untick to skip) and can go to the Gallery. On Windows, **🖥 Set as desktop wallpaper** applies it straight away.
 
+## MOSS Image on ComfyUI
+
+*(5.2)* Choose **Settings → Image generation → Workflow → `moss_txt2img`**. Put the model in `models\diffusion_models` (e.g. `moss_image_sft_int8_convrot.safetensors` or a MOSS mix), `qwen3.5_9b_w4a8_gptq.safetensors` in `models\text_encoders` and `flux2-vae_small.safetensors` in `models\vae` (all from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image)), and update ComfyUI. The model picker then lists your diffusion models; the text encoder and VAE are found automatically. Defaults: 25 steps, CFG 3.5, euler / simple, 1024×1024, negative `worst quality, bad anatomy, watermark, jpeg artifact`. **Skip layer guidance** is off by default because it can overblow anime styles; tick it for crisper photoreal. Hires fix and Wallpaper mode work as usual, and choosing a MOSS target model suggests this workflow.
+
 ## Face Swap setup
 
 1. Download [ip-adapter-plus-face_sdxl_vit-h.safetensors](https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors) and put it in Forge's `models\ControlNet` folder (e.g. `C:\AI\sd-webui-forge-classic\models\ControlNet`), then restart Forge. On ComfyUI, install ComfyUI_IPAdapter_plus and its models.

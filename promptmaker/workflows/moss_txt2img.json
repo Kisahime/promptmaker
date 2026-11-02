@@ -1,0 +1,15 @@
+{
+ "_meta": {"name": "MOSS Image txt2img", "description": "MOSS Image (based on Comfy-Org's image_moss_image_t2i template): diffusion model from models/diffusion_models (UNETLoader), Qwen3.5 9B text encoder (CLIPLoader type moss_image) and the FLUX.2 small VAE. Skip layer guidance (layer 22) is off by default because it can overblow anime styles; turn it on in Settings for photoreal.", "model_loader": "UNETLoader", "family": "MOSS", "slg_node": "15", "defaults": {"steps": 25, "cfg": 3.5, "sampler": "euler", "scheduler": "simple", "width": 1024, "height": 1024, "checkpoint": "moss_image_sft_int8_convrot.safetensors", "text_encoder": "qwen3.5_9b_w4a8_gptq.safetensors", "vae": "flux2-vae_small.safetensors", "negative": "worst quality, bad anatomy, watermark, jpeg artifact", "slg": false}},
+ "workflow": {
+  "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "{{checkpoint}}", "weight_dtype": "default"}},
+  "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "{{text_encoder}}", "type": "moss_image", "device": "default"}},
+  "3": {"class_type": "VAELoader", "inputs": {"vae_name": "{{vae}}"}},
+  "15": {"class_type": "SkipLayerGuidanceDiTSimple", "inputs": {"model": ["1", 0], "double_layers": "", "single_layers": "22", "start_percent": 0.0, "end_percent": 0.5}},
+  "4": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{prompt}}", "clip": ["2", 0]}},
+  "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{negative}}", "clip": ["2", 0]}},
+  "6": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": "{{width}}", "height": "{{height}}", "batch_size": 1}},
+  "7": {"class_type": "KSampler", "inputs": {"seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}", "sampler_name": "{{sampler}}", "scheduler": "{{scheduler}}", "denoise": 1.0, "model": ["15", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "PromptMaker", "images": ["8", 0]}}
+ }
+}
