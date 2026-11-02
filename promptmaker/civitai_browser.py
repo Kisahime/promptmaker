@@ -117,7 +117,96 @@ def card(m):
     return {"id": m.get("id"), "name": m.get("name") or "?", "creator": (m.get("creator") or {}).get("username") or "?",
             "type": m.get("type") or "", "base": v.get("baseModel") or "", "downloads": int(st.get("downloadCount") or 0),
             "likes": int(st.get("thumbsUpCount") or st.get("favoriteCount") or 0),
-            "thumb": thumb_url(imgs[0]["url"]) if imgs else "", "hidden": v.get("_hidden", 0)}
+            "thumb": thumb_url(imgs[0]["url"]) if imgs else "", "hidden": v.get("_hidden", 0),
+            "early_access": early_access(v)}
+
+
+def _parse_dt(s):
+    if not s:
+        return None
+    try:
+        import datetime as _dt
+        d = _dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=_dt.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _num(x):
+    try:
+        n = int(float(x))
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def early_access(version, now=None):
+    """Early Access / paid-access info for a model version, or None when it's free to download.
+    Civitai API v1 signals: availability == "EarlyAccess", earlyAccessEndsAt / earlyAccessDeadline (ISO),
+    earlyAccessConfig {timeframe (days), chargeForDownload, downloadPrice (Buzz), donationGoal…}, and
+    paidAccess {permanent, endsAt} (newer field). Returns {"ends": aware datetime|None, "price": int|None,
+    "permanent": bool}."""
+    import datetime as _dt
+    v = version or {}
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    cfg = v.get("earlyAccessConfig") if isinstance(v.get("earlyAccessConfig"), dict) else {}
+    pa = v.get("paidAccess") if isinstance(v.get("paidAccess"), dict) else None
+    flagged = (str(v.get("availability") or "").lower() == "earlyaccess" or bool(cfg) or pa is not None
+               or bool(v.get("earlyAccessEndsAt") or v.get("earlyAccessDeadline")))
+    if not flagged:
+        return None
+    ends = _parse_dt(v.get("earlyAccessEndsAt") or v.get("earlyAccessDeadline") or (pa or {}).get("endsAt"))
+    if ends is None and _num(cfg.get("timeframe")):
+        pub = _parse_dt(v.get("publishedAt"))
+        if pub:
+            ends = pub + _dt.timedelta(days=_num(cfg.get("timeframe")))
+    permanent = bool((pa or {}).get("permanent")) and ends is None
+    if ends is not None and ends <= now:
+        return None  # early access is over – free now
+    if ends is None and not permanent and str(v.get("availability") or "").lower() != "earlyaccess" and not cfg:
+        return None
+    price = _num(cfg.get("downloadPrice") or cfg.get("price")) if cfg.get("chargeForDownload", True) else None
+    return {"ends": ends, "price": price, "permanent": permanent}
+
+
+def local_date(d):
+    return d.astimezone().strftime("%d %b %Y, %H:%M") if d else ""
+
+
+def early_access_text(info):
+    if not info:
+        return ""
+    if info["permanent"]:
+        s = "Paid access: this version must be unlocked with Buzz on Civitai (no free date)"
+    elif info["ends"]:
+        s = f"Early Access: free from {local_date(info['ends'])}"
+    else:
+        s = "Early Access: not free to download yet"
+    if info["price"]:
+        s += f" (or costs {info['price']:,} Buzz to unlock now)"
+    elif not info["permanent"]:
+        s += " (or unlock it now with Buzz on Civitai)"
+    return s
+
+
+def latest_free_version(model, now=None):
+    """The newest version that isn't early access (versions are listed newest first)."""
+    return next((v for v in (model or {}).get("modelVersions") or [] if not early_access(v, now)), None)
+
+
+def early_access_error(err, info=None):
+    """Turn a 401/403 'early access' refusal into a friendly message; returns err unchanged otherwise."""
+    m = re.search(r"Server said: “(.*?)”", err or "")
+    low = (m.group(1) if m else "").lower()
+    ea_server = any(k in low for k in ("early access", "earlyaccess", "buzz"))
+    refused = bool(re.search(r"HTTP 40[13]", err or ""))
+    if not (ea_server or (info and refused)):
+        return err
+    when = f" It becomes free on {local_date(info['ends'])}." if info and info.get("ends") else ""
+    price = f" Unlocking it now costs {info['price']:,} Buzz on Civitai." if info and info.get("price") else \
+        " You can unlock it now with Buzz on Civitai."
+    return ("This version is in Civitai Early Access, so it can't be downloaded for free yet." + when + price +
+            " Or pick an older free version.")
 
 
 def short_count(n):

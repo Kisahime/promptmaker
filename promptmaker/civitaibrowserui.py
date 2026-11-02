@@ -152,6 +152,9 @@ class CivitaiBrowserPage:
         dc.add(hrow(label("Version"), self.cvb_version, self.cvb_web))
         self.cvb_file = QComboBox(); self.cvb_file.currentIndexChanged.connect(lambda _i: self._cvb_file_changed())
         dc.add(hrow(label("File"), self.cvb_file))
+        self.cvb_ea = label("", "hint", wrap=True); self.cvb_ea.setVisible(False)
+        self.cvb_free_btn = button("Use latest free version", self.cvb_use_free, "ghost"); self.cvb_free_btn.setVisible(False)
+        dc.add(hrow(self.cvb_ea, self.cvb_free_btn))
         self.cvb_words = label("", "hint", wrap=True); self.cvb_words.setTextInteractionFlags(Qt.TextSelectableByMouse); dc.add(self.cvb_words)
         self.cvb_settings = label("", "hint", wrap=True); self.cvb_settings.setTextInteractionFlags(Qt.TextSelectableByMouse); dc.add(self.cvb_settings)
         self.cvb_desc = QTextBrowser(); self.cvb_desc.setOpenExternalLinks(True); self.cvb_desc.setMinimumHeight(140)
@@ -233,8 +236,9 @@ class CivitaiBrowserPage:
         for m in items:
             c = cb.card(m); hidden += c["hidden"]
             it = QListWidgetItem(placeholder_icon(c["type"], hidden=not c["thumb"] and c["hidden"] > 0),
-                                 f"{c['name']}\n{tr('by')} {c['creator']} · {c['type']}\n{c['base']}  ⬇ {cb.short_count(c['downloads'])}  ♥ {cb.short_count(c['likes'])}")
-            it.setData(Qt.UserRole, len(self.cvb_items)); it.setToolTip(f"{c['name']} – {c['type']} · {c['base']}")
+                                 ("⏳ " + tr("Early Access") + " · " if c["early_access"] else "") + f"{c['name']}\n{tr('by')} {c['creator']} · {c['type']}\n{c['base']}  ⬇ {cb.short_count(c['downloads'])}  ♥ {cb.short_count(c['likes'])}")
+            it.setData(Qt.UserRole, len(self.cvb_items)); it.setToolTip(f"{c['name']} – {c['type']} · {c['base']}"
+                                                                + ("\n" + cb.early_access_text(c["early_access"]) if c["early_access"] else ""))
             it.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
             self.cvb_grid.addItem(it); self.cvb_items.append(m)
             if c["thumb"]:
@@ -288,7 +292,9 @@ class CivitaiBrowserPage:
                               + (" · ⚠️ NSFW" if m.get("nsfw") else ""))
         self.cvb_version.blockSignals(True); self.cvb_version.clear()
         for v in m.get("modelVersions") or []:
-            self.cvb_version.addItem(f"{v.get('name')} · {v.get('baseModel', '')}", v.get("id"))
+            ea = cb.early_access(v)
+            self.cvb_version.addItem(("⏳ " if ea else "") + f"{v.get('name')} · {v.get('baseModel', '')}"
+                                     + (" · " + (tr("Paid") if ea["permanent"] else tr("Early Access")) if ea else ""), v.get("id"))
         self.cvb_version.setCurrentIndex(max(0, self.cvb_version.findData(prev)) if prev else 0)
         self.cvb_version.blockSignals(False)
         self._cvb_version_changed()
@@ -298,6 +304,15 @@ class CivitaiBrowserPage:
         vid = self.cvb_version.currentData()
         v = next((x for x in m.get("modelVersions") or [] if x.get("id") == vid), None)
         self.cvb_ver = v
+        self.cvb_ea_info = cb.early_access(v) if v else None
+        free = cb.latest_free_version(m) if self.cvb_ea_info else None
+        self._cvb_free_vid = free.get("id") if free else None
+        if self.cvb_ea_info:
+            self.cvb_ea.setText("⏳ " + cb.early_access_text(self.cvb_ea_info) + ". " +
+                                tr("You can still try the download (it works if you've already unlocked it), but it will probably be refused.")
+                                + (f" {tr('Latest free version')}: {free.get('name')}." if free else ""))
+        self.cvb_ea.setVisible(bool(self.cvb_ea_info)); self.cvb_free_btn.setVisible(bool(free))
+        self.cvb_dl.setText(tr("⬇ Download anyway (Early Access)") if self.cvb_ea_info else tr("⬇ Download"))
         self.cvb_file.blockSignals(True); self.cvb_file.clear()
         for f in cb.files(v or {}):
             self.cvb_file.addItem(cb.file_label(f), f)
@@ -311,6 +326,11 @@ class CivitaiBrowserPage:
         desc = (v.get("description") or "") + ("<hr>" if v.get("description") and m.get("description") else "") + (m.get("description") or "")
         self.cvb_desc.setHtml(cb.sanitize_html(desc) or tr("No description"))
         self._cvb_file_changed()
+
+    def cvb_use_free(self):
+        i = self.cvb_version.findData(getattr(self, "_cvb_free_vid", None))
+        if i >= 0:
+            self.cvb_version.setCurrentIndex(i)
 
     def cvb_file_info(self):
         return self.cvb_file.currentData()
@@ -391,7 +411,8 @@ class CivitaiBrowserPage:
 
     def _cvb_failed(self, err):
         self.cvb_dl.setEnabled(True); self.cvb_cancel.setEnabled(False); self.cvb_bar.setRange(0, 1000)
-        self.cvb_dl_status.setText(("⏸ " if "cancel" in err.lower() else "⚠️ ") + err[:400])
+        err = cb.early_access_error(err, getattr(self, "cvb_ea_info", None))
+        self.cvb_dl_status.setText(("⏸ " if "cancel" in err.lower() else "⚠️ ") + err[:500])
 
     def cvb_refresh_models(self):
         if self.store.get("img_backend", "none") == "none":

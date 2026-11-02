@@ -283,3 +283,80 @@ def test_ui_browser_search_detail_download_profile(tmp_path, monkeypatch):
     assert w.profile["id"] == "civitai_3435978" and prof["gen"]["workflow"] == "moss_txt2img"
     w.cvb_thumbs.stop(); w.cvb_thumbs.wait(3000)
     w.close(); w.deleteLater(); app.processEvents()
+
+
+# ---------------------------------------------------------------- early access
+import datetime as _dt  # noqa: E402
+
+NOW = _dt.datetime(2026, 11, 2, 12, tzinfo=_dt.timezone.utc)
+EA_V = dict(MOSS_V, id=99, name="V4 EA", availability="EarlyAccess", publishedAt="2026-11-01T00:00:00.000Z",
+            earlyAccessEndsAt="2026-11-08T00:00:00.000Z",
+            earlyAccessConfig={"timeframe": 7, "chargeForDownload": True, "downloadPrice": 500})
+
+
+def test_early_access_detection_variants():
+    assert cb.early_access(MOSS_V, NOW) is None
+    assert cb.early_access(dict(MOSS_V, availability="Public", paidAccess=None), NOW) is None
+    ea = cb.early_access(EA_V, NOW)
+    assert ea["price"] == 500 and ea["ends"] == _dt.datetime(2026, 11, 8, tzinfo=_dt.timezone.utc) and not ea["permanent"]
+    # end date derived from publishedAt + timeframe when earlyAccessEndsAt is missing
+    v = dict(EA_V); v.pop("earlyAccessEndsAt")
+    assert cb.early_access(v, NOW)["ends"] == _dt.datetime(2026, 11, 8, tzinfo=_dt.timezone.utc)
+    # over → free
+    assert cb.early_access(EA_V, _dt.datetime(2026, 11, 9, tzinfo=_dt.timezone.utc)) is None
+    # live API's paidAccess field
+    pa = cb.early_access(dict(MOSS_V, paidAccess={"permanent": True, "endsAt": None}), NOW)
+    assert pa["permanent"] and "Paid access" in cb.early_access_text(pa)
+    t = cb.early_access_text(ea)
+    assert t.startswith("Early Access: free from ") and "500 Buzz" in t
+
+
+def test_latest_free_and_card_badge():
+    m = dict(MOSS_M, modelVersions=[EA_V, MOSS_V])
+    assert cb.latest_free_version(m, NOW)["id"] == MOSS_V["id"]
+    assert cb.latest_free_version(dict(m, modelVersions=[EA_V]), NOW) is None
+    assert cb.card(dict(m, modelVersions=[dict(EA_V, earlyAccessEndsAt="2099-01-01T00:00:00Z")]))["early_access"]
+    assert cb.card(MOSS_M)["early_access"] is None
+
+
+def test_early_access_error_message():
+    info = cb.early_access(EA_V, NOW)
+    err = "Civitai refused this download even with your API key (HTTP 403 from civitai.com; a key was sent). Server said: “This model is in Early Access”. It may be early access…"
+    out = cb.early_access_error(err, info)
+    assert "Early Access" in out and "free on" in out and "500 Buzz" in out
+    generic = "Civitai refused this download even with your API key (HTTP 403 from x; a key was sent). It may be early access"
+    assert cb.early_access_error(generic, None) == generic
+    assert cb.early_access_error("Civitai download failed (HTTP 500)", info).startswith("Civitai download failed")
+
+
+def test_ui_early_access_badge_and_free_version(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("PROMPTMAKER_NO_NET", "1"); monkeypatch.setenv("PROMPTMAKER_NO_TOUR", "1")
+    from PySide6.QtWidgets import QApplication
+    from promptmaker import civitaibrowserui as ui
+    from promptmaker.app import MainWindow
+    from promptmaker.storage import Store
+    app = QApplication.instance() or QApplication([])
+    ea = dict(EA_V, earlyAccessEndsAt="2099-01-01T00:00:00Z")
+    full = dict(MOSS_M, modelVersions=[ea, MOSS_V])
+
+    class F(FakeClient):
+        def get(self, path, params=None, force=False):
+            return {"items": [full], "metadata": {}} if path == "/models" else full
+    monkeypatch.setattr(ui.CivitaiBrowserPage, "cvb_fetch", staticmethod(lambda url: b"x"))
+    monkeypatch.setattr(ui.CivitaiBrowserPage, "cvb_client", lambda self: F({}))
+    st = Store(str(tmp_path / "t.db")); st.set("comfy_dir", ""); st.set("forge_dir", "")
+    w = MainWindow(st, str(tmp_path))
+    w.go("Model browser"); app.processEvents()
+    wk = w.cvb_search(); wk.wait(5000); app.processEvents()
+    assert "Early Access" in w.cvb_grid.item(0).text()
+    w.cvb_grid.setCurrentRow(0); app.processEvents(); w._cvb_detail_w.wait(5000); app.processEvents()
+    assert "Early Access" in w.cvb_version.itemText(0) and "Early Access" not in w.cvb_version.itemText(1)
+    assert "free from" in w.cvb_ea.text() and "500 Buzz" in w.cvb_ea.text()
+    assert "anyway" in w.cvb_dl.text() and w.cvb_dl.isEnabled() and not w.cvb_free_btn.isHidden()
+    w._cvb_failed("Civitai refused this download (HTTP 403 from civitai.com; a key was sent). Server said: “Early Access”.")
+    assert "free on" in w.cvb_dl_status.text()
+    w.cvb_free_btn.click(); app.processEvents()
+    assert w.cvb_version.currentData() == MOSS_V["id"] and w.cvb_free_btn.isHidden() and "anyway" not in w.cvb_dl.text()
+    w.close()
