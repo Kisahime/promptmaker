@@ -38,7 +38,11 @@ All notable changes to this project are documented here. The format follows [Kee
   - After a download: **Refresh models** and **Create model profile**, which builds `civitai_<versionId>` from the version (chosen file name, family from the base model, ComfyUI sampler / scheduler and Forge sampler names, `moss_txt2img` workflow for MOSS, the family's resolutions, creator settings in the tips).
 - Settings → Civitai: **Host**, **Forge folder** and **ComfyUI folder** fields (the folders are guessed when empty).
 
+- **Early Access / paid badges** in the Model browser: EA and paid versions are flagged on cards and in the versions list with the free-from date and Buzz price, a *Download anyway* warning, *Use latest free version*, and a friendly message for Early Access 403s.
+
 ### Fixed
+- Civitai downloads: the API key is sent both as `?token=` and a Bearer header, fixing 403s on downloads that need login.
+- Profile parsing: sampler/scheduler slash pairs (`er_sde/bong_tangent`), step ranges with odd spacing (`4- 9 steps`), RES4LYF / custom-node samplers and schedulers kept with a custom-nodes note, honest *Creator's settings* vs *Defaults used* tips, dated changelog sections in descriptions, and **Repair profiles** now recovers values that were wrongly rejected.
 - Civitai import maps "MOSS Image" base models to the MOSS profile (it used to fall back to Generic).
 
 ## [5.1.0] - 2026-11-01
