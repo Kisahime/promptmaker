@@ -1755,7 +1755,8 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         for cb in getattr(self, "_job_callbacks", {}).pop(job.id, []):
             cb(job)
         self._v5_job_done(job)  # 5.0: tag images with Characters
-        self.notify(tr("Image ready") + " – " + tr("saved to Gallery"))
+        ws = getattr(job, "warnings", None) or []
+        self.notify(tr("Image ready") + " – " + tr("saved to Gallery") + ("" if not ws else " · ⚠️ " + "; ".join(ws)), error=bool(ws))
 
     def _gen_failed(self, job, err):
         job.state, job.error = "failed", err

@@ -48,7 +48,7 @@ class ProfileReviewDialog(QDialog):
         self.cfg_range = QLineEdit(g.get("cfg_range", "")); self.cfg_range.setPlaceholderText("e.g. 3.5–5")
         self.sampler = _combo(list(pn.SAMPLERS), g.get("sampler"))
         self.scheduler = _combo(list(pn.SCHEDULERS), g.get("scheduler"))
-        self.forge = QLabel(); self._forge()
+        self.forge = QLabel(); self.nodes = QLabel(); self.nodes.setWordWrap(True); self._forge()
         self.sampler.currentIndexChanged.connect(self._forge); self.scheduler.currentIndexChanged.connect(self._forge)
         self.neg = QPlainTextEdit(prof.get("negative_default", "")); self.neg.setFixedHeight(60)
         self.prefix = QPlainTextEdit(prof.get("quality_prefix", "")); self.prefix.setFixedHeight(50)
@@ -57,7 +57,7 @@ class ProfileReviewDialog(QDialog):
         self.workflow = QLineEdit(g.get("workflow", "")); self.te = QLineEdit(g.get("text_encoder", "")); self.vae = QLineEdit(g.get("vae", ""))
         rows = [("Steps", self.steps, "steps"), ("CFG", self.cfg, "cfg"), ("CFG range (creator)", self.cfg_range, "cfg"),
                 ("Sampler (ComfyUI)", self.sampler, "sampler"), ("Scheduler (ComfyUI)", self.scheduler, "scheduler"),
-                ("Forge / A1111", self.forge, "a1111_sampler"), ("Negative prompt", self.neg, "negative_default"),
+                ("Forge / A1111", self.forge, "a1111_sampler"), ("Custom nodes", self.nodes, None), ("Negative prompt", self.neg, "negative_default"),
                 ("Quality prefix", self.prefix, "quality_prefix"), ("File name", self.file, None), ("Type", self.type, None),
                 ("Workflow", self.workflow, "workflow"), ("Text encoder", self.te, "text_encoder"), ("VAE", self.vae, "vae")]
         self.flagged = []
@@ -74,6 +74,10 @@ class ProfileReviewDialog(QDialog):
     def _forge(self, *_):
         s, sc = pn.forge_sampler(self.sampler.currentData()), pn.forge_scheduler(self.scheduler.currentData())
         self.forge.setText(f"{s or '– (Forge default)'} · {sc or '–'}")
+        need = {n: pn.needs_node(n) or (self.orig.get("gen") or {}).get("custom_nodes", {}).get(n)
+                for n in (self.sampler.currentData(), self.scheduler.currentData()) if n}
+        need = {k: v for k, v in need.items() if v}
+        self.nodes.setText(", ".join(f"{k} → {v}" for k, v in need.items()) or tr("none (ComfyUI core)"))
 
     def profile(self):
         p = copy.deepcopy(self.orig)
@@ -82,9 +86,14 @@ class ProfileReviewDialog(QDialog):
                "sampler": self.sampler.currentData() or None, "scheduler": self.scheduler.currentData() or None,
                "workflow": self.workflow.text().strip() or None, "text_encoder": self.te.text().strip() or None,
                "vae": self.vae.text().strip() or None, "cfg_range": self.cfg_range.text().strip() or None}
+        old_cn = dict(g.get("custom_nodes") or {})
         for k, val in new.items():
             if val != g.get(k):
                 src[k] = "user"
+                if k in ("sampler", "scheduler") and val:
+                    src["a1111_" + k] = "user"
+                if k == "steps":
+                    g.pop("steps_range", None)
             if val is None:
                 g.pop(k, None)
             else:
@@ -103,7 +112,14 @@ class ProfileReviewDialog(QDialog):
         c["file_name"] = self.file.text().strip() or c.get("file_name")
         if self.type.currentData():
             c["type"] = self.type.currentData()
+        cn = {n: pn.needs_node(n) or old_cn.get(n) for n in (g.get("sampler"), g.get("scheduler")) if n}
+        cn = {k: v for k, v in cn.items() if v}
+        if cn:
+            g["custom_nodes"] = cn
+        else:
+            g.pop("custom_nodes", None)
         p["settings"] = pn.settings_line(g, src, {})
+        p["tips"] = pn.refresh_tips(p)
         return p
 
     def save(self):

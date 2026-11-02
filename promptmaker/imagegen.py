@@ -298,6 +298,33 @@ class ComfyUI:
     def samplers(self):
         return self._ksampler("sampler_name")
 
+    def check_installed(self, job, vals):
+        """5.2: a profile may name a custom-node sampler/scheduler (RES4LYF bong_tangent, res_2s …). If this ComfyUI does
+        not list it in /object_info KSampler, fall back to a core value now (not at save time) and record a warning."""
+        from . import profilenorm as pn
+        fb = {"sampler": "euler", "scheduler": "simple"}
+        for key, enum in (("sampler", "sampler_name"), ("scheduler", "scheduler")):
+            val = vals.get(key)
+            if not val:
+                continue
+            cache = getattr(self, "_ks_cache", None) or {}
+            if enum not in cache:
+                cache[enum] = self._ksampler(enum); self._ks_cache = cache
+            have = cache[enum]
+            if have and val not in have:
+                new = fb[key] if fb[key] in have else have[0]
+                pack = pn.needs_node(val) or ((getattr(job, "custom_nodes", None) or {}).get(val)) or "a custom node"
+                msg = f"ComfyUI has no {key} '{val}' (needs {pack}) – used '{new}' instead"
+                vals[key] = new
+                ws = getattr(job, "warnings", None)
+                if isinstance(ws, list):
+                    ws.append(msg)
+                else:
+                    try:
+                        job.warnings = [msg]
+                    except AttributeError:
+                        pass
+
     def schedulers(self):
         return self._ksampler("scheduler")
 
@@ -337,6 +364,7 @@ class ComfyUI:
             workflow = comfy_upscale_workflow(self.upload_image(up["image"], f"pm_upscale_{job.id}.png"), up.get("scale", 1.5))
         vals = job.values()
         vals["sampler"], vals["scheduler"] = comfy_names(vals.get("sampler"), vals.get("scheduler"))
+        self.check_installed(job, vals)
         meta = getattr(job, "workflow_meta", None) or {}
         if "{{text_encoder}}" in json.dumps(workflow) or "{{vae}}" in json.dumps(workflow):
             self.resolve_files(job, meta)

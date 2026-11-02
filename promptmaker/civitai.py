@@ -331,6 +331,7 @@ def suggest(info):
         s["sampler_text"] = st.get("sampler_text", "")
     s["steps_text"], s["cfg_text"] = st.get("steps_text", ""), st.get("cfg_text", "")
     s["section"] = st.get("section", "")
+    s["other_author"] = st.get("other_author") or {}
     s["trained_words"] = [w for w in (v.get("trainedWords") or []) if w]
     s["mined"] = mined
     s["base_model"] = v.get("baseModel", "")
@@ -357,13 +358,21 @@ def build_profile(info, s, base_id, profiles_by_id, pid=None, file=None, file_na
     trained = [w for w in s.get("trained_words") or [] if w.lower() not in prefix.lower()]
     raw = {k: s.get(k) for k in ("steps", "cfg", "sampler", "scheduler", "clip_skip", "cfg_text", "steps_text")}
     gen, src, warn = pn.normalise_gen(raw, fam, base.get("gen"))
-    for k, origin in (s.get("setting_source") or {}).items():
-        for gk in [k] + (["a1111_sampler"] if k == "sampler" else []) + (["a1111_scheduler"] if k == "scheduler" else []):
-            if src.get(gk) == "author":
-                src[gk] = origin
-    for k in s.get("user_edited") or ():
-        if k in src:
+    # 'user' only where the value the user typed in the dialog was actually accepted (src 'author' = came from raw);
+    # a rejected entry keeps its real source (family default) and a warning.
+    edited = set(s.get("user_edited") or ())
+    for k in list(src):
+        base_k = {"a1111_sampler": "sampler", "a1111_scheduler": "scheduler"}.get(k, k)
+        if src[k] != "author":
+            continue
+        if base_k in edited:
             src[k] = "user"
+        elif (s.get("setting_source") or {}).get(base_k):
+            src[k] = s["setting_source"][base_k]
+        elif base_k == "scheduler" and src.get("sampler") != "author" and (s.get("setting_source") or {}).get("sampler"):
+            src[k] = s["setting_source"]["sampler"]  # scheduler read from the sampler text ('er_sde/bong_tangent')
+    if "steps" in edited:
+        gen.pop("steps_range", None)
     files = [fl for fl in (v.get("files") or []) if isinstance(fl, dict)]
     file = file or next((fl for fl in files if fl.get("primary")), None) or (files[0] if files else {})
     ctype = pn.detect_type(m.get("type") or "Checkpoint", file, v.get("baseModel"))
@@ -374,10 +383,7 @@ def build_profile(info, s, base_id, profiles_by_id, pid=None, file=None, file_na
     guide = (base.get("ai_guidance", "") + f" Checkpoint '{s.get('name')}' (Civitai, base {v.get('baseModel', '?')})."
              + (f" Always start with the creator's quality tags: {prefix}." if prefix else "")
              + (f" Trigger words: {', '.join(trained)}." if trained else "")).strip()
-    tips = []
-    if author:
-        tips.append("Creator's settings: " + pn.settings_line({k: gen[k] for k in gen if src.get(k) in ("author", "user")},
-                                                            {k: "author" for k in gen}, s) + ".")
+    tips = pn.creator_tips(gen, src, s, s.get("other_author")) if author or gen else []
     if s.get("negative_source") == "author: not needed":
         tips.append("The creator says no negative prompt is needed.")
     if gen.get("workflow"):
@@ -408,6 +414,8 @@ def build_profile(info, s, base_id, profiles_by_id, pid=None, file=None, file_na
     }
     if s.get("section"):
         prof["civitai"]["matched_section"] = s["section"]
+    if s.get("other_author"):
+        prof["civitai"]["other_author_values"] = s["other_author"]
     if warn:
         prof["civitai"]["warnings"] = warn
     res = pn.family_resolutions(fam, base.get("resolutions", {}))
