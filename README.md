@@ -13,6 +13,7 @@ Everything runs on your own computer by default. The AI features are optional an
 ## Features
 
 - **🖥 Wallpaper mode** *(5.2, Tools)*: pick your screen – 1920×1080, 2560×1440, 3840×2160, 2560×1080 / 3440×1440 ultrawide, 1080×1920 phone or a custom size – and the app works out the sizes for your target model. It renders at about 1 MP in the screen's shape (1920×1080 → **1280×720 with hires fix ×1.5**), never asks for more than ×2 in one hires pass (4K = hires ×1.5, then Forge's upscaler ×2) so 8 GB cards cope, then Lanczos-resizes and centre-crops to the exact pixel size. See [Wallpaper mode](#wallpaper-mode).
+- **🛍 Civitai Model browser** *(5.2, Library)*: search and filter Civitai models, see versions, files and the creator's settings, and download into your Forge / ComfyUI folders with resume and SHA256 checks. NSFW is off by default. See [Civitai Model browser](#civitai-model-browser).
 - **🎭 Face Swap** *(5.1, Tools)*: our take on Fooocus' FaceSwap, using IP-Adapter Plus Face SDXL (weight 0.75, stop at 0.9 by default). Take the source face from a file, your last image, or a Character's reference image (Characters have a **🎭 Face Swap** button); it is cropped with an adjustable **hair margin** so the whole head and hair are used.
   - **Generate with face**: a new image from your prompt wearing the source face and hair.
   - **Swap into an existing image**: **Auto-mask face + hair** follows the real outline with segmentation models (YuNet / anime YOLO face detection, SegFormer face parsing for photos, anime-seg for anime). Every face is numbered; **👆 Pick face** chooses another person in group pictures. **Include hair** / **Include neck**, Style (Auto / Photo / Anime), Grow, Feather and a brush / eraser for touch-ups. The head is redrawn at SDXL's native resolution, like ADetailer.
@@ -225,6 +226,16 @@ Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Imag
 **Auto-mask models** download on first use into `data/models`, with progress in the status line: about 100 MB the first time you mask a photo, and about 175 MB more for the first anime image. If the status says *shape*, the download failed (or OpenCV / onnxruntime is missing) and a simpler head-shape mask is used instead.
 
 **Tips for swapping into an image:** describe only the face, hair and the picture's style and lighting in the prompt (e.g. `photo of an adult woman, black hair with bangs, soft daylight, sharp focus`). If the face looks pasted on, lower Denoise to 0.6–0.7; if it doesn't look enough like the source, raise Weight to 0.85–0.9. If skin colour looks off, lower Colour strength; if you can still see an edge, switch Seam blend to Poisson.
+
+## Civitai Model browser
+
+**Library → Model browser** searches Civitai without leaving PromptMaker. Type a search, pick a type, base model, sort and period, and click a card to see its versions, files, description, trained words and the creator's settings.
+
+- **NSFW is off by default.** When it's off, PromptMaker asks Civitai for SFW models only and never loads a preview rated above PG. Tick **Show NSFW** to change that.
+- **⬇ Download** saves the chosen file straight into the right folder for your backend, such as Forge `models\Stable-diffusion` / `models\Lora` or ComfyUI `checkpoints` / `diffusion_models` / `loras` / `vae`. MOSS, Anima, FLUX and Qwen files that hold only the diffusion model go to ComfyUI `diffusion_models`. You can pick another folder.
+- Downloads run in the background and can be cancelled. Download again to resume from where it stopped. Every file is checked against Civitai's SHA256.
+- Many downloads need you to be signed in: add a Civitai API key in **Settings → Civitai** (civitai.com/user/account → API Keys). It is stored in your OS keyring when one is available. The same card has the host (civitai.com or civitai.red) and your Forge / ComfyUI folders.
+- After a download, **Refresh models** reloads your backend's model list and **Create model profile** makes a `civitai_<versionId>` profile with the creator's settings, the right sampler / scheduler and, for MOSS, the `moss_txt2img` workflow.
 
 ## Civitai checkpoint profiles
 

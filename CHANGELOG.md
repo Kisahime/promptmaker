@@ -20,6 +20,19 @@ All notable changes to this project are documented here. The format follows [Kee
   - Skip layer guidance is off by default (it can overblow anime styles); a Settings checkbox turns it on.
   - Hires fix and Wallpaper mode work with it (multiples of 16). Picking a MOSS target model on ComfyUI suggests this workflow.
   - Workflows can use new `{{text_encoder}}` / `{{vae}}` placeholders and `_meta` keys `model_loader` and `slg_node`.
+- **Civitai Model browser** (Library → Model browser): search and download Civitai models inside the app.
+  - Uses the public API v1 (`/models` with query, types, baseModels, sort, period, nsfw, limit and cursor paging; `/models/{id}` for full details). The host comes from Settings → Civitai → Host (civitai.com, or civitai.red).
+  - Filters for type (Checkpoint, LoRA, LoCon, DoRA, Embedding, VAE, ControlNet, Upscaler …), base model (SDXL 1.0, Pony, Illustrious, NoobAI, Anima, MOSS Image, Flux.1 / Flux.2, Qwen, HiDream …), sort (Highest Rated, Most Downloaded, Newest) and period.
+  - **Show NSFW is off by default.** When it's off, requests send `nsfw=false`, NSFW-flagged models are dropped, and any preview with `nsfwLevel` above 1 (or no level) is never downloaded. Its card shows a "Preview hidden" placeholder instead.
+  - Results show as a card grid with lazy-loaded thumbnails (cached in `data/cache/civitai_thumbs`), name, creator, type, base model and download / like counts. More results load when you scroll to the bottom or press Load more.
+  - The detail panel has a versions dropdown, files (name, size, fp, pruned / full, format), a sanitised description (no scripts, iframes, remote images or non-http links), trained words, the creator's settings and Open on Civitai.
+  - **Download**: the destination is picked from the type, base model and active backend. Checkpoints go to Forge `models\Stable-diffusion` or ComfyUI `checkpoints`. MOSS, Anima, FLUX, Qwen, HiDream and Wan files that are only the diffusion model (judged by GGUF format, the file name, or a size below model + half text encoder at the file's precision) go to ComfyUI `diffusion_models`. LoRA / LoCon / DoRA go to `Lora` / `loras`, and VAE, ControlNet, embeddings, upscalers and hypernetworks to their own folders, with `data/downloads` as a fallback. You can change the folder.
+  - Downloads run in the background with progress, cancel and **resume** (`.part` + HTTP Range) and retries on 429 / 5xx / dropped connections. The file is checked against Civitai's SHA256 and a corrupt file is deleted. The Civitai API key is sent as `Authorization: Bearer` and is never forwarded on the redirect to file storage. A 401 / 403 or a login page gives a clear "add your API key" message.
+  - After a download: **Refresh models** and **Create model profile**, which builds `civitai_<versionId>` from the version (chosen file name, family from the base model, ComfyUI sampler / scheduler and Forge sampler names, `moss_txt2img` workflow for MOSS, the family's resolutions, creator settings in the tips).
+- Settings → Civitai: **Host**, **Forge folder** and **ComfyUI folder** fields (the folders are guessed when empty).
+
+### Fixed
+- Civitai import maps "MOSS Image" base models to the MOSS profile (it used to fall back to Generic).
 
 ## [5.1.0] - 2026-11-01
 

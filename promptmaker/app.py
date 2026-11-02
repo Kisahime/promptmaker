@@ -30,6 +30,7 @@ from .v41ui import GalleryList, V41Pages
 from .v5ui import V5Pages
 from .faceswapui import FaceSwapPage
 from .wallpaperui import WallpaperPage
+from .civitaibrowserui import CivitaiBrowserPage
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,7 +46,7 @@ NEGATIVE_PRESETS = {
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
        ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
-       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper")]
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser")]
 
 
 def copy(text):
@@ -81,7 +82,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -123,7 +124,7 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
                            self._characters_page, self._storyboard_page, self._sketch_page, self._training_page,
-                           self._faceswap_page, self._wallpaper_page):
+                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
@@ -170,6 +171,8 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
             self.sy_refresh()
         elif name == "Wildcards":
             self.wc_reload()
+        elif name == "Model browser" and not self.cvb_items and not os.environ.get("PROMPTMAKER_NO_NET"):
+            self.cvb_search()
 
     def go(self, name):
         self.nav.setCurrentRow([n for _, n in NAV].index(name))
@@ -2229,7 +2232,17 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
         self.cv_key = QLineEdit(); self.cv_key.setEchoMode(QLineEdit.Password)
         self.cv_key.setPlaceholderText(tr("key saved") if self.keys.get("api_key:civitai") else tr("Optional – needed only for NSFW / gated models"))
         cv.add(hrow(label("API key"), self.cv_key, button("Save key", self._cv_key_save), button("Clear key", self._cv_key_clear, "ghost")))
-        cv.add(label("Used by Model profiles → Import from Civitai. Create a key at civitai.com/user/account (API Keys). "
+        self.cv_host = QComboBox(); self.cv_host.setEditable(True)
+        from . import civitai_browser as _cvb
+        for h_ in _cvb.HOSTS:
+            self.cv_host.addItem(h_)
+        self.cv_host.setCurrentText(_cvb.host_of(self.store.get("civitai_api") or civitai.API))
+        self.cv_forge = QLineEdit(self.store.get("forge_dir", "")); self.cv_forge.setPlaceholderText(r"C:\AI\sd-webui-forge-classic")
+        self.cv_comfy = QLineEdit(self.store.get("comfy_dir", "")); self.cv_comfy.setPlaceholderText(r"C:\AI\ComfyUI\ComfyUI_windows_portable\ComfyUI")
+        cv.add(hrow(label("Host"), self.cv_host, button("Save", self._cv_folders_save), None))
+        cv.add(hrow(label("Forge folder"), self.cv_forge))
+        cv.add(hrow(label("ComfyUI folder"), self.cv_comfy))
+        cv.add(label("Used by Model profiles → Import from Civitai and Library → Model browser (most downloads need a key). Create a key at civitai.com/user/account (API Keys). "
                      "Keys are stored in " + self.keys.backend + ". Responses are cached for 24 h in data/cache/civitai.", "hint", wrap=True))
         iv.addWidget(cv)
         cm = Card("Community gallery")
@@ -2254,6 +2267,14 @@ class MainWindow(Shell415, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pag
     def _cv_key_clear(self):
         self.keys.delete("api_key:civitai"); self.cv_key.setPlaceholderText(tr("Optional – needed only for NSFW / gated models"))
         self.notify(tr("Key removed"))
+
+    def _cv_folders_save(self):
+        from . import civitai_browser as _cvb
+        self.store.set("civitai_api", _cvb.api_base(self.cv_host.currentText()))
+        self.store.set("forge_dir", self.cv_forge.text().strip()); self.store.set("comfy_dir", self.cv_comfy.text().strip())
+        if hasattr(self, "cvb_host_lbl"):
+            self._cvb_host_label()
+        self.notify(tr("Saved"))
 
     # ---------------------------------------------------------------- Civitai import
     def civitai_client(self):

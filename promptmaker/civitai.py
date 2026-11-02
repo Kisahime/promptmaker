@@ -258,7 +258,7 @@ def mine_images(items, min_share=0.4, min_images=2):
 
 
 # ---------------------------------------------------------------- base model → profile
-BASE_MAP = [("illustrious", "illustrious"), ("noobai", "illustrious"), ("pony", "pony"), ("anima", "anima"),
+BASE_MAP = [("moss", "moss"), ("illustrious", "illustrious"), ("noobai", "illustrious"), ("pony", "pony"), ("anima", "anima"),
             ("flux.2", "flux2"), ("flux2", "flux2"), ("flux.1 kontext", "flux_kontext"), ("flux", "flux1"),
             ("sd 3.5", "sd35"), ("sd3.5", "sd35"), ("qwen", "qwen_image"), ("hidream", "hidream"),
             ("sdxl", "sdxl"), ("sd 1", "sdxl")]
