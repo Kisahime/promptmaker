@@ -584,50 +584,20 @@ FAMILY_WORKFLOW = {"MOSS": "moss_txt2img"}
 
 
 def map_sampler(text, family=""):
-    """Creator sampler text → (comfy sampler, scheduler, Forge name). Raw ComfyUI names pass through."""
-    t = (text or "").strip()
-    low = t.lower()
-    raw = re.match(r"^([a-z0-9_]+)(?:\s*[/+,]\s*|\s+)?([a-z_]+)?", low)
-    if raw and "_" in raw.group(1):
-        sampler = raw.group(1)
-    else:
-        sampler, _ = civitai.comfy_sampler(t)
-    sched = next((s for s in SCHEDULERS if re.search(rf"\b{s}\b", low)), None) or FAMILY_SCHEDULER.get(family) or \
-        (civitai.comfy_sampler(t)[1] if sampler else None)
-    forge = civitai.a1111_sampler(t)
-    if sampler and "_" in sampler:
-        forge = {"dpmpp_2m_sde_gpu": "DPM++ 2M SDE", "dpmpp_2m_sde": "DPM++ 2M SDE", "dpmpp_2m": "DPM++ 2M",
-                 "euler_ancestral": "Euler a", "dpmpp_sde": "DPM++ SDE", "er_sde": "Er SDE", "res_multistep": "Res Multistep"}.get(sampler, forge)
-    forge = re.sub(r"(?i)\s+(karras|simple|beta|normal|exponential)$", "", forge or "").strip()
-    return sampler, sched, forge
+    """Creator sampler text → (comfy sampler, scheduler, Forge name) via the 5.2 normaliser."""
+    from . import profilenorm as pn
+    smp, sch = pn.split_sampler(text)
+    sch = sch or FAMILY_SCHEDULER.get(family) or ((pn.FAMILY_GEN.get(family) or {}).get("scheduler")) or ("normal" if smp else None)
+    return smp, sch, pn.forge_sampler(smp)
 
 
-def build_profile(model, version, file, profiles_by_id, host="civitai.com"):
-    """Model profile (id civitai_<versionId>) for a downloaded file, from the browser's version data."""
+def build_profile(model, version, file, profiles_by_id, host="civitai.com", file_name=None):
+    """Model profile (id civitai_<versionId>) for a downloaded file, from the browser's version data.
+    file_name: the name actually written to disk (may differ from Civitai's file name)."""
     info = {"model": model, "version": version, "images": [i for i in version.get("images") or [] if i.get("meta")],
             "url": web_url(host, model.get("id") or version.get("modelId"), version.get("id"))}
     s = civitai.suggest(info)
     base_id = civitai.base_profile_id(version.get("baseModel"), profiles_by_id)
-    prof = civitai.build_profile(info, s, base_id, profiles_by_id)
-    base = profiles_by_id.get(base_id) or {}
-    fam = base.get("family", "")
-    prof["family"] = fam or prof.get("family")
-    gen = prof.setdefault("gen", {})
-    if s.get("sampler"):
-        cs, sch, forge = map_sampler(s["sampler"], fam)
-        gen.update({k: v for k, v in (("sampler", cs), ("scheduler", s.get("scheduler") or sch), ("a1111_sampler", forge)) if v})
-    elif fam in FAMILY_SCHEDULER and base.get("gen", {}).get("scheduler") is None:
-        gen.setdefault("scheduler", FAMILY_SCHEDULER[fam])
-    if FAMILY_WORKFLOW.get(fam):
-        gen["workflow"] = FAMILY_WORKFLOW[fam]
-    if base.get("resolutions") and "resolutions" not in prof:
-        prof["resolutions"] = dict(base["resolutions"])
-    unet = (model.get("type") == "Checkpoint") and is_unet_only(file, version.get("baseModel"))
-    prof["civitai"].update(file_name=file.get("name"), type="Diffusion model" if unet else (model.get("type") or "Checkpoint"),
-                           model_name=model.get("name") or prof["civitai"].get("model_name"))
-    prof["tips"] = [t for t in prof.get("tips", []) if "(n/a)" not in t]
-    if author_settings(model, version):
-        prof["tips"].insert(0, "Creator's settings: " + author_settings(model, version) + ".")
-    if FAMILY_WORKFLOW.get(fam):
-        prof["tips"].insert(0, f"Use the {FAMILY_WORKFLOW[fam]} ComfyUI workflow; it does not run in Forge.")
+    prof = civitai.build_profile(info, s, base_id, profiles_by_id, file=file or {}, file_name=file_name)
+    prof["civitai"]["model_name"] = model.get("name") or prof["civitai"].get("model_name")
     return prof

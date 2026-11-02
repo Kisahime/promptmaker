@@ -208,6 +208,7 @@ class Job:
         self.steps, self.cfg = int(steps), float(cfg)
         self.profile, self.checkpoint, self.workflow = profile, checkpoint, workflow
         self.sampler, self.scheduler, self.tag = sampler, scheduler, tag
+        self.text_encoder_pref, self.vae_pref = "", ""  # 5.2: profile preference, used when ComfyUI has the file
         self.text_encoder, self.vae = "", ""  # 5.2: MOSS-style workflows; empty = auto-detect from ComfyUI
         self.slg = None         # 5.2: skip layer guidance on/off for workflows with a _meta slg_node (None = workflow default)
         self.workflow_meta = {}
@@ -270,10 +271,16 @@ class ComfyUI:
     def resolve_files(self, job, meta):
         """Fill job.text_encoder / job.vae from the workflow defaults, auto-detected against what ComfyUI has."""
         d = (meta or {}).get("defaults", {})
-        if not job.text_encoder and d.get("text_encoder"):
-            job.text_encoder = pick_file(self.node_files("CLIPLoader"), d["text_encoder"], ("qwen3.5", "qwen3_5"))
-        if not job.vae and d.get("vae"):
-            job.vae = pick_file(self.node_files("VAELoader"), d["vae"], ("flux2",))
+        for attr, node, hints in (("text_encoder", "CLIPLoader", ("qwen3.5", "qwen3_5")), ("vae", "VAELoader", ("flux2",))):
+            if getattr(job, attr) or not d.get(attr):
+                continue
+            files = self.node_files(node)
+            pref = getattr(job, attr + "_pref", "")  # 5.2: from the model profile (gen.text_encoder / gen.vae)
+            if pref:
+                hit = pick_file(files, pref, ())
+                if hit in files:
+                    setattr(job, attr, hit); continue
+            setattr(job, attr, pick_file(files, d[attr], hints))
 
     def status(self):
         """Cheap poll for the sidebar: ('online', label). Raises BackendError when offline."""

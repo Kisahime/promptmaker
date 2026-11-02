@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [5.2.0] - 2026-11-02
 
 ### Added
+- **Better model profiles from Civitai** (new `profilenorm` module):
+  - Version-aware parsing of the creator's description: in multi-version descriptions the section matching the selected version (V5, turbo / no turbo) is used and other versions' settings are never copied; inline settings (`dpmpp_2m_sde_gpu + beta1_1, steps: 25, cfg: 4`), labelled lines, ranges (`CFG 3.5 - 5.0`), Chinese labels and typos (`nomal`, `karas`, `beta)`) are understood.
+  - Normalised sampler + scheduler (`Euler Simple` → euler + simple) with both ComfyUI and Forge names (`a1111_sampler`, `a1111_scheduler`) from fixed tables; unknown values are never stored (family default + a warning instead). CFG ranges keep a default plus `cfg_range`.
+  - A `source` map records which values came from the creator, sample images, the family default or you. No invented negatives (`civitai.author_negative` only when the creator gave one; "no negative needed" is respected), no "(n/a)" tips, no dangling text.
+  - The actual downloaded file name, Checkpoint vs Diffusion model detection, and workflow / text encoder / VAE defaults for split MOSS, Anima, Qwen-Image and FLUX.1 files; per-family resolutions (multiples of 16 for MOSS/FLUX/Qwen/Anima).
+  - Schema validation before every profile save; **review dialog** for the Model browser's *Create model profile* (editable, highlighted where defaulted); the Civitai import screen gains a Scheduler field and a live normalised preview; **Re-check from Civitai** and a one-off **Repair profiles** (Settings → Model profiles) that fixes saved profiles with a timestamped backup.
+  - The profile's `gen.text_encoder` / `gen.vae` are now used by the MOSS workflow when ComfyUI has those files, and `gen.workflow` drives the workflow suggestion.
 - **Wallpaper mode** (Tools → Wallpaper): wallpapers at the exact screen size.
   - Targets: 1920×1080, 2560×1440, 3840×2160, 2560×1080 and 3440×1440 ultrawide, 1080×1920 phone, or a custom width × height.
   - Picks a base size of about 1 MP in the screen's aspect for the target model's family (multiples of 8, preferring exact-aspect sizes and 64 px buckets for SDXL / Illustrious / Pony / Anima; multiples of 16 for FLUX, Qwen, MOSS and HiDream) and a hires-fix scale in 0.05 steps so the result is at or just over the target – 1920×1080 → 1280×720 ×1.5.

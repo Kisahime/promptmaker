@@ -291,6 +291,8 @@ class V3Pages:
         if wf_name:  # 5.2: optional per-workflow text encoder / VAE override; empty = auto-detect
             job.text_encoder = self.store.get(f"img_text_encoder:{wf_name}", "") or ""
             job.vae = self.store.get(f"img_vae:{wf_name}", "") or ""
+            # 5.2: the model profile's text encoder / VAE are preferred over the workflow defaults when ComfyUI has them
+            job.text_encoder_pref, job.vae_pref = g.get("text_encoder") or "", g.get("vae") or ""
             if meta.get("slg_node"):
                 job.slg = bool(self.store.get(f"img_slg:{wf_name}", meta.get("defaults", {}).get("slg", False)))
         try:

@@ -158,7 +158,10 @@ def test_build_profile_inherits_and_is_used(api, tmp_path):
     bundled = profiles.load()
     prof = civitai.build_profile(info, s, "anima", bundled)
     assert prof["id"] == "civitai_3338156" and prof["inherits"] == "anima"
-    assert prof["gen"] == {"steps": 22, "cfg": 5.0, "sampler": "euler_ancestral", "scheduler": "normal", "a1111_sampler": "Euler a"}
+    g = prof["gen"]  # 5.2: 'euler a or DPM++ 2M Karras' → first alternative only; no scheduler given → Anima default
+    assert (g["steps"], g["cfg"], g["cfg_range"], g["sampler"], g["scheduler"], g["a1111_sampler"]) == \
+        (22, 5.0, "3–7", "euler_ancestral", "simple", "Euler a")
+    assert prof["source"]["sampler"] == "author" and prof["source"]["scheduler"] == "family default"
     assert prof["civitai"]["version_id"] == 3338156 and prof["sources"][0].startswith("https://civitai.com/models/2087823")
     path = str(tmp_path / "profiles.json")
     profiles.ensure_user_file(path)

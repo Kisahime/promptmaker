@@ -1480,8 +1480,11 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         self.prof_list = QListWidget(); self.prof_list.currentRowChanged.connect(self._prof_selected)
         left.add(self.prof_list, 1)
         left.add(hrow(button("Use as target", self._prof_use, "primary"), button("Duplicate", self._prof_dup)))
-        self.cv_refresh_btn = button("⟳ Refresh from Civitai", self.civitai_refresh, tip="Re-fetch this checkpoint's recommendations")
+        self.cv_refresh_btn = button("⟳ Re-check from Civitai", self.civitai_refresh,
+                                     tip="Re-fetch this checkpoint's recommendations and review the changes before saving")
         left.add(hrow(button("🌐 Import from Civitai…", self.civitai_import, "primary"), self.cv_refresh_btn))
+        left.add(hrow(button("🛠 Repair profiles", self.prof_repair, tip="Fix saved profiles (scheduler typos, combined sampler "
+                             "names, Forge names, 'n/a' tips) – the old file is backed up first"), None))
         row.addWidget(left, 1)
         right = Card("Details")
         self.prof_view = QTextBrowser(); self.prof_view.setOpenExternalLinks(True)
@@ -1551,10 +1554,27 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         try:
             p = json.loads(self.prof_json.toPlainText())
             assert p.get("id") and p.get("name"), "profile needs 'id' and 'name'"
+            from . import profilenorm
+            errs = profilenorm.validate(p)
+            assert not errs, "; ".join(errs)
             profiles.save_profile(self.profiles_path, p)
         except (ValueError, AssertionError, OSError) as e:
             self.notify(f"Not saved: {e}", error=True); return
         self._prof_reload(p["id"]); self.notify("Profile saved")
+
+    def prof_repair(self):
+        """5.2: one-off repair of saved profiles, with a timestamped backup of profiles.json."""
+        from . import profilenorm
+        try:
+            report = profilenorm.repair_file(self.profiles_path, profiles.load())
+        except (OSError, ValueError) as e:
+            self.notify(f"Repair failed: {e}", error=True); return None
+        if report:
+            self._prof_reload()
+            self.notify(tr("Repaired") + f" {len(report)} " + tr("profile(s); backup saved next to profiles.json"))
+        else:
+            self.notify(tr("All profiles look fine"))
+        return report
 
     def _prof_reload(self, select=None):
         try:
@@ -1656,7 +1676,9 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         """5.2: a MOSS target model on ComfyUI needs moss_txt2img (separate UNET / text encoder / VAE loaders)."""
         if self.store.get("img_backend", "none") != "comfyui":
             return None
-        want = imagegen.suggest_workflow((self.profile or {}).get("family", ""), self.store.get("img_workflow", "sdxl_txt2img"))
+        want = ((self.profile or {}).get("gen") or {}).get("workflow")
+        want = want if want and want != self.store.get("img_workflow", "sdxl_txt2img") else None
+        want = want or imagegen.suggest_workflow((self.profile or {}).get("family", ""), self.store.get("img_workflow", "sdxl_txt2img"))
         if want and want in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")) and \
                 getattr(self, "_wf_suggested", None) != (self.profile.get("id"), want):
             self._wf_suggested = (self.profile.get("id"), want)
@@ -2301,6 +2323,10 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
                                    existing=profiles.raw_profile(self.profiles_path, p["id"]) or p)
 
     def _civitai_saved(self, prof):
+        from . import profilenorm
+        errs = profilenorm.validate(prof)
+        if errs:
+            self.notify(tr("Not saved") + ": " + "; ".join(errs)[:300], error=True); return
         profiles.save_profile(self.profiles_path, prof)
         self._prof_reload(prof["id"])
         i = self.profile_combo.findData(prof["id"])

@@ -420,12 +420,28 @@ class CivitaiBrowserPage:
         self.load_checkpoints(force=True)
         self.notify(tr("Refreshing the model list…"))
 
-    def cvb_create_profile(self):
+    def cvb_create_profile(self, review=True):
+        """Build the profile from the downloaded version; review=True opens the review dialog (save happens there)."""
         meta = getattr(self, "_cvb_dl_meta", None)
         if not meta or not meta[0] or not meta[1] or not meta[2]:
             self.notify(tr("Download a model first"), error=True); return None
         m, v, f = meta
-        prof = cb.build_profile(m, v, f, dict(self.profiles), self.cvb_host())
+        done = getattr(self, "_cvb_downloaded", "") or ""
+        prof = cb.build_profile(m, v, f, dict(self.profiles), self.cvb_host(),
+                                file_name=os.path.basename(done) if done else None)
+        if review:
+            from .profilereview import ProfileReviewDialog
+            dlg = ProfileReviewDialog(self, prof)
+            dlg.saved.connect(self._cvb_profile_save)
+            self._cvb_review = dlg; dlg.show()
+            return prof
+        return self._cvb_profile_save(prof)
+
+    def _cvb_profile_save(self, prof):
+        from . import profilenorm as pn
+        errs = pn.validate(prof)
+        if errs:
+            self.notify(tr("Not saved") + ": " + "; ".join(errs)[:300], error=True); return None
         profiles.save_profile(self.profiles_path, prof)
         self._prof_reload(prof["id"])
         i = self.profile_combo.findData(prof["id"])

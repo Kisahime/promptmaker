@@ -279,7 +279,9 @@ def test_ui_browser_search_detail_download_profile(tmp_path, monkeypatch):
     dl = w.cvb_download(); dl.wait(10000); app.processEvents()
     path = comfy / "models" / "diffusion_models" / "moodyMoss_fp8.safetensors"
     assert path.read_bytes() == PAYLOAD and w.cvb_profile_btn.isEnabled()
-    prof = w.cvb_create_profile(); app.processEvents()
+    prof = w.cvb_create_profile(); app.processEvents()  # opens the review dialog first
+    assert w._cvb_review.isVisible() and prof["civitai"]["file_name"] == "moodyMoss_fp8.safetensors"
+    prof = w._cvb_review.save(); app.processEvents()
     assert w.profile["id"] == "civitai_3435978" and prof["gen"]["workflow"] == "moss_txt2img"
     w.cvb_thumbs.stop(); w.cvb_thumbs.wait(3000)
     w.close(); w.deleteLater(); app.processEvents()
