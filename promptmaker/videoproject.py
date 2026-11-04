@@ -437,7 +437,7 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
     unloaded = False
     if forge is not None:
         if progress:
-            progress(0, "Freeing VRAM (unloading Forge checkpoint)")
+            progress(0, "Freeing VRAM (unloading the image model in Forge / ComfyUI)")
         unloaded = forge.unload_checkpoint()
     done = 0
     try:
