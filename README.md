@@ -193,6 +193,8 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
 
+PromptMaker detects a running Forge or ComfyUI at startup and switches to it (Settings → Image generation → *Auto-detect*, or **🔎 Detect now**).
+
 ## Video maker
 
 Tools → **Video maker** turns an idea or story into a short video on your own PC:

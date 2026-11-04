@@ -143,6 +143,8 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self.update_preview()
         self._create_profile_refresh()
         QTimer.singleShot(50, self.refresh_models_async)
+        if self.store.get("auto_detect_backend", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
+            QTimer.singleShot(300, self.detect_backend)  # 5.3: switch to whichever image backend is running
         if self.store.get("check_updates", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
             QTimer.singleShot(3000, self.check_updates)
         if not self.store.get("setup_done") and not os.environ.get("PROMPTMAKER_NO_TOUR") and not os.environ.get("PROMPTMAKER_NO_SETUP"):
@@ -201,6 +203,8 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
 
     def _profile_changed(self, *_):
         self.store.set("profile", self.profile["id"])
+        if not getattr(self, "_detect_switching", False) and self.store.get("img_backend", "none") != "none":
+            self.store.set("backend_profile:" + self.store.get("img_backend", "none"), self.profile["id"])
         p = self.profile
         if hasattr(self, "wp_update_plan"):  # 5.2: Wallpaper plan follows the target model's family
             self.wp_update_plan()
@@ -2205,6 +2209,12 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self.img_url = QLineEdit()
         self.img_kind.currentIndexChanged.connect(self._img_form)
         im.add(_frow("Backend", self.img_kind)); im.add(_frow("URL", self.img_url))
+        self.auto_detect = QCheckBox(tr("Auto-detect a running Forge / ComfyUI at startup and switch to it"))
+        self.auto_detect.setChecked(bool(self.store.get("auto_detect_backend", True)))
+        self.auto_detect.toggled.connect(lambda on: self.store.set("auto_detect_backend", bool(on)))
+        self.detect_lbl = label("", "hint", wrap=True)
+        im.add(hrow(self.auto_detect, None, button("🔎 Detect now", lambda: self.detect_backend(manual=True), "ghost")))
+        im.add(self.detect_lbl)
         self.img_wf = QComboBox()
         for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
             self.img_wf.addItem(name)
@@ -2431,6 +2441,67 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{name}", ""))
         if self.img_kind.currentData() == "comfyui" and not os.environ.get("PROMPTMAKER_NO_NET"):
             self._img_ckpts()
+
+    # ---------------------------------------------------------------- 5.3 backend auto-detect
+    def detect_backend(self, manual=False):
+        """Probe local backends in a worker (≈1 s worst case) and switch to a running one. Never blocks the UI."""
+        from . import backenddetect as bd
+        if getattr(self, "_detect_worker", None) is not None and self._detect_worker.isRunning():
+            return None
+        cands = bd.candidates(self.store.get)
+        if manual and hasattr(self, "detect_lbl"):
+            self.detect_lbl.setText(tr("Looking for running backends…"))
+        wk = CallWorker(lambda: bd.probe(cands, 0.8))
+        wk.ok.connect(lambda found, m=manual: self._detect_done(found, m))
+        wk.failed.connect(lambda _e: None)
+        self._detect_worker = wk; self._keep(wk) if hasattr(self, "_keep") else None; wk.start()
+        return wk
+
+    def _detect_done(self, found, manual=False):
+        from . import backenddetect as bd
+        if getattr(self, "_closing", False):
+            return None
+        kind = self.store.get("img_backend", "none")
+        default = {"comfyui": "http://127.0.0.1:8188", "a1111": "http://127.0.0.1:7860"}.get(kind, "")
+        cur_url = self.store.get(f"img_url:{kind}", default) if kind in bd.KINDS else ""
+        conf = {k: self.store.get(f"img_url:{k}", "") for k in bd.KINDS}
+        pick = bd.choose(kind, cur_url, found, conf)
+        running = ", ".join(f"{bd.NAMES[k]} ({u})" for u, k in sorted(found.items())) or tr("none")
+        if hasattr(self, "detect_lbl"):
+            self.detect_lbl.setText(tr("Running") + f": {running}")
+        if not pick:
+            if manual:
+                self.notify(tr("No other running backend found") if not found else
+                            f"{bd.NAMES.get(kind, kind)} " + tr("is running – kept"))
+            return None
+        new_kind, url = pick
+        self.switch_backend(new_kind, url)
+        self.notify(f"{bd.NAMES[new_kind]} " + tr("detected – switched"))
+        return pick
+
+    def switch_backend(self, kind, url):
+        """Make `kind` at `url` the active image backend (same keys as Settings → Save) and reuse the target model
+        last used with it."""
+        self.store.set("img_backend", kind); self.store.set(f"img_url:{kind}", url)
+        if hasattr(self, "img_kind"):
+            self.img_kind.blockSignals(True)
+            self.img_kind.setCurrentIndex(max(0, self.img_kind.findData(kind)))
+            self.img_kind.blockSignals(False); self._img_form()
+        pid = self.store.get("backend_profile:" + kind)
+        if pid and pid in self.profiles and hasattr(self, "profile_combo") and pid != self.profile.get("id"):
+            self._detect_switching = True
+            try:
+                self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(pid)))
+            finally:
+                self._detect_switching = False
+        cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
+        for c in self._ckpt_combos_list():
+            c.set_items([]); c.set_name(cur)
+        self._ckpt_names = None
+        if hasattr(self, "poll_status"):
+            self._status_busy = False; self.poll_status()
+        if hasattr(self, "vm_update_facelock_warning"):
+            self.vm_update_facelock_warning()
 
     def _img_form(self, *_):
         kind = self.img_kind.currentData()

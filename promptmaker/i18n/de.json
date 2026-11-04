@@ -324,6 +324,14 @@
   "current model": "aktuelles Modell",
   "isn’t SDXL / Illustrious / Pony.": "ist kein SDXL / Illustrious / Pony.",
   "Descriptions and seeds still apply.": "Beschreibungen und Seeds gelten weiterhin.",
-  "Face lock only works with SDXL / Illustrious / Pony checkpoints. With other models (Anima, MOSS, FLUX, Qwen …) the reference face is ignored – descriptions and seeds still apply.": "Der Gesichts-Lock funktioniert nur mit SDXL-, Illustrious- und Pony-Checkpoints. Bei anderen Modellen (Anima, MOSS, FLUX, Qwen …) wird das Referenzgesicht ignoriert – Beschreibungen und Seeds gelten weiterhin."
+  "Face lock only works with SDXL / Illustrious / Pony checkpoints. With other models (Anima, MOSS, FLUX, Qwen …) the reference face is ignored – descriptions and seeds still apply.": "Der Gesichts-Lock funktioniert nur mit SDXL-, Illustrious- und Pony-Checkpoints. Bei anderen Modellen (Anima, MOSS, FLUX, Qwen …) wird das Referenzgesicht ignoriert – Beschreibungen und Seeds gelten weiterhin.",
+  "Auto-detect a running Forge / ComfyUI at startup and switch to it": "Beim Start ein laufendes Forge / ComfyUI erkennen und dorthin wechseln",
+  "🔎 Detect now": "🔎 Jetzt erkennen",
+  "Looking for running backends…": "Suche laufende Backends…",
+  "Running": "Läuft",
+  "none": "keins",
+  "No other running backend found": "Kein anderes laufendes Backend gefunden",
+  "is running – kept": "läuft – beibehalten",
+  "detected – switched": "erkannt – gewechselt"
  }
 }
