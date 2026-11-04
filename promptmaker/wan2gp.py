@@ -55,6 +55,7 @@ def run(python, wan_dir, cfg, work_dir, cancelled=None, log=None, timeout=1800, 
     """Render one clip. Returns the path of the new .mp4 in work_dir."""
     if not (python and wan_dir and os.path.isfile(os.path.join(wan_dir, "wgp.py"))):
         raise WanError("Wan2GP not found – set its folder in Video → Tools")
+    work_dir = os.path.abspath(work_dir)  # Wan2GP runs with cwd=wan_dir, so relative paths would point there
     os.makedirs(work_dir, exist_ok=True)
     sp = os.path.join(work_dir, "settings.json")
     with open(sp, "w", encoding="utf-8") as f:

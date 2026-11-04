@@ -319,3 +319,11 @@ def test_animate_retries_once_after_oom(tmp_path):
     finally:
         m.time.sleep = orig
     assert calls == ["free", "run", "free", "run", "reload"]
+
+
+def test_runner_relative_work_dir(tmp_path, monkeypatch):
+    d = _fake_wan(tmp_path, FAKE_OK)
+    img = tmp_path / "s.png"; _png(img, "green")
+    monkeypatch.chdir(tmp_path)
+    out = wan2gp.run(sys.executable, d, wan2gp.settings("x", "s.png"), os.path.join("data", "w"))
+    assert os.path.isabs(out) and os.path.exists(out)
