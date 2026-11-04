@@ -311,6 +311,14 @@
   "still": "Standbild",
   "animated": "animiert",
   "scenes": "Szenen",
-  "Planned": "Geplant"
+  "Planned": "Geplant",
+  "Main": "Haupt",
+  "In this scene": "In dieser Szene",
+  "random": "zufällig",
+  "character's seed": "Seed der Figur",
+  "↙ Import from Characters": "↙ Aus Figuren importieren",
+  "Reference face": "Referenzgesicht",
+  "Reference face (optional) – face lock": "Referenzgesicht (optional) – Gesichts-Lock",
+  "Save a character in Characters first": "Speichere zuerst eine Figur unter Figuren"
  }
 }

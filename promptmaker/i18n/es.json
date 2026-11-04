@@ -311,6 +311,14 @@
   "still": "imagen",
   "animated": "animada",
   "scenes": "escenas",
-  "Planned": "Planificadas"
+  "Planned": "Planificadas",
+  "Main": "Principal",
+  "In this scene": "En esta escena",
+  "random": "aleatoria",
+  "character's seed": "semilla del personaje",
+  "↙ Import from Characters": "↙ Importar de Personajes",
+  "Reference face": "Cara de referencia",
+  "Reference face (optional) – face lock": "Cara de referencia (opcional) – bloqueo de cara",
+  "Save a character in Characters first": "Guarda primero un personaje en Personajes"
  }
 }

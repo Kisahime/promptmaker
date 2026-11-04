@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 
-VERSION = 1
+VERSION = 2                        # 2: character sheet, scene.characters, seed override vs used_seed
 FPS = 24
 SIZE = (1280, 704)                 # FastWan 5B native size
 WAN_FRAMES = 121                   # ~5 s at 24 fps
@@ -40,8 +40,10 @@ def videos_dir(data_dir):
     return d
 
 
-def new_scene(i=0, prompt="", duration=4.0, camera="Slow push in", caption="", animate=False, motion=""):
-    return {"id": f"s{i + 1:02d}", "prompt": prompt, "negative": "", "seed": -1, "duration": float(duration),
+def new_scene(i=0, prompt="", duration=4.0, camera="Slow push in", caption="", animate=False, motion="", characters=None):
+    # seed: -1 = use the main character's seed (or random); used_seed = the seed the still was actually made with
+    return {"id": f"s{i + 1:02d}", "prompt": prompt, "negative": "", "seed": -1, "used_seed": -1,
+            "characters": list(characters or []), "facelock": "", "duration": float(duration),
             "camera": camera if camera in CAMERAS else "Slow push in", "caption": caption, "motion": motion,
             "animate": bool(animate), "still": "", "clip": "", "status": "planned"}
 
@@ -49,7 +51,82 @@ def new_scene(i=0, prompt="", duration=4.0, camera="Slow push in", caption="", a
 def new_project(name="Untitled video", idea=""):
     return {"version": VERSION, "name": name, "idea": idea, "style": "", "song": "", "lyrics": "", "song_secs": 0.0,
             "size": list(SIZE), "fps": FPS, "crossfade": 0.4, "captions": True, "adetailer": False,
-            "checkpoint": "", "family": "", "scenes": [], "output": "", "created": time.time()}
+            "checkpoint": "", "family": "", "characters": [], "scenes": [], "output": "", "created": time.time()}
+
+
+# ------------------------------------------------------------------ character sheet
+def new_character(chars=(), name="", description="", ref="", seed=-1, main=False):
+    ids = {c["id"] for c in chars}
+    i = 1
+    while f"c{i}" in ids:
+        i += 1
+    return {"id": f"c{i}", "name": name or f"Character {i}", "description": description, "ref": ref,
+            "seed": int(seed), "main": bool(main)}
+
+
+def character_from_store(char, chars=(), profile=None):
+    """A project character from the app's Characters library (its text for the target model + first reference)."""
+    from . import characters as ch
+    ref = (ch.references(char) or [""])[0]
+    desc = ch.character_text(char, None, profile, with_lora=False, with_triggers=True)
+    return new_character(chars, char.get("name", ""), desc, ref)
+
+
+def char_by_id(proj, cid):
+    return next((c for c in proj.get("characters") or [] if c["id"] == cid), None)
+
+
+def scene_characters(proj, s):
+    """The scene's characters in sheet order with the main character first (that one gets the face lock / seed)."""
+    want = set(s.get("characters") or [])
+    cs = [c for c in proj.get("characters") or [] if c["id"] in want]
+    return sorted(cs, key=lambda c: not c.get("main"))
+
+
+def main_character(proj, s):
+    cs = scene_characters(proj, s)
+    return cs[0] if cs else None
+
+
+def scene_seed(proj, s):
+    """Scene override, else the main character's fixed seed, else -1 (random)."""
+    if int(s.get("seed", -1)) >= 0:
+        return int(s["seed"])
+    m = main_character(proj, s)
+    return int(m["seed"]) if m and int(m.get("seed", -1)) >= 0 else -1
+
+
+def ref_path(proj, pdir, c):
+    r = (c or {}).get("ref") or ""
+    if r and not os.path.isabs(r):
+        r = os.path.join(pdir, r)
+    return r if r and os.path.isfile(r) else ""
+
+
+def set_reference(c, pdir, src):
+    """Copy a reference image into the project (chars/<id>.png) so the project stays self-contained."""
+    if not src:
+        c["ref"] = ""; return ""
+    os.makedirs(os.path.join(pdir, "chars"), exist_ok=True)
+    ext = os.path.splitext(src)[1].lower() or ".png"
+    rel = os.path.join("chars", c["id"] + ext)
+    if os.path.abspath(src) != os.path.abspath(os.path.join(pdir, rel)):
+        shutil.copyfile(src, os.path.join(pdir, rel))
+    c["ref"] = rel.replace("\\", "/")
+    return c["ref"]
+
+
+def migrate(p):
+    """Older project.json -> current version (in place)."""
+    v = int(p.get("version") or 1)
+    if v < 2:
+        p.setdefault("characters", [])
+        for s in p.get("scenes") or []:
+            s["used_seed"] = s.get("used_seed", s.get("seed", -1))  # v1 stored the generated seed in 'seed'
+            s["seed"] = -1
+            s.setdefault("characters", [])
+    p["version"] = VERSION
+    return p
 
 
 def project_dir(data_dir, name):
@@ -69,8 +146,10 @@ def save_project(proj, pdir):
 def load_project(pdir):
     with open(os.path.join(pdir, "project.json"), encoding="utf-8") as f:
         p = json.load(f)
+    migrate(p)
     base = new_project()
     base.update(p)
+    base["characters"] = [dict(new_character(), **c) for c in p.get("characters") or []]
     base["scenes"] = [dict(new_scene(i), **s) for i, s in enumerate(p.get("scenes") or [])]
     for s in base["scenes"]:  # resume: files that vanished are simply made again
         for k in ("still", "clip"):
@@ -182,8 +261,14 @@ def plan_messages(proj, n=8, profile=None):
         "person is an adult. Keep it safe for work. 'motion' is one sentence describing how the scene moves for an "
         "image-to-video model. Set 'animate' true for the 2-4 scenes with the most movement. 'caption' is short "
         "on-screen text or empty.")
+    cast = ""
+    if proj.get("characters"):
+        sys_msg += (" Each scene also has \"characters\": a list of the character ids (from the cast list) who appear "
+                    "in it. Refer to them by name in the prompt but do NOT describe their looks, hair, eyes or clothes – "
+                    "their fixed description is added automatically.")
+        cast = "\n\nCast (id: name):\n" + "\n".join(f"{c['id']}: {c['name']}" for c in proj["characters"])
     user = (f"Idea / story:\n{proj.get('idea', '').strip()}\n\nStyle: {proj.get('style') or 'model default'}\n"
-            f"Number of scenes: {n}{lines}")
+            f"Number of scenes: {n}{cast}{lines}")
     return [{"role": "system", "content": sys_msg}, {"role": "user", "content": user}]
 
 
@@ -218,13 +303,14 @@ def parse_plan(text, proj):
             dur = 4.0
         cam = next((c for c in CAMERAS if c.lower() == str(s.get("camera", "")).strip().lower()), "Slow push in")
         scenes.append(new_scene(i, str(s["prompt"]).strip(), min(MAX_SECS, max(MIN_SECS, dur)), cam,
-                                str(s.get("caption") or "").strip(), bool(s.get("animate")), str(s.get("motion") or "").strip()))
+                                str(s.get("caption") or "").strip(), bool(s.get("animate")), str(s.get("motion") or "").strip(),
+                                _plan_chars(s.get("characters"), proj)))
     timeline = lyric_timeline(proj.get("lyrics"), proj.get("song_secs"))
     if timeline and scenes:
         scenes = scenes[:len(timeline)]
         while len(scenes) < len(timeline):  # AI returned too few: repeat the last look for the remaining lines
             last = scenes[-1]
-            scenes.append(new_scene(len(scenes), last["prompt"], 4, last["camera"], "", False, last["motion"]))
+            scenes.append(new_scene(len(scenes), last["prompt"], 4, last["camera"], "", False, last["motion"], last["characters"]))
         for s, (a, b, ln) in zip(scenes, timeline):
             s["duration"] = round(b - a, 3)
             s["caption"] = ln
@@ -234,9 +320,25 @@ def parse_plan(text, proj):
     return str(d.get("title") or "").strip(), scenes
 
 
+def _plan_chars(raw, proj):
+    """AI's character refs (ids or names, any case) -> known ids, in order, no repeats."""
+    if isinstance(raw, str):
+        raw = [x for x in re.split(r"[,;]", raw)]
+    out = []
+    for r in raw or []:
+        key = str(r.get("id") if isinstance(r, dict) else r).strip().lower()
+        c = next((c for c in proj.get("characters") or [] if key in (c["id"].lower(), c["name"].strip().lower())), None)
+        if c and c["id"] not in out:
+            out.append(c["id"])
+    return out
+
+
 def scene_prompt(proj, s):
-    style = (proj.get("style") or "").strip()
-    return f"{style}, {s['prompt']}" if style else s["prompt"]
+    """Style prefix, then each character's fixed description verbatim (main first), then the scene prompt."""
+    parts = [(proj.get("style") or "").strip()]
+    parts += [(c.get("description") or "").strip() for c in scene_characters(proj, s)]
+    parts.append((s.get("prompt") or "").strip())
+    return ", ".join(x.strip(" ,") for x in parts if x and x.strip(" ,"))
 
 
 def motion_prompt(proj, s):
@@ -418,7 +520,7 @@ def make_stills(proj, pdir, jobs, backend, progress=None, cancelled=None, save=N
             f.write(imgs[0])
         if s.get("clip"):  # a new still makes the old clip stale
             redo_scene(s, pdir, "clip")
-        s["still"], s["seed"] = name, int(getattr(job, "seed", s.get("seed", -1)) or -1)
+        s["still"], s["used_seed"] = name, int(getattr(job, "seed", -1) or -1)
         s["status"] = scene_status(s); done += 1
         (save or (lambda: save_project(proj, pdir)))()
     if progress:
@@ -447,7 +549,7 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
             label = f"Clip {i + 1}/{len(todo)} · {s['id']}"
             if progress:
                 progress(int(100 * i / len(todo)), label + " (about 2 min)")
-            cfg = wan2gp.settings(motion_prompt(proj, s), os.path.join(pdir, s["still"]), s.get("seed", 42),
+            cfg = wan2gp.settings(motion_prompt(proj, s), os.path.join(pdir, s["still"]), s.get("used_seed", 42),
                                   wan.get("frames", WAN_FRAMES), wan.get("steps", 3), tuple(proj.get("size") or SIZE))
             work = os.path.join(pdir, "wan", s["id"])
             lg = (lambda t, l=label, i=i: progress(int(100 * i / len(todo)), f"{l} · {t}s")) if progress else None
@@ -476,3 +578,29 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
     if progress:
         progress(100, "Clips done")
     return done
+
+
+# ------------------------------------------------------------------ face lock (IP-Adapter Plus Face, via Face Swap's code)
+def facelock_plan(proj, s, pdir, info, family_warning=""):
+    """(reference path or '', note) for a scene. info = faceswap.detect(backend). Only the scene's main character is
+    locked; anything that can't work is skipped with a note instead of failing the still."""
+    m = main_character(proj, s)
+    if not m:
+        return "", ""
+    ref = ref_path(proj, pdir, m)
+    if not ref:
+        return "", ""
+    others = len(scene_characters(proj, s)) - 1
+    extra = f" · only {m['name']} is face-locked ({others} other character{'s' if others > 1 else ''} use text only)" if others else ""
+    kind = (info or {}).get("kind")
+    if not kind:
+        return "", "face lock skipped: no image backend"
+    if family_warning:
+        return "", "face lock skipped: needs an SDXL / Illustrious / Pony checkpoint"
+    if kind == "forge":
+        if not info.get("model"):
+            return "", "face lock skipped: no face IP-Adapter in Forge's ControlNet models"
+        return ref, f"face lock: {m['name']} (Forge ControlNet IP-Adapter)" + extra
+    if info.get("type") not in ("plus_face", "faceid_v2"):
+        return "", "face lock skipped: " + (info.get("problem") or "no Plus Face IP-Adapter in ComfyUI")
+    return ref, f"face lock: {m['name']} (ComfyUI IP-Adapter Plus Face)" + extra

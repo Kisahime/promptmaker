@@ -106,7 +106,7 @@ def test_make_stills_saves_each(tmp_path):
     p = vp.new_project("t"); p["scenes"] = vp.parse_plan(PLAN, p)[1]
     jobs = [(s, imagegen.Job(s["prompt"], seed=7)) for s in p["scenes"]]
     assert vp.make_stills(p, str(tmp_path), jobs, B()) == 3
-    assert all(os.path.exists(tmp_path / s["still"]) and s["seed"] == 7 for s in p["scenes"])
+    assert all(os.path.exists(tmp_path / s["still"]) and s["used_seed"] == 7 and s["seed"] == -1 for s in p["scenes"])
     assert json.load(open(tmp_path / "project.json"))["scenes"][2]["still"] == "s03.png"
     with pytest.raises(vp.Cancelled):
         vp.make_stills(p, str(tmp_path), jobs, B(), cancelled=lambda: True)
