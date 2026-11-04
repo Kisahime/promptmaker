@@ -29,6 +29,7 @@ from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
 from .v5ui import V5Pages
 from .faceswapui import FaceSwapPage
+from .videoui import VideoMakerPage
 from .wallpaperui import WallpaperPage
 from .civitaibrowserui import CivitaiBrowserPage
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
@@ -46,7 +47,7 @@ NEGATIVE_PRESETS = {
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
        ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
-       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser")]
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser"), ("🎞", "Video maker")]
 
 
 def copy(text):
@@ -82,7 +83,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -124,7 +125,7 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
                            self._characters_page, self._storyboard_page, self._sketch_page, self._training_page,
-                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page):
+                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page, self._videomaker_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
@@ -1617,6 +1618,9 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
                 if hasattr(x, "stop"):
                     x.stop()
                 x.wait(5000)
+        vw = getattr(self, "_vm_worker", None)  # 5.3 Video maker: cancel kills Wan2GP / ffmpeg
+        if vw is not None and vw.isRunning():
+            vw.cancel(); vw.wait(10000)
         q = getattr(self, "genq", None)
         if q is not None and q.isRunning():
             q.clear(); q.cancel_current(); q.wait(5000)

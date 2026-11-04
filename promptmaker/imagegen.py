@@ -664,6 +664,10 @@ class A1111:
                 ov["forge_additional_modules"] = fm
         if ov:
             p["override_settings"] = ov
+            if getattr(job, "restore_settings", False):  # 5.3 Video mode: put Forge's own settings back afterwards
+                p["override_settings_restore_afterwards"] = True
+        if getattr(job, "adetailer", None):  # 5.3: ADetailer face pass (Forge extension)
+            p.setdefault("alwayson_scripts", {})["ADetailer"] = {"args": [True, False, {"ad_model": job.adetailer}]}
         cn = getattr(job, "controlnet", None)
         if cn and cn.get("image"):
             from .pose import add_forge_controlnet
@@ -828,6 +832,21 @@ class A1111:
         if not imgs:
             raise BackendError("Backend returned no images")
         return imgs
+
+    def unload_checkpoint(self):
+        """5.3: free VRAM before Wan2GP. True when Forge unloaded it (so reload afterwards)."""
+        try:
+            _http(self.url + "/sdapi/v1/unload-checkpoint", {}, timeout=60)
+            return True
+        except BackendError:
+            return False
+
+    def reload_checkpoint(self):
+        try:
+            _http(self.url + "/sdapi/v1/reload-checkpoint", {}, timeout=300)
+            return True
+        except BackendError:
+            return False
 
     def cancel(self):
         try:
