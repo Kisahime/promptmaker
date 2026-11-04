@@ -158,6 +158,8 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self._chrome_sync(name)
         if name == "Home":
             self.home_refresh()
+        if name == "Video maker" and hasattr(self, "vm_update_facelock_warning"):
+            self.vm_update_facelock_warning()
         if name == "History":
             self.load_history()
         elif name == "Favourites":
@@ -202,6 +204,8 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         p = self.profile
         if hasattr(self, "wp_update_plan"):  # 5.2: Wallpaper plan follows the target model's family
             self.wp_update_plan()
+        if hasattr(self, "vm_update_facelock_warning"):  # 5.3: face lock warning follows the target model
+            self.vm_update_facelock_warning()
         self.mj_box.setVisible(p.get("param_style") == "midjourney")
         neg_ok = p.get("negative") != "unsupported" or p.get("family") in ("OpenAI", "Google")
         self.neg_hint.setText({"unsupported": "No negative prompt for this model" + (

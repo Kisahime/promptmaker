@@ -13,6 +13,8 @@ from . import videoproject as vp
 from .i18n import tr
 from .widgets import Card, button, hrow, label
 
+FACELOCK_INFO = ("Face lock only works with SDXL / Illustrious / Pony checkpoints. With other models (Anima, MOSS, "
+                 "FLUX, Qwen …) the reference face is ignored – descriptions and seeds still apply.")
 COLS = ["#", "Prompt", "Secs", "Camera", "Animate", "Status"]
 
 
@@ -79,9 +81,16 @@ class VideoMakerPage:
         self.vm_ch_desc.setPlaceholderText(tr("Fixed description, used word for word in every scene: adult woman, "
                                               "long silver hair, green eyes, red jacket, jeans"))
         self.vm_ch_ref = QLineEdit(); self.vm_ch_ref.setPlaceholderText(tr("Reference face (optional) – face lock"))
+        self.vm_ch_ref.setToolTip(tr(FACELOCK_INFO))
+        self.vm_ch_ref.textChanged.connect(lambda _t: self.vm_update_facelock_warning())
         self.vm_ch_seed = QSpinBox(); self.vm_ch_seed.setRange(-1, 2 ** 31 - 1); self.vm_ch_seed.setSpecialValueText(tr("random"))
         cc.add(hrow(self.vm_ch_name, self.vm_ch_main)); cc.add(self.vm_ch_desc)
         cc.add(hrow(self.vm_ch_ref, button("…", self.vm_char_pick_ref, "ghost")))
+        self.vm_fl_info = label(FACELOCK_INFO, "hint", wrap=True); cc.add(self.vm_fl_info)
+        self.vm_fl_warn = QLabel(); self.vm_fl_warn.setWordWrap(True); self.vm_fl_warn.setVisible(False)
+        self.vm_fl_warn.setStyleSheet("QLabel{background:#4a3200;color:#ffc94d;border:1px solid #e0a000;"
+                                      "border-radius:6px;padding:6px;font-weight:600;}")
+        cc.add(self.vm_fl_warn)
         cc.add(hrow(label("Seed"), self.vm_ch_seed, button("🎲", lambda: self.vm_ch_seed.setValue(imagegen.new_seed() % (2 ** 31 - 1)), "ghost"), None))
         self.vm_ch_import = QComboBox(); self.vm_ch_import.setMinimumWidth(120)
         cc.add(hrow(button("＋ Add", self.vm_char_add, "ghost"), button("✓ Apply", self.vm_char_apply, "ghost"),
@@ -433,6 +442,27 @@ class VideoMakerPage:
         return int(round(w / 64) * 64), int(round(h / 64) * 64)
 
     # ------------------------------------------------------------------ characters
+    def vm_facelock_model(self):
+        """(model label, workflow) for the current target model / backend, as used for still generation."""
+        p = getattr(self, "profile", None) or {}
+        kind = self.store.get("img_backend", "none")
+        wf = self.store.get("img_workflow", "") if kind == "comfyui" else "a1111"
+        ckpt = self.store.get(f"img_checkpoint:{wf}", "") or ""
+        name = p.get("name") or p.get("family") or "?"
+        return (f"{name}{' · ' + os.path.basename(ckpt) if ckpt else ''}", "" if wf == "a1111" else wf)
+
+    def vm_update_facelock_warning(self):
+        """Amber warning, live: shown when a character has a reference face but the current model can't use it."""
+        if not (hasattr(self, "vm_fl_warn") and hasattr(self, "vm_proj")):
+            return ""
+        has_ref = any(c.get("ref") for c in self.vm_proj.get("characters") or []) or bool(self.vm_ch_ref.text().strip())
+        model, wf = self.vm_facelock_model()
+        why = vp.facelock_model_warning(getattr(self, "profile", None), wf) if has_ref else ""
+        text = (f"⚠️ {tr('Face lock is off')}: {tr('current model')} ({model}) {tr('isn’t SDXL / Illustrious / Pony.')} "
+                f"{tr('Descriptions and seeds still apply.')}") if why else ""
+        self.vm_fl_warn.setText(text); self.vm_fl_warn.setVisible(bool(text))
+        return text
+
     def vm_char_refresh(self):
         self.vm_chars.blockSignals(True); self.vm_chars.clear()
         for c in self.vm_proj.get("characters") or []:
@@ -447,6 +477,7 @@ class VideoMakerPage:
         r = getattr(self, "vm_char_cur", -1)
         r = r if 0 <= r < self.vm_chars.count() else (0 if self.vm_chars.count() else -1)
         self.vm_chars.setCurrentRow(r); self.vm_char_select(r)
+        self.vm_update_facelock_warning()
 
     def vm_char_select(self, r):
         self.vm_char_cur = r

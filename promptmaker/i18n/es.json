@@ -319,6 +319,11 @@
   "↙ Import from Characters": "↙ Importar de Personajes",
   "Reference face": "Cara de referencia",
   "Reference face (optional) – face lock": "Cara de referencia (opcional) – bloqueo de cara",
-  "Save a character in Characters first": "Guarda primero un personaje en Personajes"
+  "Save a character in Characters first": "Guarda primero un personaje en Personajes",
+  "Face lock is off": "El bloqueo de cara está desactivado",
+  "current model": "modelo actual",
+  "isn’t SDXL / Illustrious / Pony.": "no es SDXL / Illustrious / Pony.",
+  "Descriptions and seeds still apply.": "Las descripciones y semillas se siguen aplicando.",
+  "Face lock only works with SDXL / Illustrious / Pony checkpoints. With other models (Anima, MOSS, FLUX, Qwen …) the reference face is ignored – descriptions and seeds still apply.": "El bloqueo de cara solo funciona con checkpoints SDXL / Illustrious / Pony. Con otros modelos (Anima, MOSS, FLUX, Qwen …) se ignora la cara de referencia; las descripciones y semillas se siguen aplicando."
  }
 }

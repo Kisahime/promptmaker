@@ -617,6 +617,9 @@ def facelock_model_warning(profile, workflow=""):
     if w:
         return w
     fam = ((profile or {}).get("family") or "").lower()
+    pid = f"{(profile or {}).get('id', '')} {(profile or {}).get('name', '')}".lower()
+    if "sd35" in pid or "sd3" in pid or "3.5" in pid:
+        return "face lock needs an SDXL / Illustrious / Pony model (SD 3.5 has no face IP-Adapter)"
     if fam and not any(f in fam for f in SDXL_FAMILIES):
         return f"face lock needs an SDXL / Illustrious / Pony model (target is {profile.get('family')})"
     wf = (workflow or "").lower()

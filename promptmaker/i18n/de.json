@@ -319,6 +319,11 @@
   "↙ Import from Characters": "↙ Aus Figuren importieren",
   "Reference face": "Referenzgesicht",
   "Reference face (optional) – face lock": "Referenzgesicht (optional) – Gesichts-Lock",
-  "Save a character in Characters first": "Speichere zuerst eine Figur unter Figuren"
+  "Save a character in Characters first": "Speichere zuerst eine Figur unter Figuren",
+  "Face lock is off": "Gesichts-Lock ist aus",
+  "current model": "aktuelles Modell",
+  "isn’t SDXL / Illustrious / Pony.": "ist kein SDXL / Illustrious / Pony.",
+  "Descriptions and seeds still apply.": "Beschreibungen und Seeds gelten weiterhin.",
+  "Face lock only works with SDXL / Illustrious / Pony checkpoints. With other models (Anima, MOSS, FLUX, Qwen …) the reference face is ignored – descriptions and seeds still apply.": "Der Gesichts-Lock funktioniert nur mit SDXL-, Illustrious- und Pony-Checkpoints. Bei anderen Modellen (Anima, MOSS, FLUX, Qwen …) wird das Referenzgesicht ignoriert – Beschreibungen und Seeds gelten weiterhin."
  }
 }

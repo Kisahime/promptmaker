@@ -167,3 +167,24 @@ def test_import_from_characters_library(win, tmp_path):
     ({"family": "Stable Diffusion"}, "flux_txt2img", False), ({"family": "Qwen"}, "", False)])
 def test_facelock_model_warning(profile, wf, ok):
     assert (vp.facelock_model_warning(profile, wf) == "") == ok
+
+
+def test_facelock_warning_is_live(win, tmp_path):
+    from promptmaker.videoui import FACELOCK_INFO
+    win.go("Video maker"); win.vm_name.setText("Warn test"); win.vm_new(); win.vm_name.setText("Warn test")
+    assert "SDXL / Illustrious / Pony" in win.vm_fl_info.text() and win.vm_fl_info.isVisible()
+    assert "SDXL / Illustrious / Pony" in win.vm_ch_ref.toolTip() and FACELOCK_INFO
+    win.vm_char_add()
+
+    def pick(pid):
+        win.profile_combo.setCurrentIndex(win.profile_combo.findData(pid)); _wait(lambda: True, 0.1)
+    pick("anima")
+    assert not win.vm_fl_warn.isVisible()                       # no reference face yet -> no warning
+    face = tmp_path / "f.png"; _png(face, "pink", 128, 128); win.vm_ch_ref.setText(str(face))
+    assert win.vm_fl_warn.isVisible() and "Face lock is off" in win.vm_fl_warn.text() and "Descriptions and seeds" in win.vm_fl_warn.text()
+    assert "Anima" in win.vm_fl_warn.text()
+    pick("illustrious")
+    assert not win.vm_fl_warn.isVisible()                       # SDXL-family -> warning goes away live
+    pick("moss")
+    assert win.vm_fl_warn.isVisible()
+    assert vp.facelock_model_warning({"id": "sd35", "family": "Stable Diffusion"})
