@@ -15,7 +15,7 @@ SECTIONS = [("⌂", "Home", ["Home"]),
             ("✦", "Studio", ["Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"]),
             ("☺", "Characters", ["Characters", "Storyboard", "LoRA training"]),
             ("▦", "Gallery", ["Gallery", "A/B Test"]),
-            ("◐", "Tools", ["Image to Prompt", "Auto-refine", "Pose", "Inpaint & Regions", "Face Swap", "Wallpaper", "Video", "Analyse", "Score"]),
+            ("◐", "Tools", ["Image to Prompt", "Auto-refine", "Pose", "Inpaint & Regions", "Face Swap", "Wallpaper", "Video", "Video maker", "Analyse", "Score"]),
             ("❖", "Library", ["Presets", "Wildcards", "LoRAs", "History", "Favourites", "Packs", "Community", "Model browser"]),
             ("⚙", "Settings", ["Settings", "Model profiles", "Library sync"])]
 STUDIO_PAGES = {"Create", "Builder", "Refine", "Batch", "Templates", "Live sketch"}

@@ -4,7 +4,7 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.2** adds **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.3** adds the **Video maker**: an idea or story (plus an optional song) becomes AI-planned scenes, stills, Wan2GP clips and a finished MP4, all locally. **Version 5.2** added **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
 **Latest release:** [v5.2.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.2.0) · [Changelog](CHANGELOG.md)
 
@@ -55,7 +55,9 @@ Everything runs on your own computer by default. The AI features are optional an
 - **🗂 Checkpoint picker** *(3.0)*: choose the Forge/ComfyUI checkpoint in Settings, on the Pose page or on the Auto-refine page. All three are the same setting.
 - **🎲 Wildcards** *(4.0)*: write `__hair__` to pick a random line from `wildcards/hair.txt`, `{a|b|c}` to pick one option, `{2::a|b}` for weights, `{2$$a|b|c}` or `{1-3$$ and $$a|b|c}` to pick several. Folders (`__people/job__`), globs (`__places/*__`), YAML packs and nesting all work, using the same syntax as **sd-dynamic-prompts**. Results are seeded, so the same seed always gives the same prompt. Preview one expansion or a batch of N different variations, keep your ticked characters and styles fixed while everything else changes, and queue one image per variation. The page also creates, edits and deletes wildcard files, imports a folder or a Civitai zip pack (including zips inside zips), and has the local AI **write a new list** from a description such as "50 fantasy locations". Wildcards in prompts sent to Forge or ComfyUI are expanded with the image's seed, wherever the prompt comes from.
 - **🖌 Inpaint & Regions** *(4.0)*: open an image (or take the last generated one), paint a mask and send it to **img2img inpaint**, with denoise, mask blur, *whole picture / only masked* and padding. Or draw boxes that each get their own prompt (**regional prompting**). ComfyUI needs nothing extra (`ConditioningSetArea` + `ConditioningCombine`). Forge has no built-in regional prompting, so PromptMaker uses the free **Forge Couple** extension when it's installed. If it isn't, the page says which extension to install, and you can send everything as one prompt with position words instead. The page uses the same checkpoint picker as Settings, Pose and Auto-refine.
-- **🎬 Video** *(4.0)*: prompt writing for **Wan 2.2 / 2.1**, **LTX-Video** and **HunyuanVideo**. Fill in the subject, action and scene, and pick a camera move (14 presets: push in, orbit, tracking, FPV drone …), a motion preset, the shot size, lighting and style. The duration shows the frame count each model accepts (4n+1 or 8n+1 at its fps). **Build** writes the prompt offline in the structure that model prefers. **Write with AI** has your local LLM write it to the model's own prompting guide. You also get a word-count/camera check, the model's default negative prompt (where it has one), and saved video prompts. PromptMaker doesn't render video.
+- **🎬 Video** *(4.0)*: prompt writing for **Wan 2.2 / 2.1**, **LTX-Video** and **HunyuanVideo**. Fill in the subject, action and scene, and pick a camera move (14 presets: push in, orbit, tracking, FPV drone …), a motion preset, the shot size, lighting and style. The duration shows the frame count each model accepts (4n+1 or 8n+1 at its fps). **Build** writes the prompt offline in the structure that model prefers. **Write with AI** has your local LLM write it to the model's own prompting guide. You also get a word-count/camera check, the model's default negative prompt (where it has one), and saved video prompts. To render a whole video, use the **🎞 Video maker** *(5.3)*.
+- **🎞 Video maker** *(5.3)*: idea or story (+ optional song and lyrics) → AI scene plan → a still per scene → Wan2GP clips for ticked scenes, slow zoom / pan for the rest → one MP4 with captions, crossfades and your song. Characters with fixed descriptions, seeds and an optional face lock (SDXL / Illustrious / Pony). See [Video maker](#video-maker).
+- **Backend auto-detect** *(5.3)*: switches to the Forge or ComfyUI that is running at startup.
 - **☁ Library sync** *(4.0)*: export everything (history, favourites, templates, versions, characters, styles, video prompts, LoRA metadata, wildcards, model profiles and settings) as one `.zip` or `.json`, and import it with **merge** or **replace**. When the same name has different content you choose *keep mine*, *take theirs* or *keep both*. Optional **private GitHub gist** sync with your own token (kept in the OS keyring) can push, pull or sync, deciding by last-modified time and asking you on a conflict. **API keys and tokens are never exported.**
 - **🔍 Hires fix** *(4.0)*: switch on Forge/A1111's hires fix in **Settings → Image generation**, with the upscale factor, upscaler (loaded from your Forge), hires steps and denoise. It applies to every image PromptMaker generates (except inpaint).
 - **🧹 Frees VRAM for images** *(4.0)*: right before each image goes to Forge or ComfyUI, PromptMaker tells Ollama to unload its text and vision models so the image model gets the GPU memory. On by default; you can turn it off in Settings → Image generation.
@@ -192,6 +194,38 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 **Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
+
+## Video maker
+
+Tools → **Video maker** turns an idea or story into a short video on your own PC:
+
+1. Write the idea (and optionally pick a song – its length is read automatically – and paste the lyrics, one line per scene; `[mm:ss]` timestamps are used when present). Press **🧠 Plan scenes with AI**.
+2. Edit the scenes: prompt, motion, caption, seconds, camera move and who is in it; tick **Animate** for the scenes that should really move.
+3. **🖼 Make stills** (Forge or ComfyUI, your current target model; optional ADetailer on Forge), **🎞 Animate ticked** (Wan2GP), **🎬 Build video** (ffmpeg) – or **▶ Run all**.
+
+![Video maker](docs/screenshots/video_maker.png)
+
+**Requirements**
+
+- **ffmpeg** for the Ken Burns zooms, captions, crossfades and the final MP4 (found on PATH, in Pinokio's `ffmpeg-env` or Wan2GP's `ffmpeg_bins`; or set the path in the page's **Tools** card).
+- **[Wan2GP](https://github.com/deepbeepmeep/Wan2GP)** (e.g. the Pinokio install at `C:\pinokio\api\wan.git\app` with its `venv`) – only for animated scenes. It runs headless with FastWan 5B image-to-video (1280×704, 121 frames ≈ 5 s, 3 steps – about 2 minutes per clip on an 8 GB GPU). Without it, every scene gets a slow zoom or pan.
+- Before Wan2GP starts, PromptMaker frees the GPU: Forge unloads its checkpoint, ComfyUI unloads its models. An out-of-memory clip is retried once; the full Wan2GP log is kept in `data/videos/<name>/wan/<scene>/wan2gp.log` and the real error is shown on the page.
+
+**Characters & face lock**
+
+Add characters on the page (or **↙ Import from Characters**) with a fixed description, a seed and optionally a reference face, and tick who is in each scene. The description is added to every still word for word, and the main character's seed is reused unless the scene sets its own.
+
+With a reference face, the main character's face is locked with IP-Adapter Plus Face (the Face Swap setup). **Face lock only works with SDXL / Illustrious / Pony checkpoints** – with Anima, MOSS, FLUX, Qwen and other models the reference face is ignored and an amber warning says so; descriptions and seeds still apply. Only one face per scene is locked.
+
+![Characters with the face lock warning](docs/screenshots/video_characters.png)
+
+Projects live in `data/videos/<name>/` (with their stills, clips and character references) and resume where they stopped; **⟳ Redo still / Redo clip** remakes one scene.
+
+## Backend auto-detect
+
+At startup PromptMaker checks in the background which image backend is running – Forge / A1111 at its URL or ports 7860–7862, ComfyUI at its URL or 8188 / 8000 / 8189 – and switches to it with a short notice, reusing the target model you last used with that backend. A running current backend is kept; when nothing runs, nothing changes. Turn it off or press **🔎 Detect now** in Settings → Image generation.
+
+![Settings – auto-detect](docs/screenshots/settings_autodetect.png)
 
 ## Wallpaper mode
 

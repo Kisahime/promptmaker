@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [5.3.0] - 2026-11-04
+
+### Added
+- **Video maker** (Tools → Video maker): turn an idea or story into a short MP4, all locally.
+  - **Plan**: the AI (Ollama or your provider) splits the idea into scenes with a still prompt, duration, camera move, motion line, optional caption and an "animate" suggestion. Optional song + lyrics: one scene per lyric line, timed evenly or from `[mm:ss]` LRC timestamps, and fitted to the song's length (read with ffmpeg).
+  - **Scene editor**: table with thumbnails, an Animate tick per scene, and an editor for prompt / motion / caption / seconds / camera; add, delete, reorder, **Redo still** and **Redo clip** per scene.
+  - **Stills**: one image per scene through the normal Forge or ComfyUI setup (current target model, checkpoint and modules), sized to the video's 16:9 shape. On Forge, `override_settings_restore_afterwards` puts your settings back, and an optional **ADetailer** face pass (`face_yolov8s.pt`) can be switched on.
+  - **Animate**: ticked scenes go to **Wan2GP** headless (`wgp.py --process settings.json --output-dir …`), one clip at a time – FastWan 5B image-to-video, 1280×704, 121 frames, 3 steps by default. Forge's checkpoint is unloaded first to free VRAM (8 GB GPUs) and reloaded afterwards, also after an error or cancel.
+  - **Build**: ffmpeg makes a Ken Burns zoom / pan for every other scene, fits Wan clips to their scene length (holding the last frame), draws captions, joins everything with crossfades and mixes in the song with a fade-out → `data/videos/<name>/<name>.mp4`. No Node / Remotion needed.
+  - **Projects** are saved as `data/videos/<name>/project.json` with their stills and clips; every step resumes where it stopped and only makes what is missing. **Run all**, and **Cancel** stops between scenes and kills a running Wan2GP / ffmpeg process.
+  - **Tools** card: Wan2GP folder and its Python (auto-detected for Pinokio's `C:\pinokio\api\wan.git\app` + `venv`), ffmpeg (PATH, Pinokio's ffmpeg-env, Wan2GP's `ffmpeg_bins`), frames and steps.
+- **Video maker characters**: a per-project character sheet (name, fixed description, optional reference face, fixed seed, main character), importable from the Characters library. The AI plan names the characters in each scene (`scene.characters`), every still prompt gets the style prefix plus each character's description word for word, and scenes use the main character's seed unless the scene sets its own. **Face lock**: with a reference face, stills go through Face Swap's IP-Adapter Plus Face path (ComfyUI, or Forge's ControlNet IP-Adapter) for the scene's main character; non-SDXL models or a missing adapter skip it with a note. Projects move to version 2 (old ones are migrated on open).
+- Video maker shows that face lock needs an SDXL / Illustrious / Pony checkpoint (info line + tooltip), and a live amber warning when a character has a reference face but the current model can't use it.
+- ComfyUI backend: `unload_checkpoint()` calls `/free` so ComfyUI lets go of the GPU before Wan2GP (it kept the checkpoint loaded and Wan2GP ran out of memory); one automatic retry after an out-of-memory error; the Wan2GP log is kept per scene and the UI shows the real error line.
+- **Backend auto-detect**: at startup PromptMaker checks (in the background, about a second at most) which image backend is running – Forge / A1111 on its configured URL or ports 7860–7862, ComfyUI on its URL or 8188 / 8000 / 8189 – and switches to it with a short notice, reusing the target model you last used with that backend. The current backend is kept when it is running; nothing happens when none is. Settings → Image generation has an on/off switch (default on) and **Detect now**.
+- Forge backend: `unload_checkpoint()` / `reload_checkpoint()`, per-job `restore_settings` and `adetailer`.
+
 ## [5.2.0] - 2026-11-02
 
 ### Added

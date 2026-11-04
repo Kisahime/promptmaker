@@ -29,6 +29,7 @@ from .shell415 import Shell415
 from .v41ui import GalleryList, V41Pages
 from .v5ui import V5Pages
 from .faceswapui import FaceSwapPage
+from .videoui import VideoMakerPage
 from .wallpaperui import WallpaperPage
 from .civitaibrowserui import CivitaiBrowserPage
 from .widgets import (CallWorker, Card, CheckpointCombo, ChatWorker, ConfirmButton, DropLabel, strip_ckpt_hash, FlowLayout, GenQueue, PageScroll, ScoreBar, Toast, button, chip, hrow, label)
@@ -46,7 +47,7 @@ NEGATIVE_PRESETS = {
 NAV = [("🏡", "Home"), ("✨", "Create"), ("🎀", "Builder"), ("💬", "Refine"), ("🖼", "Image to Prompt"), ("🔮", "Auto-refine"), ("💃", "Pose"), ("🖌", "Inpaint & Regions"), ("🧸", "Presets"), ("🎲", "Wildcards"), ("🧩", "LoRAs"), ("🎬", "Video"), ("🔍", "Analyse"), ("🍓", "Score"),
        ("⚖", "A/B Test"), ("🌷", "Gallery"), ("📝", "Templates"),
        ("🍡", "Batch"), ("🕘", "History"), ("💖", "Favourites"), ("🎁", "Packs"), ("🌈", "Community"), ("🦄", "Model profiles"), ("☁", "Library sync"), ("🌙", "Settings"),
-       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser")]
+       ("👤", "Characters"), ("📖", "Storyboard"), ("✏", "Live sketch"), ("🎓", "LoRA training"), ("🎭", "Face Swap"), ("🖥", "Wallpaper"), ("🛍", "Model browser"), ("🎞", "Video maker")]
 
 
 def copy(text):
@@ -82,7 +83,7 @@ def page(title, subtitle=""):
     return w, v
 
 
-class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
+class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pages, V41Pages, V4Pages, V3Pages, QMainWindow):
     def __init__(self, store, data_dir):
         super().__init__()
         self.store, self.data_dir = store, data_dir
@@ -124,7 +125,7 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
                            self._templates_page, self._batch_page, self._history_page, self._fav_page,
                            self._packs_page, self._community_page, self._profiles_page, self._sync_page, self._settings_page,
                            self._characters_page, self._storyboard_page, self._sketch_page, self._training_page,
-                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page):
+                           self._faceswap_page, self._wallpaper_page, self._civitai_browser_page, self._videomaker_page):
             pg = builder_fn()
             # 4.1.5: every page scrolls when the window is too short for it, instead of squashing its editors.
             self.stack.addWidget(PageScroll(pg))
@@ -142,6 +143,8 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         self.update_preview()
         self._create_profile_refresh()
         QTimer.singleShot(50, self.refresh_models_async)
+        if self.store.get("auto_detect_backend", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
+            QTimer.singleShot(300, self.detect_backend)  # 5.3: switch to whichever image backend is running
         if self.store.get("check_updates", True) and not os.environ.get("PROMPTMAKER_NO_NET"):
             QTimer.singleShot(3000, self.check_updates)
         if not self.store.get("setup_done") and not os.environ.get("PROMPTMAKER_NO_TOUR") and not os.environ.get("PROMPTMAKER_NO_SETUP"):
@@ -157,6 +160,8 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         self._chrome_sync(name)
         if name == "Home":
             self.home_refresh()
+        if name == "Video maker" and hasattr(self, "vm_update_facelock_warning"):
+            self.vm_update_facelock_warning()
         if name == "History":
             self.load_history()
         elif name == "Favourites":
@@ -198,9 +203,13 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
 
     def _profile_changed(self, *_):
         self.store.set("profile", self.profile["id"])
+        if not getattr(self, "_detect_switching", False) and self.store.get("img_backend", "none") != "none":
+            self.store.set("backend_profile:" + self.store.get("img_backend", "none"), self.profile["id"])
         p = self.profile
         if hasattr(self, "wp_update_plan"):  # 5.2: Wallpaper plan follows the target model's family
             self.wp_update_plan()
+        if hasattr(self, "vm_update_facelock_warning"):  # 5.3: face lock warning follows the target model
+            self.vm_update_facelock_warning()
         self.mj_box.setVisible(p.get("param_style") == "midjourney")
         neg_ok = p.get("negative") != "unsupported" or p.get("family") in ("OpenAI", "Google")
         self.neg_hint.setText({"unsupported": "No negative prompt for this model" + (
@@ -1617,6 +1626,9 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
                 if hasattr(x, "stop"):
                     x.stop()
                 x.wait(5000)
+        vw = getattr(self, "_vm_worker", None)  # 5.3 Video maker: cancel kills Wan2GP / ffmpeg
+        if vw is not None and vw.isRunning():
+            vw.cancel(); vw.wait(10000)
         q = getattr(self, "genq", None)
         if q is not None and q.isRunning():
             q.clear(); q.cancel_current(); q.wait(5000)
@@ -2197,6 +2209,12 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         self.img_url = QLineEdit()
         self.img_kind.currentIndexChanged.connect(self._img_form)
         im.add(_frow("Backend", self.img_kind)); im.add(_frow("URL", self.img_url))
+        self.auto_detect = QCheckBox(tr("Auto-detect a running Forge / ComfyUI at startup and switch to it"))
+        self.auto_detect.setChecked(bool(self.store.get("auto_detect_backend", True)))
+        self.auto_detect.toggled.connect(lambda on: self.store.set("auto_detect_backend", bool(on)))
+        self.detect_lbl = label("", "hint", wrap=True)
+        im.add(hrow(self.auto_detect, None, button("🔎 Detect now", lambda: self.detect_backend(manual=True), "ghost")))
+        im.add(self.detect_lbl)
         self.img_wf = QComboBox()
         for name in imagegen.list_workflows(os.path.join(self.data_dir, "workflows")):
             self.img_wf.addItem(name)
@@ -2423,6 +2441,67 @@ class MainWindow(Shell415, CivitaiBrowserPage, WallpaperPage, FaceSwapPage, V5Pa
         self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{name}", ""))
         if self.img_kind.currentData() == "comfyui" and not os.environ.get("PROMPTMAKER_NO_NET"):
             self._img_ckpts()
+
+    # ---------------------------------------------------------------- 5.3 backend auto-detect
+    def detect_backend(self, manual=False):
+        """Probe local backends in a worker (≈1 s worst case) and switch to a running one. Never blocks the UI."""
+        from . import backenddetect as bd
+        if getattr(self, "_detect_worker", None) is not None and self._detect_worker.isRunning():
+            return None
+        cands = bd.candidates(self.store.get)
+        if manual and hasattr(self, "detect_lbl"):
+            self.detect_lbl.setText(tr("Looking for running backends…"))
+        wk = CallWorker(lambda: bd.probe(cands, 0.8))
+        wk.ok.connect(lambda found, m=manual: self._detect_done(found, m))
+        wk.failed.connect(lambda _e: None)
+        self._detect_worker = wk; self._keep(wk) if hasattr(self, "_keep") else None; wk.start()
+        return wk
+
+    def _detect_done(self, found, manual=False):
+        from . import backenddetect as bd
+        if getattr(self, "_closing", False):
+            return None
+        kind = self.store.get("img_backend", "none")
+        default = {"comfyui": "http://127.0.0.1:8188", "a1111": "http://127.0.0.1:7860"}.get(kind, "")
+        cur_url = self.store.get(f"img_url:{kind}", default) if kind in bd.KINDS else ""
+        conf = {k: self.store.get(f"img_url:{k}", "") for k in bd.KINDS}
+        pick = bd.choose(kind, cur_url, found, conf)
+        running = ", ".join(f"{bd.NAMES[k]} ({u})" for u, k in sorted(found.items())) or tr("none")
+        if hasattr(self, "detect_lbl"):
+            self.detect_lbl.setText(tr("Running") + f": {running}")
+        if not pick:
+            if manual:
+                self.notify(tr("No other running backend found") if not found else
+                            f"{bd.NAMES.get(kind, kind)} " + tr("is running – kept"))
+            return None
+        new_kind, url = pick
+        self.switch_backend(new_kind, url)
+        self.notify(f"{bd.NAMES[new_kind]} " + tr("detected – switched"))
+        return pick
+
+    def switch_backend(self, kind, url):
+        """Make `kind` at `url` the active image backend (same keys as Settings → Save) and reuse the target model
+        last used with it."""
+        self.store.set("img_backend", kind); self.store.set(f"img_url:{kind}", url)
+        if hasattr(self, "img_kind"):
+            self.img_kind.blockSignals(True)
+            self.img_kind.setCurrentIndex(max(0, self.img_kind.findData(kind)))
+            self.img_kind.blockSignals(False); self._img_form()
+        pid = self.store.get("backend_profile:" + kind)
+        if pid and pid in self.profiles and hasattr(self, "profile_combo") and pid != self.profile.get("id"):
+            self._detect_switching = True
+            try:
+                self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(pid)))
+            finally:
+                self._detect_switching = False
+        cur = self.store.get(f"img_checkpoint:{self.ckpt_key()}", "")
+        for c in self._ckpt_combos_list():
+            c.set_items([]); c.set_name(cur)
+        self._ckpt_names = None
+        if hasattr(self, "poll_status"):
+            self._status_busy = False; self.poll_status()
+        if hasattr(self, "vm_update_facelock_warning"):
+            self.vm_update_facelock_warning()
 
     def _img_form(self, *_):
         kind = self.img_kind.currentData()
