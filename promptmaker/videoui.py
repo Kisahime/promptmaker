@@ -72,7 +72,7 @@ class VideoMakerPage:
         pc.add(hrow(self.vm_captions, self.vm_ad, None))
         pc.add(hrow(button("🧠 Plan scenes with AI", self.vm_plan, "primary"), None))
         cc = Card("Characters")
-        self.vm_chars = QListWidget(); self.vm_chars.setMaximumHeight(90)
+        self.vm_chars = QListWidget(); self.vm_chars.setMinimumHeight(56); self.vm_chars.setMaximumHeight(90)
         self.vm_chars.currentRowChanged.connect(self.vm_char_select)
         cc.add(self.vm_chars)
         self.vm_ch_name = QLineEdit(); self.vm_ch_name.setPlaceholderText(tr("Name"))
@@ -87,7 +87,7 @@ class VideoMakerPage:
         cc.add(hrow(self.vm_ch_name, self.vm_ch_main)); cc.add(self.vm_ch_desc)
         cc.add(hrow(self.vm_ch_ref, button("…", self.vm_char_pick_ref, "ghost")))
         self.vm_fl_info = label(FACELOCK_INFO, "hint", wrap=True); cc.add(self.vm_fl_info)
-        self.vm_fl_warn = QLabel(); self.vm_fl_warn.setWordWrap(True); self.vm_fl_warn.setVisible(False)
+        self.vm_fl_warn = QLabel(); self.vm_fl_warn.setWordWrap(True); self.vm_fl_warn.setVisible(False); self.vm_fl_warn.setMinimumHeight(66)
         self.vm_fl_warn.setStyleSheet("QLabel{background:#4a3200;color:#ffc94d;border:1px solid #e0a000;"
                                       "border-radius:6px;padding:6px;font-weight:600;}")
         cc.add(self.vm_fl_warn)
@@ -101,7 +101,10 @@ class VideoMakerPage:
         # ---------------- scenes
         sc = Card("Scenes")
         self.vm_table = QTableWidget(0, len(COLS)); self.vm_table.setHorizontalHeaderLabels([tr(c) for c in COLS])
-        self.vm_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        hh = self.vm_table.horizontalHeader(); hh.setSectionResizeMode(1, QHeaderView.Stretch)
+        for col in (0, 2, 4, 5):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        self.vm_table.setIconSize(self.vm_table.iconSize().expandedTo(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(64, 36)))
         self.vm_table.setSelectionBehavior(QTableWidget.SelectRows); self.vm_table.setSelectionMode(QTableWidget.SingleSelection)
         self.vm_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.vm_table.currentCellChanged.connect(lambda r, *_: self.vm_select(r))
