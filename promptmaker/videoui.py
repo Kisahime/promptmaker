@@ -406,7 +406,8 @@ class VideoMakerPage:
     def _vm_facelock(self, job, s, pdir, info):
         """Face Swap's generate mode (IP-Adapter Plus Face) with the main character's reference. Returns the note."""
         from . import faceswap as fs
-        ref, note = vp.facelock_plan(self.vm_proj, s, pdir, info, fs.family_warning(getattr(self, "profile", None)))
+        ref, note = vp.facelock_plan(self.vm_proj, s, pdir, info,
+                                     vp.facelock_model_warning(getattr(self, "profile", None), getattr(job, "workflow", "")))
         if not ref:
             return note
         cache = getattr(self, "_vm_face_cache", {})

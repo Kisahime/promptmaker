@@ -134,7 +134,7 @@ def test_page_characters_and_facelocked_stills(win, tmp_path, monkeypatch):
     monkeypatch.setattr(win, "make_job", lambda prompt, neg="", seed=None, tag="": (imagegen.Job(prompt, neg, 1024, 1024, seed), b, {}))
     monkeypatch.setattr(fs, "detect", lambda backend: {"kind": "comfy", "type": "plus_face", "problem": "",
                                                        "model": "ip-adapter-plus-face_sdxl_vit-h.safetensors"})
-    monkeypatch.setattr(fs, "family_warning", lambda profile: "")
+    monkeypatch.setattr(vp, "facelock_model_warning", lambda profile, wf="": "")
     assert win.vm_stills()
     assert _wait(lambda: "✓ 2" in win.vm_status.text(), 20), win.vm_status.text()
     assert all(j.prompt.startswith(MIRA) for j in seen)
@@ -144,7 +144,7 @@ def test_page_characters_and_facelocked_stills(win, tmp_path, monkeypatch):
     # Anima / non-SDXL target: stills still made, face lock skipped with a note
     for s in win.vm_proj["scenes"]:
         s["still"] = ""
-    seen.clear(); monkeypatch.setattr(fs, "family_warning", lambda profile: "Face Swap needs an SDXL checkpoint")
+    seen.clear(); monkeypatch.setattr(vp, "facelock_model_warning", lambda profile, wf="": "Face Swap needs an SDXL checkpoint")
     assert win.vm_stills()
     assert _wait(lambda: len(seen) == 2 and not win._vm_busy(), 20)
     assert all(j.faceswap is None for j in seen) and "needs an SDXL" in win.vm_facelock.text()
@@ -159,3 +159,11 @@ def test_import_from_characters_library(win, tmp_path):
     c = win.vm_char_import()
     assert c and c["name"] == "Ava" and "short pink hair" in c["description"] and "yellow raincoat" in c["description"]
     assert c["ref"] == "chars/c1.png" and c["main"]
+
+
+@pytest.mark.parametrize("profile,wf,ok", [
+    ({"family": "Stable Diffusion"}, "sdxl_txt2img", True), ({"family": "Illustrious"}, "a1111", True),
+    ({"family": "MOSS"}, "moss_txt2img", False), ({"family": "Anima"}, "a1111", False),
+    ({"family": "Stable Diffusion"}, "flux_txt2img", False), ({"family": "Qwen"}, "", False)])
+def test_facelock_model_warning(profile, wf, ok):
+    assert (vp.facelock_model_warning(profile, wf) == "") == ok

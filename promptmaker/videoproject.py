@@ -604,3 +604,22 @@ def facelock_plan(proj, s, pdir, info, family_warning=""):
     if info.get("type") not in ("plus_face", "faceid_v2"):
         return "", "face lock skipped: " + (info.get("problem") or "no Plus Face IP-Adapter in ComfyUI")
     return ref, f"face lock: {m['name']} (ComfyUI IP-Adapter Plus Face)" + extra
+
+
+SDXL_FAMILIES = ("stable diffusion", "sdxl", "illustrious", "pony", "noob")
+
+
+def facelock_model_warning(profile, workflow=""):
+    """'' when the target model can use the SDXL face IP-Adapter, else why not. Stricter than Face Swap's check:
+    the family has to be SDXL-like (MOSS, Qwen, HiDream … are not), and a ComfyUI workflow mustn't be FLUX / MOSS."""
+    from .faceswap import family_warning
+    w = family_warning(profile)
+    if w:
+        return w
+    fam = ((profile or {}).get("family") or "").lower()
+    if fam and not any(f in fam for f in SDXL_FAMILIES):
+        return f"face lock needs an SDXL / Illustrious / Pony model (target is {profile.get('family')})"
+    wf = (workflow or "").lower()
+    if any(x in wf for x in ("moss", "flux", "qwen", "anima", "hidream")):
+        return f"face lock needs an SDXL workflow (current: {workflow})"
+    return ""
