@@ -100,7 +100,7 @@ def ref_path(proj, pdir, c):
     r = (c or {}).get("ref") or ""
     if r and not os.path.isabs(r):
         r = os.path.join(pdir, r)
-    return r if r and os.path.isfile(r) else ""
+    return os.path.normpath(r) if r and os.path.isfile(r) else ""
 
 
 def set_reference(c, pdir, src):

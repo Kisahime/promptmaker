@@ -76,7 +76,7 @@ def test_reference_copied_into_project(tmp_path):
     c = vp.new_character()
     pdir = str(tmp_path / "proj")
     assert vp.set_reference(c, pdir, str(src)) == "chars/c1.png"
-    assert vp.ref_path({}, pdir, c) == os.path.join(pdir, "chars", "c1.png")
+    assert vp.ref_path({}, pdir, c) == os.path.normpath(os.path.join(pdir, "chars", "c1.png"))
 
 
 @pytest.mark.parametrize("info,warn,want_ref,note", [
