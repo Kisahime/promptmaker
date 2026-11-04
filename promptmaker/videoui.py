@@ -6,7 +6,7 @@ import threading
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
-                               QProgressBar, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView, QWidget)
+                               QProgressBar, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView)
 
 from . import imagegen, wan2gp
 from . import videoproject as vp
