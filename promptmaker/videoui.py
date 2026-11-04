@@ -314,7 +314,7 @@ class VideoMakerPage:
         wk = VideoWorker(fn)
         wk.progress.connect(lambda pct, msg: (self.vm_bar.setValue(pct), self.vm_status.setText(tr(name) + " · " + msg)))
         wk.ok.connect(lambda r: (self._vm_after(), done(r)))
-        wk.failed.connect(lambda e: (self._vm_after(), self._vm_chain.clear(), self.vm_status.setText("⚠️ " + e[:300])))
+        wk.failed.connect(lambda e: (self._vm_after(), self._vm_chain.clear(), self.vm_status.setText("⚠️ " + e[:600])))
         self._vm_worker = wk; wk.start()
         return True
 
@@ -369,8 +369,8 @@ class VideoMakerPage:
             self.vm_status.setText(tr("No ticked scenes waiting for a clip (make stills first)")); self._vm_next(); return True
         wan = {"dir": self.vm_wan_dir.text().strip(), "python": self.vm_wan_py.text().strip(),
                "frames": self.vm_frames.value(), "steps": self.vm_steps.value()}
-        b = self.image_backend()
-        forge = b if isinstance(b, imagegen.A1111) else None
+        b = self.image_backend()  # Forge: unload-checkpoint; ComfyUI: /free – either one must let go of the GPU
+        forge = b if hasattr(b, "unload_checkpoint") else None
         pdir = self.vm_dir()
         return self._vm_start(lambda prog, canc: vp.animate(self.vm_proj, pdir, wan, forge, prog, canc),
                               lambda n: (self.vm_status.setText(f"✓ {n} {tr('clips')}"), self._vm_next()), "Animate")

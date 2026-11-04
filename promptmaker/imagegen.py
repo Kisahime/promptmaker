@@ -471,6 +471,17 @@ class ComfyUI:
                 raise BackendError("Timed out waiting for ComfyUI")
             time.sleep(poll)
 
+    def unload_checkpoint(self):
+        """5.3: free VRAM before Wan2GP – ComfyUI keeps the last checkpoint on the GPU until asked (POST /free)."""
+        try:
+            _http(self.url + "/free", {"unload_models": True, "free_memory": True}, timeout=60)
+            return True
+        except BackendError:
+            return False
+
+    def reload_checkpoint(self):
+        return True  # ComfyUI loads the model again on the next prompt
+
     def cancel(self):
         try:
             if self._prompt_id:
@@ -842,6 +853,7 @@ class A1111:
             return False
 
     def reload_checkpoint(self):
+        """Forge Classic has no reload route – it loads the checkpoint again on the next txt2img, so 404 is fine."""
         try:
             _http(self.url + "/sdapi/v1/reload-checkpoint", {}, timeout=300)
             return True

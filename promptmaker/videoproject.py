@@ -450,8 +450,18 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
             cfg = wan2gp.settings(motion_prompt(proj, s), os.path.join(pdir, s["still"]), s.get("seed", 42),
                                   wan.get("frames", WAN_FRAMES), wan.get("steps", 3), tuple(proj.get("size") or SIZE))
             work = os.path.join(pdir, "wan", s["id"])
-            clip = runner(wan.get("python"), wan.get("dir"), cfg, work, cancelled=cancelled,
-                          log=(lambda t, l=label, i=i: progress(int(100 * i / len(todo)), f"{l} · {t}s")) if progress else None)
+            lg = (lambda t, l=label, i=i: progress(int(100 * i / len(todo)), f"{l} · {t}s")) if progress else None
+            try:
+                clip = runner(wan.get("python"), wan.get("dir"), cfg, work, cancelled=cancelled, log=lg)
+            except wan2gp.WanError as e:
+                if not wan2gp.is_oom(str(e)) or forge is None:
+                    raise
+                # out of memory: the image backend may have loaded a model again – free it and try this clip once more
+                if progress:
+                    progress(int(100 * i / len(todo)), label + " · out of memory, freeing VRAM and retrying")
+                unloaded = forge.unload_checkpoint() or unloaded
+                time.sleep(3)
+                clip = runner(wan.get("python"), wan.get("dir"), cfg, work, cancelled=cancelled, log=lg)
             name = f"{s['id']}_wan.mp4"
             shutil.copyfile(clip, os.path.join(pdir, name))
             s["clip"] = name; s["status"] = scene_status(s); done += 1

@@ -81,11 +81,32 @@ def run(python, wan_dir, cfg, work_dir, cancelled=None, log=None, timeout=1800, 
     new = [f for f in glob.glob(os.path.join(work_dir, "**", "*.mp4"), recursive=True)
            if f not in before and os.path.getmtime(f) >= start - 1]
     if p.returncode or not new:
-        tail = ""
+        tail, log_path = "", os.path.join(work_dir, "wan2gp.log")
         try:
-            with open(os.path.join(work_dir, "wan2gp.log"), encoding="utf-8", errors="replace") as f:
-                tail = f.read()[-500:]
+            with open(log_path, encoding="utf-8", errors="replace") as f:
+                tail = f.read()
         except OSError:
             pass
-        raise WanError(f"Wan2GP made no clip (exit {p.returncode}). {tail.strip()}")
+        raise WanError(f"Wan2GP made no clip (exit {p.returncode}): {error_line(tail)} – full log: {log_path}")
     return max(new, key=os.path.getmtime)
+
+
+OOM_HINT = ("the GPU ran out of memory (CUDA out of memory). Close other GPU apps (ComfyUI / Forge with a model loaded, "
+            "games, video players) or lower Frames")
+
+
+def is_oom(text):
+    t = (text or "").lower()
+    return "out of memory" in t or "cudaerrormemoryallocation" in t or "unsufficient ram" in t
+
+
+def error_line(log):
+    """The line that says what went wrong, not CUDA's generic 'might be asynchronously reported' text."""
+    if is_oom(log):
+        return OOM_HINT
+    lines = [l.strip() for l in (log or "").splitlines() if l.strip()]
+    for pat in ("[ERROR]", "Error:", "Exception:", "error:"):
+        hits = [l for l in lines if pat in l and "CUDA kernel errors might be" not in l]
+        if hits:
+            return hits[-1][:300]
+    return (lines[-1][:300] if lines else "no output")

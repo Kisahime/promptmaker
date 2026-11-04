@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows [Kee
   - **Build**: ffmpeg makes a Ken Burns zoom / pan for every other scene, fits Wan clips to their scene length (holding the last frame), draws captions, joins everything with crossfades and mixes in the song with a fade-out → `data/videos/<name>/<name>.mp4`. No Node / Remotion needed.
   - **Projects** are saved as `data/videos/<name>/project.json` with their stills and clips; every step resumes where it stopped and only makes what is missing. **Run all**, and **Cancel** stops between scenes and kills a running Wan2GP / ffmpeg process.
   - **Tools** card: Wan2GP folder and its Python (auto-detected for Pinokio's `C:\pinokio\api\wan.git\app` + `venv`), ffmpeg (PATH, Pinokio's ffmpeg-env, Wan2GP's `ffmpeg_bins`), frames and steps.
+- ComfyUI backend: `unload_checkpoint()` calls `/free` so ComfyUI lets go of the GPU before Wan2GP (it kept the checkpoint loaded and Wan2GP ran out of memory); one automatic retry after an out-of-memory error; the Wan2GP log is kept per scene and the UI shows the real error line.
 - Forge backend: `unload_checkpoint()` / `reload_checkpoint()`, per-job `restore_settings` and `adetailer`.
 
 ## [5.2.0] - 2026-11-02

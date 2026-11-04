@@ -252,3 +252,70 @@ def test_page_stills_with_mock_backend(win, tmp_path, monkeypatch):
     assert win.vm_stills()
     assert _wait(lambda: "✓ 3" in win.vm_status.text(), 20), win.vm_status.text()
     assert all(s.get("still") for s in win.vm_proj["scenes"]) and win.vm_table.item(0, 5).text() == "still"
+
+
+# ------------------------------------------------------------------ 5.3 fix: OOM when the image backend holds VRAM
+OOM_LOG = """Traceback (most recent call last):
+torch.AcceleratorError: CUDA error: out of memory
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+  [ERROR] The generation of the video has encountered an error: it is likely that you have unsufficient RAM
+"""
+
+
+def test_error_line_explains_oom_and_other_errors():
+    assert "ran out of memory" in wan2gp.error_line(OOM_LOG)
+    assert wan2gp.error_line("loading\nValueError: bad resolution 1x1\n") == "ValueError: bad resolution 1x1"
+
+
+def test_runner_reports_real_error_and_keeps_log(tmp_path):
+    d = _fake_wan(tmp_path, "import sys\nsys.stderr.write(%r)\nsys.exit(1)\n" % OOM_LOG)
+    img = tmp_path / "s.png"; _png(img, "green")
+    with pytest.raises(wan2gp.WanError) as e:
+        wan2gp.run(sys.executable, d, wan2gp.settings("x", str(img)), str(tmp_path / "w"))
+    assert "ran out of memory" in str(e.value) and "wan2gp.log" in str(e.value)
+    assert "CUDA error: out of memory" in open(tmp_path / "w" / "wan2gp.log", encoding="utf-8").read()
+
+
+def test_comfy_free_endpoint():
+    seen = []
+    import http.server
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(b"{}")
+        def log_message(self, *a):
+            pass
+    s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        c = imagegen.ComfyUI(f"http://127.0.0.1:{s.server_address[1]}")
+        assert c.unload_checkpoint() and c.reload_checkpoint()
+        assert seen == [("/free", {"unload_models": True, "free_memory": True})]
+    finally:
+        s.shutdown()
+
+
+def test_animate_retries_once_after_oom(tmp_path):
+    calls = []
+
+    class Comfy:
+        def unload_checkpoint(self):
+            calls.append("free"); return True
+
+        def reload_checkpoint(self):
+            calls.append("reload"); return True
+    p = vp.new_project("t"); p["scenes"] = [vp.new_scene(0, "adult woman waving", 3, animate=True)]
+    _png(tmp_path / "s01.png", "red"); p["scenes"][0]["still"] = "s01.png"
+    n = {"k": 0}
+
+    def runner(py, d, cfg, work, cancelled=None, log=None):
+        n["k"] += 1; calls.append("run")
+        if n["k"] == 1:
+            raise wan2gp.WanError("Wan2GP made no clip (exit 1): " + wan2gp.OOM_HINT)
+        os.makedirs(work, exist_ok=True); f = os.path.join(work, "o.mp4"); open(f, "wb").write(b"v"); return f
+    import promptmaker.videoproject as m
+    orig = m.time.sleep; m.time.sleep = lambda s: None
+    try:
+        assert vp.animate(p, str(tmp_path), {}, Comfy(), runner=runner) == 1
+    finally:
+        m.time.sleep = orig
+    assert calls == ["free", "run", "free", "run", "reload"]
