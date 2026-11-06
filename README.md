@@ -6,7 +6,7 @@
 
 Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 5.3** adds the **Video maker**: an idea or story (plus an optional song) becomes AI-planned scenes, stills, Wan2GP clips and a finished MP4, all locally. **Version 5.2** added **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v5.2.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.2.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v5.3.0](https://github.com/Kisahime/promptmaker/releases/tag/v5.3.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -139,6 +139,7 @@ You need **Python 3.10+** ([python.org](https://www.python.org/downloads/); on W
 - **Face Swap**: the face model, see [Face Swap setup](#face-swap-setup).
 - **Live sketch** (optional): for scribble mode, put [xinsir/controlnet-scribble-sdxl-1.0](https://huggingface.co/xinsir/controlnet-scribble-sdxl-1.0) in Forge's `models\ControlNet` folder; without it Live sketch uses fast img2img.
 - **LoRA training** (optional): git and an NVIDIA GPU, see [LoRA training](#lora-training-optional).
+- **Video maker** (optional): **ffmpeg** for the MP4 (PATH, Pinokio's `ffmpeg-env`, or Wan2GP's `ffmpeg_bins`), and [Wan2GP](https://github.com/deepbeepmeep/Wan2GP) only for animated scenes. See [Video maker](#video-maker).
 
 **macOS / Linux** (should work, but is less tested)
 ```bash
