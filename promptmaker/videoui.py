@@ -6,9 +6,9 @@ import threading
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
-                               QProgressBar, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView)
+                               QProgressBar, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView, QVBoxLayout, QWidget)
 
-from . import imagegen, wan2gp
+from . import imagegen, wan2gp, wanconfigs
 from . import videoproject as vp
 from .i18n import tr
 from .widgets import Card, button, hrow, label
@@ -124,6 +124,29 @@ class VideoMakerPage:
         self.vm_scene_seed.setSpecialValueText(tr("character's seed")); self.vm_scene_seed.setMinimumWidth(130)
         sc.add(self.vm_prompt); sc.add(hrow(label("Motion"), self.vm_motion)); sc.add(hrow(label("Caption"), self.vm_caption))
         sc.add(hrow(label("Secs"), self.vm_secs, label("Camera"), self.vm_cam, self.vm_anim, None))
+        self.vm_anim_from = label("", "hint", wrap=True)
+        self.vm_override = QCheckBox(tr("Override animation for this scene"))
+        self.vm_override.toggled.connect(self._vm_override_toggled)
+        sc.add(self.vm_anim_from)
+        sc.add(self.vm_override)
+        self.vm_override_box = QWidget()
+        ov = QVBoxLayout(self.vm_override_box); ov.setContentsMargins(0, 0, 0, 0)
+        self.vm_scene_model = QComboBox()
+        self.vm_scene_model.currentIndexChanged.connect(self._vm_scene_model_changed)
+        self.vm_scene_frames = QSpinBox(); self.vm_scene_frames.setRange(1, 1800)
+        self.vm_scene_steps = QSpinBox(); self.vm_scene_steps.setRange(1, 100)
+        self.vm_scene_guidance = QDoubleSpinBox(); self.vm_scene_guidance.setRange(0, 30); self.vm_scene_guidance.setDecimals(2)
+        self.vm_scene_lora = QComboBox(); self.vm_scene_strength = QDoubleSpinBox()
+        self.vm_scene_strength.setRange(0, 4); self.vm_scene_strength.setSingleStep(0.05); self.vm_scene_strength.setValue(1)
+        self.vm_scene_switch = QLabel(); self.vm_scene_switch.setWordWrap(True); self.vm_scene_switch.setVisible(False)
+        self.vm_scene_switch.setStyleSheet("QLabel{background:#4a3200;color:#ffc94d;border:1px solid #e0a000;border-radius:6px;padding:6px;font-weight:600;}")
+        ov.addLayout(hrow(label("Model"), self.vm_scene_model))
+        ov.addLayout(hrow(label("Frames"), self.vm_scene_frames, label("Steps"), self.vm_scene_steps, label("Guidance"), self.vm_scene_guidance))
+        ov.addLayout(hrow(label("Creative LoRA"), self.vm_scene_lora, label("Strength"), self.vm_scene_strength))
+        ov.addWidget(self.vm_scene_switch)
+        self.vm_override_box.setVisible(False)
+        sc.add(self.vm_override_box)
+        sc.add(hrow(button("Use current settings", self.vm_use_current, "ghost"), None))
         sc.add(hrow(label("In this scene"), self.vm_scene_chars, label("Seed"), self.vm_scene_seed))
         self.vm_facelock = label("", "hint", wrap=True); sc.add(self.vm_facelock)
         sc.add(hrow(button("✓ Apply", self.vm_apply_scene, "ghost"), button("⟳ Redo still", lambda: self.vm_redo("still"), "ghost"),
@@ -144,18 +167,52 @@ class VideoMakerPage:
         self.vm_wan_dir = QLineEdit(wd); self.vm_wan_dir.setPlaceholderText(wan2gp.DEFAULT_DIR)
         self.vm_wan_py = QLineEdit(py); self.vm_wan_py.setPlaceholderText(r"…\wan.git\app\venv\Scripts\python.exe")
         self.vm_ffmpeg = QLineEdit(vp.find_ffmpeg(self.store.get("vm_ffmpeg", ""), wd)); self.vm_ffmpeg.setPlaceholderText("ffmpeg.exe")
-        self.vm_frames = QSpinBox(); self.vm_frames.setRange(17, 241); self.vm_frames.setSingleStep(4); self.vm_frames.setValue(int(self.store.get("vm_frames", vp.WAN_FRAMES)))
-        self.vm_steps = QSpinBox(); self.vm_steps.setRange(1, 50); self.vm_steps.setValue(int(self.store.get("vm_steps", 3)))
+        self.vm_model = QComboBox(); self.vm_model.currentIndexChanged.connect(self._vm_model_changed)
+        self.vm_model_status = label("", "hint", wrap=True)
+        self.vm_resolution = QComboBox()
+        self.vm_frames = QSpinBox(); self.vm_frames.setRange(1, 1800); self.vm_frames.setValue(int(self.store.get("vm_frames", vp.WAN_FRAMES)))
+        self.vm_frames.setEnabled(False)
+        self.vm_frames.setToolTip(tr("Frames are calculated from each scene's length. This model's own recorded count is shown here and is not sent."))
+        self.vm_steps = QSpinBox(); self.vm_steps.setRange(1, 100); self.vm_steps.setValue(int(self.store.get("vm_steps", 3)))
+        self.vm_guidance = QDoubleSpinBox(); self.vm_guidance.setRange(0, 30); self.vm_guidance.setDecimals(2)
+        self.vm_guidance.setValue(float(self.store.get("vm_guidance", 1)))
+        self.vm_flow = QDoubleSpinBox(); self.vm_flow.setRange(0, 30); self.vm_flow.setDecimals(2)
+        self.vm_flow.setValue(float(self.store.get("vm_flow", 3)))
+        self.vm_lora = QComboBox(); self.vm_lora.currentIndexChanged.connect(self._vm_lora_changed)
+        self.vm_lora_strength = QDoubleSpinBox(); self.vm_lora_strength.setRange(0, 4); self.vm_lora_strength.setSingleStep(0.05)
+        self.vm_lora_strength.setValue(float(self.store.get("vm_lora_strength", 1)))
+        self.vm_lora_strength.setToolTip(tr("Constant strength for this one creative LoRA. There is no guaranteed safe range, "
+                                            "and this does not turn the model's acceleration adapter off."))
+        self.vm_lora_note = label("", "hint", wrap=True)
+        self.vm_switch_note = QLabel(); self.vm_switch_note.setWordWrap(True); self.vm_switch_note.setVisible(False)
+        self.vm_switch_note.setStyleSheet("QLabel{background:#4a3200;color:#ffc94d;border:1px solid #e0a000;border-radius:6px;padding:6px;font-weight:600;}")
         tc.add(hrow(label("Wan2GP folder"), self.vm_wan_dir)); tc.add(hrow(label("Wan2GP python"), self.vm_wan_py))
-        tc.add(hrow(label("ffmpeg"), self.vm_ffmpeg)); tc.add(hrow(label("Frames"), self.vm_frames, label("Steps"), self.vm_steps, None))
+        tc.add(hrow(label("ffmpeg"), self.vm_ffmpeg))
+        tc.add(hrow(label("Model"), self.vm_model))
+        tc.add(self.vm_model_status)
+        tc.add(hrow(label("Resolution"), self.vm_resolution, label("Guidance"), self.vm_guidance, label("Flow"), self.vm_flow))
+        tc.add(hrow(label("Frames"), self.vm_frames, label("Steps"), self.vm_steps, None))
+        self.vm_frames_hint = label("", "hint", wrap=True)
+        self.vm_frames.valueChanged.connect(self._vm_frames_changed)
+        tc.add(self.vm_frames_hint)
+        tc.add(hrow(label("Creative LoRA"), self.vm_lora, label("Strength"), self.vm_lora_strength, button("…", self.vm_pick_lora, "ghost")))
+        tc.add(self.vm_lora_note)
+        tc.add(self.vm_switch_note)
         tc.add(hrow(button("⟳ Detect", self.vm_detect_tools, "ghost"), button("Save", self.vm_save_tools), None))
-        tc.add(label("FastWan 5B image-to-video, 1280×704, 121 frames (~5 s), 3 steps: about 2 minutes per clip on 8 GB. "
-                     "Forge's checkpoint is unloaded while Wan2GP runs and reloaded after.", "hint", wrap=True))
+        tc.add(label("FastWan 5B stays the default model: 1280×704 and 3 steps. Each animated scene's frames are its "
+                     "length in seconds times the model's frame rate. Other models keep their own resolution, steps and "
+                     "guidance. Switching models resets values they do not share, including "
+                     "a creative LoRA. None leaves any acceleration adapter on. No VRAM estimate, and missing files are "
+                     "reported by name — nothing is downloaded. A dry run is not used and would not prove the job fits.",
+                     "hint", wrap=True))
         rv = QSplitter(Qt.Vertical); rv.addWidget(rc); rv.addWidget(tc)
         split.addWidget(rv); split.setSizes([360, 560, 420])
         v.addWidget(split, 1)
         self.vm_proj = vp.new_project(self.vm_name.text()); self.vm_cur = -1; self._vm_worker = None; self._vm_chain = []
         self.vm_char_cur = -1
+        self._vm_presets = {}; self._vm_model_id = ""; self._vm_scene_model_id = ""
+        self._vm_loading_model = False; self._vm_loading_scene = False
+        self._vm_reload_presets()
         self.vm_refresh_projects(); self.vm_char_refresh(); self.vm_refresh()
         return w
 
@@ -169,7 +226,13 @@ class VideoMakerPage:
                  style=self.vm_style.text().strip(), song=self.vm_song.text().strip(), lyrics=self.vm_lyrics.toPlainText(),
                  song_secs=float(self.vm_song_secs.value()), crossfade=float(self.vm_xf.value()),
                  captions=self.vm_captions.isChecked(), adetailer=self.vm_ad.isChecked(),
-                 family=(getattr(self, "profile", None) or {}).get("family", ""))
+                 family=(getattr(self, "profile", None) or {}).get("family", ""),
+                 animation=self._vm_animation_from_widgets())
+        res = str(p["animation"].get("resolution") or "1280x704")
+        try:
+            p["size"] = [int(x) for x in res.lower().split("x")]
+        except ValueError:
+            pass
         self.store.set("vm_n", self.vm_n.value()); self.store.set("vm_xf", float(self.vm_xf.value())); self.store.set("vm_ad", self.vm_ad.isChecked())
         return p
 
@@ -207,6 +270,7 @@ class VideoMakerPage:
         self.vm_song.setText(p.get("song", "")); self.vm_song_secs.setValue(float(p.get("song_secs") or 0))
         self.vm_lyrics.setPlainText(p.get("lyrics", "")); self.vm_xf.setValue(float(p.get("crossfade", 0.4)))
         self.vm_captions.setChecked(bool(p.get("captions", True))); self.vm_ad.setChecked(bool(p.get("adetailer")))
+        self._vm_apply_controls(p.get("animation") or wanconfigs.default_animation(), reset_note=False)
         self.vm_char_refresh()
 
     def vm_pick_song(self):
@@ -264,10 +328,12 @@ class VideoMakerPage:
         if 0 <= self.vm_cur < t.rowCount():
             t.selectRow(self.vm_cur)
         self.vm_select(self.vm_cur)
+        self._vm_update_frames_hint()
 
     def _vm_item_changed(self, item):
         if item.column() == 4 and 0 <= item.row() < len(self.vm_proj["scenes"]):
             self.vm_proj["scenes"][item.row()]["animate"] = item.checkState() == Qt.Checked
+            self._vm_update_frames_hint()
             if item.row() == self.vm_cur:
                 self.vm_anim.setChecked(self.vm_proj["scenes"][item.row()]["animate"])
 
@@ -278,6 +344,7 @@ class VideoMakerPage:
         self.vm_prompt.setPlainText(s["prompt"]); self.vm_motion.setText(s.get("motion", "")); self.vm_caption.setText(s.get("caption", ""))
         self.vm_secs.setValue(float(s.get("duration") or 4)); self.vm_cam.setCurrentText(s.get("camera", vp.CAMERAS[0]))
         self.vm_anim.setChecked(bool(s.get("animate")))
+        self._vm_show_scene_animation(s if ok else None)
         self.vm_scene_seed.setValue(int(s.get("seed", -1)))
         self.vm_scene_chars.clear()
         for c in self.vm_proj.get("characters") or []:
@@ -304,8 +371,17 @@ class VideoMakerPage:
         if new_prompt != s["prompt"] or chars != list(s.get("characters") or []) or seed != int(s.get("seed", -1)):
             vp.redo_scene(s, self.vm_dir(), "still")
         s["characters"], s["seed"] = chars, seed
-        s.update(prompt=new_prompt, motion=self.vm_motion.text().strip(), caption=self.vm_caption.text().strip(),
-                 duration=float(self.vm_secs.value()), camera=self.vm_cam.currentText(), animate=self.vm_anim.isChecked())
+        motion = self.vm_motion.text().strip()
+        override = self._vm_scene_animation() if self.vm_override.isChecked() else None
+        new_duration = float(self.vm_secs.value())
+        if (motion != (s.get("motion") or "") or override != s.get("animation_override")
+                or abs(new_duration - float(s.get("duration") or 0)) > 0.01):
+            s["resolved"] = None
+            if abs(new_duration - float(s.get("duration") or 0)) > 0.01 and s.get("clip"):
+                vp.redo_scene(s, self.vm_dir(), "clip")
+        s["animation_override"] = override
+        s.update(prompt=new_prompt, motion=motion, caption=self.vm_caption.text().strip(),
+                 duration=new_duration, camera=self.vm_cam.currentText(), animate=self.vm_anim.isChecked())
         self.vm_save(); self.vm_refresh()
         return True
 
@@ -339,13 +415,299 @@ class VideoMakerPage:
         wd, py = wan2gp.detect(self.vm_wan_dir.text().strip(), self.vm_wan_py.text().strip())
         self.vm_wan_dir.setText(wd); self.vm_wan_py.setText(py)
         self.vm_ffmpeg.setText(vp.find_ffmpeg(self.vm_ffmpeg.text().strip(), wd))
+        self._vm_reload_presets()
         self.vm_status.setText(f"Wan2GP: {wd or tr('not found')} · ffmpeg: {self.vm_ffmpeg.text() or tr('not found')}")
 
     def vm_save_tools(self):
         for k, wdg in (("vm_wan_dir", self.vm_wan_dir), ("vm_wan_python", self.vm_wan_py), ("vm_ffmpeg", self.vm_ffmpeg)):
             self.store.set(k, wdg.text().strip())
-        self.store.set("vm_frames", self.vm_frames.value()); self.store.set("vm_steps", self.vm_steps.value())
+        anim = self._vm_animation_from_widgets()
+        self.store.set("vm_model", anim["model_id"]); self.store.set("vm_frames", anim["frames"]); self.store.set("vm_steps", anim["steps"])
+        self.store.set("vm_guidance", anim["guidance"]); self.store.set("vm_flow", anim["flow_shift"])
+        self.store.set("vm_lora", anim["creative_lora"]); self.store.set("vm_lora_strength", anim["creative_strength"])
+        self.store.set("vm_resolution", anim["resolution"])
         self.notify(tr("Saved"))
+
+    def _vm_preset(self, model_id):
+        return (getattr(self, "_vm_presets", {}) or {}).get(model_id) or wanconfigs.preset_by_id(
+            self.vm_wan_dir.text().strip() if hasattr(self, "vm_wan_dir") else "", model_id)
+
+    def _vm_fill_model_combo(self, combo, current):
+        combo.blockSignals(True)
+        combo.clear()
+        for preset in self._vm_presets.values():
+            combo.addItem(preset["name"], preset["id"])
+        if combo.count() == 0:
+            combo.addItem("Wan2.2 TextImage2video FastWan 5B", wanconfigs.FASTWAN_ID)
+        idx = combo.findData(current) if current else 0
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _vm_reload_presets(self):
+        wan_dir = self.vm_wan_dir.text().strip()
+        ordered = wanconfigs.catalog(wan_dir)
+        self._vm_presets = {p["id"]: p for p in ordered}
+        current = self.vm_model.currentData() or self.store.get("vm_model", wanconfigs.FASTWAN_ID)
+        scene_current = self.vm_scene_model.currentData() or current
+        self._vm_loading_model = True
+        self._vm_fill_model_combo(self.vm_model, current)
+        self._vm_fill_model_combo(self.vm_scene_model, scene_current)
+        self._vm_model_id = self.vm_model.currentData() or ""
+        self._vm_scene_model_id = self.vm_scene_model.currentData() or ""
+        preset = self._vm_preset(self._vm_model_id)
+        if preset:
+            chosen = self.vm_resolution.currentData() or self.store.get("vm_resolution") or preset["resolution"]
+            self._vm_set_resolution(self.vm_resolution, preset, chosen)
+            self._vm_fill_lora(self.vm_lora, preset, self.store.get("vm_lora", ""))
+        self._vm_show_model_status()
+        self._vm_loading_model = False
+
+    def _vm_set_resolution(self, combo, preset, selected):
+        choices = wanconfigs.resolution_choices(preset, self.vm_wan_dir.text().strip() if hasattr(self, "vm_wan_dir") else "")
+        selected = wanconfigs.match_resolution(selected, choices) or (choices[0] if choices else "")
+        combo.blockSignals(True)
+        combo.clear()
+        for value in choices:
+            width, height = [int(part) for part in value.split("x")]
+            kind = "portrait" if height > width else ("square" if width == height else "landscape")
+            combo.addItem(f"{width}×{height} ({kind})", value)
+        idx = combo.findData(selected)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _vm_fill_lora(self, combo, preset, current):
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(tr("None"), "")
+        for item in (preset or {}).get("creative_loras") or []:
+            combo.addItem(item["name"] + " · " + item["status"], item["path"])
+        if current and combo.findData(current) < 0:
+            combo.addItem(os.path.basename(current), current)
+        idx = combo.findData(current or "")
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _vm_animation_from_widgets(self):
+        preset = self._vm_preset(self.vm_model.currentData())
+        return {
+            "model_id": self.vm_model.currentData() or wanconfigs.FASTWAN_ID,
+            "resolution": self.vm_resolution.currentData() or (preset or {}).get("resolution") or "1280x704",
+            "frames": int(self.vm_frames.value()),
+            "steps": int(self.vm_steps.value()),
+            "guidance": float(self.vm_guidance.value()),
+            "flow_shift": float(self.vm_flow.value()),
+            "creative_lora": self.vm_lora.currentData() or "",
+            "creative_strength": float(self.vm_lora_strength.value()),
+        }
+
+    def _vm_scene_animation(self):
+        preset = self._vm_preset(self.vm_scene_model.currentData())
+        base = preset or wanconfigs.default_animation()
+        return {
+            "model_id": self.vm_scene_model.currentData() or wanconfigs.FASTWAN_ID,
+            "resolution": str(getattr(self, "_vm_scene_resolution", "") or base.get("resolution") or "1280x704"),
+            "frames": int(self.vm_scene_frames.value()),
+            "steps": int(self.vm_scene_steps.value()),
+            "guidance": float(self.vm_scene_guidance.value()),
+            "flow_shift": getattr(self, "_vm_scene_flow", base.get("flow_shift", 3)),
+            "creative_lora": self.vm_scene_lora.currentData() or "",
+            "creative_strength": float(self.vm_scene_strength.value()),
+        }
+
+    def _vm_apply_preset_values(self, preset, frames, steps, guidance, flow, resolution, lora, strength, keep_resolution=""):
+        choices = wanconfigs.resolution_choices(preset, self.vm_wan_dir.text().strip())
+        selected = wanconfigs.match_resolution(keep_resolution, choices) or preset.get("resolution")
+        self._vm_set_resolution(resolution, preset, selected)
+        frames.setValue(int(preset["frames"])); steps.setValue(int(preset["steps"]))
+        guidance.setValue(float(preset["guidance"])); flow.setValue(float(preset["flow_shift"]))
+        self._vm_fill_lora(lora, preset, "")
+        strength.setValue(1.0)
+
+    def _vm_apply_controls(self, anim, reset_note=False):
+        """Load a saved animation into the project tools without treating it as a model switch."""
+        self._vm_loading_model = True
+        model_id = anim.get("model_id") or wanconfigs.FASTWAN_ID
+        idx = self.vm_model.findData(model_id)
+        if idx >= 0:
+            self.vm_model.setCurrentIndex(idx)
+        preset = self._vm_preset(self.vm_model.currentData())
+        if preset:
+            self._vm_set_resolution(self.vm_resolution, preset, anim.get("resolution") or preset["resolution"])
+            self._vm_fill_lora(self.vm_lora, preset, anim.get("creative_lora") or "")
+        self.vm_frames.setValue(int(anim.get("frames") or 121))
+        self.vm_steps.setValue(int(anim.get("steps") or 3))
+        self.vm_guidance.setValue(float(anim.get("guidance") if anim.get("guidance") is not None else 1))
+        self.vm_flow.setValue(float(anim.get("flow_shift") if anim.get("flow_shift") is not None else 3))
+        self.vm_lora_strength.setValue(float(anim.get("creative_strength") if anim.get("creative_strength") is not None else 1))
+        self._vm_model_id = self.vm_model.currentData() or ""
+        self._vm_loading_model = False
+        if reset_note:
+            self.vm_switch_note.clear(); self.vm_switch_note.setVisible(False)
+        self._vm_show_model_status()
+
+    def _vm_show_model_status(self):
+        preset = self._vm_preset(self.vm_model.currentData())
+        extra = wanconfigs.custom_notes(self._vm_animation_from_widgets(), preset)
+        text = wanconfigs.status_line(preset)
+        if extra:
+            text += " · " + "; ".join(extra)
+        if preset and preset.get("note"):
+            text += " · " + preset["note"]
+        self.vm_model_status.setText(text)
+        self._vm_lora_changed()
+        self._vm_update_frames_hint()
+
+    def _vm_update_frames_hint(self):
+        if not hasattr(self, "vm_frames_hint"):
+            return
+        preset = self._vm_preset(self.vm_model.currentData()) if hasattr(self, "vm_model") else None
+        fps = wanconfigs.model_fps(preset)
+        minimum, step = wanconfigs.frame_grid(preset)
+        scenes = self.vm_proj.get("scenes") if hasattr(self, "vm_proj") else []
+        self.vm_frames_hint.setText(wanconfigs.scene_frame_plan(scenes or [], fps, minimum, step))
+
+    def _vm_frames_changed(self):
+        self._vm_update_frames_hint()
+
+    def _vm_model_changed(self):
+        if self._vm_loading_model:
+            return
+        preset = self._vm_preset(self.vm_model.currentData())
+        if not preset:
+            return
+        previous = self._vm_animation_from_widgets()
+        previous["model_id"] = self._vm_model_id
+        notes = wanconfigs.incompatible_changes(previous, preset)
+        choices = wanconfigs.resolution_choices(preset, self.vm_wan_dir.text().strip())
+        if wanconfigs.match_resolution(previous.get("resolution"), choices):
+            notes = [note for note in notes if not note.startswith("resolution")]
+        self._vm_loading_model = True
+        self._vm_apply_preset_values(preset, self.vm_frames, self.vm_steps, self.vm_guidance, self.vm_flow,
+                                     self.vm_resolution, self.vm_lora, self.vm_lora_strength,
+                                     keep_resolution=previous.get("resolution"))
+        self._vm_model_id = preset["id"]
+        self._vm_loading_model = False
+        if notes:
+            self.vm_switch_note.setText("Switched to " + preset["name"] + ". Reset " + "; ".join(notes) + ".")
+            self.vm_switch_note.setVisible(True)
+        else:
+            self.vm_switch_note.clear(); self.vm_switch_note.setVisible(False)
+        self._vm_show_model_status()
+        self._vm_frames_changed()
+        if hasattr(self, "vm_proj"):
+            self._vm_show_scene_animation(self.vm_proj["scenes"][self.vm_cur] if 0 <= self.vm_cur < len(self.vm_proj["scenes"]) else None)
+
+    def _vm_lora_changed(self):
+        if not hasattr(self, "vm_lora_note"):
+            return
+        path = self.vm_lora.currentData() or ""
+        preset = self._vm_preset(self.vm_model.currentData()) or {}
+        if not path:
+            self.vm_lora_note.setText(tr("Creative LoRA is off. A required acceleration adapter, if this model has one, stays on."))
+            return
+        status = wanconfigs.lora_status(path, preset.get("architecture"), preset.get("required_loras"))
+        if status == "required":
+            self.vm_lora_note.setText(tr("That file is an acceleration adapter. Choose None to keep it on without adding a creative LoRA."))
+        elif status == "incompatible":
+            self.vm_lora_note.setText(tr("This file's metadata does not match the selected model. Animate will stop before starting Wan2GP."))
+        elif status == "compatible":
+            self.vm_lora_note.setText(tr("Metadata matches this model family. Strength is constant; there is no guaranteed range."))
+        elif status == "missing":
+            self.vm_lora_note.setText(tr("That creative LoRA file is not on disk. Nothing will be downloaded."))
+        else:
+            self.vm_lora_note.setText(tr("Compatibility is not proven: the file has no architecture metadata, and its folder name is not evidence."))
+
+    def vm_pick_lora(self):
+        path, _ = QFileDialog.getOpenFileName(self, tr("Creative LoRA"), "", "LoRA (*.safetensors *.sft)")
+        if not path:
+            return
+        if self.vm_lora.findData(path) < 0:
+            self.vm_lora.addItem(os.path.basename(path), path)
+        self.vm_lora.setCurrentIndex(self.vm_lora.findData(path))
+
+    def _vm_override_toggled(self, on):
+        self.vm_override_box.setVisible(bool(on))
+        if on and not self._vm_loading_scene:
+            self._vm_copy_project_to_scene()
+
+    def _vm_copy_project_to_scene(self):
+        anim = self._vm_animation_from_widgets()
+        self._vm_load_scene_controls(anim, quiet=True)
+
+    def _vm_load_scene_controls(self, anim, quiet=False):
+        self._vm_loading_scene = True
+        model_id = (anim or {}).get("model_id") or wanconfigs.FASTWAN_ID
+        idx = self.vm_scene_model.findData(model_id)
+        if idx >= 0:
+            self.vm_scene_model.setCurrentIndex(idx)
+        preset = self._vm_preset(self.vm_scene_model.currentData()) or {}
+        self._vm_fill_lora(self.vm_scene_lora, preset, (anim or {}).get("creative_lora") or "")
+        self._vm_scene_resolution = str((anim or {}).get("resolution") or preset.get("resolution") or "1280x704")
+        self._vm_scene_flow = (anim or {}).get("flow_shift") if (anim or {}).get("flow_shift") is not None else preset.get("flow_shift", 3)
+        self.vm_scene_frames.setValue(int((anim or {}).get("frames") or preset.get("frames") or 121))
+        self.vm_scene_steps.setValue(int((anim or {}).get("steps") or preset.get("steps") or 3))
+        self.vm_scene_guidance.setValue(float((anim or {}).get("guidance") if (anim or {}).get("guidance") is not None else preset.get("guidance") or 1))
+        self.vm_scene_strength.setValue(float((anim or {}).get("creative_strength") if (anim or {}).get("creative_strength") is not None else 1))
+        self._vm_scene_model_id = self.vm_scene_model.currentData() or ""
+        self._vm_loading_scene = False
+        if quiet:
+            self.vm_scene_switch.clear(); self.vm_scene_switch.setVisible(False)
+
+    def _vm_scene_model_changed(self):
+        if self._vm_loading_scene or self._vm_loading_model:
+            return
+        preset = self._vm_preset(self.vm_scene_model.currentData())
+        if not preset:
+            return
+        previous = self._vm_scene_animation()
+        previous["model_id"] = self._vm_scene_model_id
+        notes = wanconfigs.incompatible_changes(previous, preset)
+        choices = wanconfigs.resolution_choices(preset, self.vm_wan_dir.text().strip())
+        kept = wanconfigs.match_resolution(self.vm_resolution.currentData(), choices)
+        if kept:
+            notes = [note for note in notes if not note.startswith("resolution")]
+        self._vm_loading_scene = True
+        self._vm_scene_resolution = kept or wanconfigs.align_resolution(preset.get("resolution"), wanconfigs.block_size(preset))
+        self._vm_scene_flow = preset["flow_shift"]
+        self.vm_scene_frames.setValue(int(preset["frames"]))
+        self.vm_scene_steps.setValue(int(preset["steps"]))
+        self.vm_scene_guidance.setValue(float(preset["guidance"]))
+        self._vm_fill_lora(self.vm_scene_lora, preset, "")
+        self.vm_scene_strength.setValue(1.0)
+        self._vm_scene_model_id = preset["id"]
+        self._vm_loading_scene = False
+        if notes:
+            self.vm_scene_switch.setText("Switched to " + preset["name"] + ". Reset " + "; ".join(notes) + ".")
+            self.vm_scene_switch.setVisible(True)
+        else:
+            self.vm_scene_switch.clear(); self.vm_scene_switch.setVisible(False)
+
+    def _vm_show_scene_animation(self, scene):
+        if not hasattr(self, "vm_anim_from"):
+            return
+        scene = scene or {}
+        recorded = scene.get("resolved")
+        if recorded:
+            preset = self._vm_preset(recorded.get("model_id"))
+            text = wanconfigs.describe(dict(recorded, _source="recorded"), preset)
+        else:
+            eff = vp.effective_animation(self.vm_proj, scene if scene.get("animation_override") else None)
+            preset = self._vm_preset(eff.get("model_id"))
+            text = wanconfigs.describe(eff, preset)
+        self.vm_anim_from.setText(text)
+        self._vm_loading_scene = True
+        self.vm_override.setChecked(bool(scene.get("animation_override")))
+        self._vm_loading_scene = False
+        self.vm_override_box.setVisible(bool(scene.get("animation_override")))
+        self._vm_load_scene_controls(scene.get("animation_override") or vp.effective_animation(self.vm_proj, None), quiet=True)
+
+    def vm_use_current(self):
+        if not 0 <= self.vm_cur < len(self.vm_proj["scenes"]):
+            return False
+        self.vm_proj["scenes"][self.vm_cur]["resolved"] = None
+        self.vm_save(); self.vm_refresh()
+        self.vm_status.setText(tr("This scene will use the current project or override settings on the next clip."))
+        return True
 
     def vm_open_folder(self):
         from PySide6.QtCore import QUrl
@@ -392,7 +754,7 @@ class VideoMakerPage:
                 self.notify(tr("Set up Forge or ComfyUI in Settings first"), error=True); self._vm_chain.clear(); return False
             job, backend, wf = made
             job.workflow_obj = wf
-            w, h = self._vm_still_size(job)
+            w, h = self._vm_still_size(job, s)
             job.width, job.height = w, h
             job.restore_settings = True
             if self.vm_ad.isChecked() and isinstance(backend, imagegen.A1111):
@@ -436,9 +798,13 @@ class VideoMakerPage:
         fs.apply_to_job(job, cache[key], model, fs.classify(model) or info.get("type") or "plus_face")
         return note
 
-    def _vm_still_size(self, job):
-        """Same shape as the video (16:9-ish), about the profile's pixel count, multiple of 64."""
-        vw, vh = self.vm_proj.get("size") or vp.SIZE
+    def _vm_still_size(self, job, scene=None):
+        """Same shape as that scene's animation resolution, about the profile's pixel count, multiple of 64."""
+        anim = vp.effective_animation(self.vm_proj, scene)
+        try:
+            vw, vh = [int(x) for x in str(anim.get("resolution") or "1280x704").lower().split("x")]
+        except ValueError:
+            vw, vh = self.vm_proj.get("size") or vp.SIZE
         area = max(job.width * job.height, 1024 * 576)
         import math
         h = math.sqrt(area * vh / vw); w = h * vw / vh
@@ -549,8 +915,7 @@ class VideoMakerPage:
     def vm_animate(self):
         if not any(s.get("animate") and s.get("still") and not s.get("clip") for s in self.vm_proj["scenes"]):
             self.vm_status.setText(tr("No ticked scenes waiting for a clip (make stills first)")); self._vm_next(); return True
-        wan = {"dir": self.vm_wan_dir.text().strip(), "python": self.vm_wan_py.text().strip(),
-               "frames": self.vm_frames.value(), "steps": self.vm_steps.value()}
+        wan = {"dir": self.vm_wan_dir.text().strip(), "python": self.vm_wan_py.text().strip()}
         b = self.image_backend()  # Forge: unload-checkpoint; ComfyUI: /free – either one must let go of the GPU
         forge = b if hasattr(b, "unload_checkpoint") else None
         pdir = self.vm_dir()

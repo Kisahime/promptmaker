@@ -115,7 +115,11 @@ def test_make_stills_saves_each(tmp_path):
 # ------------------------------------------------------------------ Wan2GP
 def _fake_wan(tmp_path, body):
     d = tmp_path / "wan"; d.mkdir()
-    (d / "wgp.py").write_text(body)
+    # The runner refuses to start unless this install's own source defines offline mode.
+    (d / "wgp.py").write_text(body + "\nWanGP_version = \"18.84\"\nsettings_version = 2.81\n"
+                              "# --offline sets HF_HUB_OFFLINE before Hugging Face imports\n")
+    (d / "shared").mkdir()
+    (d / "shared" / "cli_args.py").write_text('add("--offline", action="store_true", help="no download")\n')
     return str(d)
 
 

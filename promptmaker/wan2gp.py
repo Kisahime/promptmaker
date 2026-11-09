@@ -48,13 +48,23 @@ def settings(prompt, image, seed=42, frames=121, steps=3, size=(1280, 704), nega
 
 
 def command(python, wan_dir, settings_path, out_dir):
-    return [python, os.path.join(wan_dir, "wgp.py"), "--process", settings_path, "--output-dir", out_dir]
+    """Headless Wan2GP. --offline is added only after this install's own source is shown to support it."""
+    from . import wanconfigs
+    cmd = [python, os.path.join(wan_dir, "wgp.py"), "--process", settings_path, "--output-dir", out_dir]
+    ok, _reason = wanconfigs.offline_support(wan_dir)
+    if ok:
+        cmd.append("--offline")
+    return cmd
 
 
 def run(python, wan_dir, cfg, work_dir, cancelled=None, log=None, timeout=1800, popen=subprocess.Popen):
     """Render one clip. Returns the path of the new .mp4 in work_dir."""
+    from . import wanconfigs
     if not (python and wan_dir and os.path.isfile(os.path.join(wan_dir, "wgp.py"))):
-        raise WanError("Wan2GP not found – set its folder in Video → Tools")
+        raise WanError("Wan2GP not found – set its folder in Video → Tools. " + wanconfigs.NO_DOWNLOAD)
+    ok, reason = wanconfigs.offline_support(wan_dir)
+    if not ok:
+        raise WanError(reason)
     work_dir = os.path.abspath(work_dir)  # Wan2GP runs with cwd=wan_dir, so relative paths would point there
     os.makedirs(work_dir, exist_ok=True)
     sp = os.path.join(work_dir, "settings.json")

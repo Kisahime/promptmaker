@@ -11,7 +11,9 @@ import subprocess
 import sys
 import time
 
-VERSION = 2                        # 2: character sheet, scene.characters, seed override vs used_seed
+from . import wanconfigs
+
+VERSION = 3                        # 3: project animation defaults, per-scene overrides, recorded clip settings
 FPS = 24
 SIZE = (1280, 704)                 # FastWan 5B native size
 WAN_FRAMES = 121                   # ~5 s at 24 fps
@@ -45,13 +47,15 @@ def new_scene(i=0, prompt="", duration=4.0, camera="Slow push in", caption="", a
     return {"id": f"s{i + 1:02d}", "prompt": prompt, "negative": "", "seed": -1, "used_seed": -1,
             "characters": list(characters or []), "facelock": "", "duration": float(duration),
             "camera": camera if camera in CAMERAS else "Slow push in", "caption": caption, "motion": motion,
-            "animate": bool(animate), "still": "", "clip": "", "status": "planned"}
+            "animate": bool(animate), "still": "", "clip": "", "status": "planned",
+            "animation_override": None, "resolved": None}
 
 
 def new_project(name="Untitled video", idea=""):
     return {"version": VERSION, "name": name, "idea": idea, "style": "", "song": "", "lyrics": "", "song_secs": 0.0,
             "size": list(SIZE), "fps": FPS, "crossfade": 0.4, "captions": True, "adetailer": False,
-            "checkpoint": "", "family": "", "characters": [], "scenes": [], "output": "", "created": time.time()}
+            "checkpoint": "", "family": "", "characters": [], "scenes": [], "output": "", "created": time.time(),
+            "animation": wanconfigs.default_animation()}
 
 
 # ------------------------------------------------------------------ character sheet
@@ -125,6 +129,11 @@ def migrate(p):
             s["used_seed"] = s.get("used_seed", s.get("seed", -1))  # v1 stored the generated seed in 'seed'
             s["seed"] = -1
             s.setdefault("characters", [])
+    if v < 3:
+        p.setdefault("animation", wanconfigs.default_animation())
+        for s in p.get("scenes") or []:
+            s.setdefault("animation_override", None)
+            s.setdefault("resolved", None)
     p["version"] = VERSION
     return p
 
@@ -188,7 +197,34 @@ def redo_scene(s, pdir, what="still"):
             except OSError:
                 pass
             s[k] = ""
+    if what == "still":
+        s["resolved"] = None  # the still the recording pointed at is gone
     s["status"] = scene_status(s)
+
+
+def effective_animation(proj, scene=None):
+    """Project defaults with this scene's override keys on top. Inherited keys stay visible as the base."""
+    base = wanconfigs.default_animation()
+    base.update(proj.get("animation") or {})
+    over = (scene or {}).get("animation_override") or None
+    if over:
+        merged = dict(base)
+        merged.update({k: v for k, v in over.items() if v is not None and not str(k).startswith("_")})
+        merged["_source"] = "override"
+        return merged
+    base["_source"] = "project"
+    return base
+
+
+def animation_for_clip(proj, scene):
+    """Recorded clip settings win over later edits to the project defaults."""
+    recorded = (scene or {}).get("resolved") or None
+    if recorded:
+        anim = wanconfigs.default_animation()
+        anim.update({k: v for k, v in recorded.items() if not str(k).startswith("_")})
+        anim["_source"] = "recorded"
+        return anim
+    return effective_animation(proj, scene)
 
 
 def total_secs(proj):
@@ -528,13 +564,42 @@ def make_stills(proj, pdir, jobs, backend, progress=None, cancelled=None, save=N
     return done
 
 
+def _clip_plan(proj, s, pdir, wan_dir, check):
+    """(cfg, snapshot) for one scene. Recorded settings are reused. Known problems raise before Wan2GP starts."""
+    from . import wan2gp
+    anim = animation_for_clip(proj, s)
+    preset = wanconfigs.preset_by_id(wan_dir, anim.get("model_id") or wanconfigs.FASTWAN_ID)
+    if preset is None:
+        raise wan2gp.WanError(f"Unknown animation model {anim.get('model_id')}. {wanconfigs.NO_DOWNLOAD}")
+    image = os.path.join(pdir, s["still"])
+    if check:
+        errors = wanconfigs.preflight(wan_dir, preset, anim, image)
+        if errors:
+            raise wan2gp.WanError(" ".join(errors))
+    prompt = motion_prompt(proj, s)
+    if anim.get("_source") == "recorded" and (s.get("resolved") or {}).get("prompt"):
+        prompt = s["resolved"]["prompt"]
+    else:
+        fps = wanconfigs.model_fps(preset)
+        if fps and float(s.get("duration") or 0) > 0:
+            anim = dict(anim)
+            minimum, step = wanconfigs.frame_grid(preset)
+            anim["frames"] = wanconfigs.frames_for_seconds(s["duration"], fps, minimum, step)
+    cfg = wanconfigs.build_settings(preset, prompt, image, s.get("used_seed", 42), anim)
+    snap = wanconfigs.snapshot(preset, anim, s.get("still") or "")
+    snap["prompt"] = cfg.get("prompt") or ""
+    return cfg, snap
+
+
 def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=None, redo=False, runner=None):
     """Wan2GP clips for ticked scenes, one at a time. Forge's checkpoint is unloaded first (8 GB GPUs can't hold both)
-    and reloaded afterwards, even on error / cancel. wan: {"dir", "python", "frames", "steps"}."""
+    and reloaded afterwards, even on error / cancel. wan: {"dir", "python"}. Model, frames and steps come from the
+    project animation (or the scene's recorded settings / override), not from a universal FastWan default."""
     from . import wan2gp
     todo = [s for s in proj["scenes"] if s.get("animate") and s.get("still") and (redo or not s.get("clip"))]
     if not todo:
         return 0
+    check = runner is None
     runner = runner or wan2gp.run
     unloaded = False
     if forge is not None:
@@ -548,9 +613,11 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
                 raise Cancelled("Cancelled")
             label = f"Clip {i + 1}/{len(todo)} · {s['id']}"
             if progress:
-                progress(int(100 * i / len(todo)), label + " (about 2 min)")
-            cfg = wan2gp.settings(motion_prompt(proj, s), os.path.join(pdir, s["still"]), s.get("used_seed", 42),
-                                  wan.get("frames", WAN_FRAMES), wan.get("steps", 3), tuple(proj.get("size") or SIZE))
+                progress(int(100 * i / len(todo)), label)
+            cfg, snap = _clip_plan(proj, s, pdir, wan.get("dir") or "", check)
+            if not s.get("resolved"):
+                s["resolved"] = snap
+                (save or (lambda: save_project(proj, pdir)))()
             work = os.path.join(pdir, "wan", s["id"])
             lg = (lambda t, l=label, i=i: progress(int(100 * i / len(todo)), f"{l} · {t}s")) if progress else None
             try:
@@ -560,17 +627,19 @@ def animate(proj, pdir, wan, forge=None, progress=None, cancelled=None, save=Non
                     raise
                 # out of memory: the image backend may have loaded a model again – free it and try this clip once more
                 if progress:
-                    progress(int(100 * i / len(todo)), label + " · out of memory, freeing VRAM and retrying")
+                    progress(int(100 * i / len(todo)), label + " · out of memory, freeing VRAM and retrying once")
                 unloaded = forge.unload_checkpoint() or unloaded
                 time.sleep(3)
                 clip = runner(wan.get("python"), wan.get("dir"), cfg, work, cancelled=cancelled, log=lg)
             name = f"{s['id']}_wan.mp4"
             shutil.copyfile(clip, os.path.join(pdir, name))
-            s["clip"] = name; s["status"] = scene_status(s); done += 1
+            s["clip"] = name; s["resolved"] = snap; s["status"] = scene_status(s); done += 1
             (save or (lambda: save_project(proj, pdir)))()
     except Exception as e:  # noqa: BLE001
         if "Cancelled" in str(e):
-            raise Cancelled("Cancelled") from e
+            raise Cancelled("Cancelled. " + wanconfigs.KEPT + " Press Animate ticked to continue unfinished scenes.") from e
+        if wanconfigs.KEPT not in str(e):
+            raise type(e)(str(e) + " " + wanconfigs.KEPT + " Next: fix the problem above, then press Animate ticked. Finished scenes are skipped.") from e
         raise
     finally:
         if unloaded and forge is not None:

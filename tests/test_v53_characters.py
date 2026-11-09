@@ -64,11 +64,12 @@ def test_migrate_v1_project(tmp_path):
     old = {"version": 1, "name": "Old", "scenes": [{"id": "s01", "prompt": "a lighthouse", "seed": 777, "still": ""}]}
     (tmp_path / "project.json").write_text(json.dumps(old))
     p = vp.load_project(str(tmp_path))
-    assert p["version"] == 2 and p["characters"] == []
+    assert p["version"] == 3 and p["characters"] == []
     s = p["scenes"][0]
     assert s["seed"] == -1 and s["used_seed"] == 777 and s["characters"] == []
+    assert p["animation"]["model_id"] == "ti2v_2_2_fastwan" and s["animation_override"] is None
     vp.save_project(p, str(tmp_path))
-    assert json.load(open(tmp_path / "project.json"))["version"] == 2
+    assert json.load(open(tmp_path / "project.json"))["version"] == 3
 
 
 def test_reference_copied_into_project(tmp_path):
