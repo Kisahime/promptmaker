@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [6.0.0] - 2026-11-09
+
+### Added
+- **Video maker model presets**: the Tools card's **Model** list is read from the installed Wan2GP (its model definitions and version-matched settings exports). Each preset shows separately whether its definition exists, whether its required files are on disk, and whether the workflow has been tested. **FastWan 5B image-to-video stays the default** at 1280×704, 3 steps, guidance 1 and flow shift 3; other presets use their own resolution, steps, guidance and flow shift. Switching models resets settings that don't fit the new one and says so in an amber note.
+- Animated scenes get their frame count from the scene's length and the model's frame rate, on the frame grid the model accepts.
+- **One optional creative LoRA** with a constant strength, plus **None**. None never removes a model's required acceleration adapter (e.g. FastWan's). The LoRA's own metadata is checked against the selected model where it has any; folder names are not treated as proof of compatibility, and no strength range is promised.
+- **Project animation defaults and per-scene overrides**: the Tools card sets the project defaults; **Override animation for this scene** gives one scene its own model, frames, steps, guidance or LoRA, and **Use current settings** clears a scene's recorded settings.
+- Each clip records the model, template version, settings, adapters, prompt and still it used (`scene.resolved`); resume and Redo clip use that recording instead of later changes to the defaults.
+- **Offline preflight**: missing model or LoRA files and incompatible choices (such as a model without start-image support) are named before Wan2GP starts, and the job stops. Jobs run with Wan2GP's `--offline`, so nothing is downloaded, installed or upgraded; an install whose own source doesn't define `--offline` is refused instead of being run unprotected.
+
+### Changed
+- Video projects move to version 3. 5.3 projects are migrated on open and keep their stills, clips, characters and seeds; old scenes inherit the FastWan defaults.
+- On an error or cancel during Animate, completed clips are kept and the message says what to do next (fix the problem and press **Animate ticked**; finished scenes are skipped). The existing VRAM hand-off from Forge / ComfyUI, the single out-of-memory retry and the per-scene Wan2GP log are unchanged.
+
+### Notes
+- Verified on an 8 GB GPU with FastWan 5B image-to-video through Wan2GP, plus the SDXL face lock.
+- Not every model fits in 8 GB, and no VRAM prediction is made. Start/end frames, native continuation and camera-control workflows are not included.
+- No new Python dependencies.
+
 ## [5.3.0] - 2026-11-04
 
 ### Added
