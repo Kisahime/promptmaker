@@ -593,8 +593,11 @@ def test_ui_wildcards_page(win, srv):
     s, url = srv()
     win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", url)
     win.wc_presets.setChecked(False); win.wc_prompt.setPlainText("a __hair__ girl"); win.wc_n.setValue(2); win.wc_batch()
+    queued, add = [], win.genq.add  # read the seeds at queue time: the fake server answers seed 7, which overwrites a finished job's seed
+    win.genq.add = lambda job, *a, **k: (queued.append(job.seed), add(job, *a, **k))[1]
     jobs = win.wc_generate()
-    assert [j.seed for j in jobs] == [win.wc_out.item(i).data(0x0101) for i in range(2)]  # same seed as the preview row
+    win.genq.add = add
+    assert queued == [win.wc_out.item(i).data(0x0101) for i in range(2)]  # same seed as the preview row
     _wait(win)
     assert len(jobs) == 2 and all("__" not in j.prompt and j.prompt.endswith("hair girl") for j in jobs)
     assert "__" not in s.last_payload["prompt"]
