@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [6.5.0] - unreleased
+## [6.5.0] - 2026-11-10
 
 ### Added
 - **ADetailer for every Forge image**: **Settings -> Image generation -> ADetailer** switches on the ADetailer extension's detect-and-redraw pass for all images PromptMaker sends to Forge / A1111. Pick the detector (the list is loaded from Forge's `/adetailer/v1/ad_model`; `face_yolov8s.pt` by default), its denoise (0.4) and detection confidence (0.3), and an optional prompt for the detailed area (empty = the main prompt).
