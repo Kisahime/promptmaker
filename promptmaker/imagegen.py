@@ -199,6 +199,79 @@ def load_workflow(path):
     return data.get("workflow", data), data.get("_meta", {})
 
 
+# 6.1: ADetailer (Forge / A1111 extension): up to two detect-and-redraw passes (e.g. face, then hands) per image
+AD_FACE, AD_HAND = "face_yolov8s.pt", "hand_yolov8n.pt"
+AD_DEFAULT_MODELS = (AD_FACE, "face_yolov8n.pt", AD_HAND, "person_yolov8n-seg.pt", "mediapipe_face_full")
+AD_MAX_PASSES = 2
+AD_PASS_DEFAULTS = {"ad_denoising_strength": 0.4, "ad_confidence": 0.3, "ad_inpaint_only_masked": True, "ad_inpaint_padding": 32}
+_AD_CACHE = {}  # Forge URL -> detector model names
+
+
+def adetailer_passes(value):
+    """job.adetailer -> list of ADetailer arg dicts (max 2). A plain string is the 5.3 single pass ({"ad_model": name});
+    dicts get the defaults filled in, and an empty ad_prompt / ad_negative_prompt is left out (= use the main prompt)."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [{"ad_model": value}]
+    if isinstance(value, dict):
+        value = [value]
+    out = []
+    for item in value if isinstance(value, (list, tuple)) else []:
+        if isinstance(item, str):
+            item = {"ad_model": item}
+        if not isinstance(item, dict):
+            continue
+        model = str(item.get("ad_model") or "").strip()
+        if not model or model.lower() == "none":
+            continue
+        d = dict(AD_PASS_DEFAULTS)
+        d.update({k: v for k, v in item.items() if v is not None})
+        d["ad_model"] = model
+        d["ad_denoising_strength"] = float(d["ad_denoising_strength"])
+        d["ad_confidence"] = float(d["ad_confidence"])
+        d["ad_inpaint_only_masked"] = bool(d["ad_inpaint_only_masked"])
+        d["ad_inpaint_padding"] = int(d["ad_inpaint_padding"])
+        for k in ("ad_prompt", "ad_negative_prompt"):
+            t = str(d.get(k) or "").strip()
+            if t:
+                d[k] = t
+            else:
+                d.pop(k, None)
+        out.append(d)
+    return out[:AD_MAX_PASSES]
+
+
+def adetailer_args(value):
+    """alwayson_scripts["ADetailer"]["args"]: [enable, skip_img2img, pass1, pass2...], or None when there's no pass."""
+    passes = adetailer_passes(value)
+    return [True, False] + passes if passes else None
+
+
+def adetailer_from_store(store, force=False):
+    """Passes from Settings -> Image generation -> ADetailer. None when switched off; force=True ignores the
+    on/off switch (the Video maker's own tick)."""
+    if not (force or store.get("ad_on", False)):
+        return None
+    passes = [{"ad_model": store.get("ad_model") or AD_FACE, "ad_denoising_strength": store.get("ad_denoise", 0.4),
+               "ad_confidence": store.get("ad_confidence", 0.3), "ad_prompt": store.get("ad_prompt", "") or ""}]
+    if store.get("ad2_on", False) and store.get("ad2_model"):
+        passes.append({"ad_model": store.get("ad2_model"), "ad_denoising_strength": store.get("ad2_denoise", 0.4),
+                       "ad_confidence": store.get("ad2_confidence", 0.3)})
+    return passes
+
+
+def adetailer_meta(value):
+    """Short record for the gallery sidecar: [{"model", "denoise", "prompt"?}]."""
+    out = []
+    for d in adetailer_passes(value):
+        m = {"model": d["ad_model"], "denoise": d.get("ad_denoising_strength", AD_PASS_DEFAULTS["ad_denoising_strength"])}
+        if d.get("ad_prompt"):
+            m["prompt"] = d["ad_prompt"]
+        out.append(m)
+    return out
+
+
 class Job:
     def __init__(self, prompt, negative="", width=1024, height=1024, seed=None, steps=25, cfg=6.0,
                  profile="", checkpoint="", workflow="", sampler="euler", scheduler="normal", tag=""):
@@ -222,6 +295,7 @@ class Job:
         self.preview = None     # 4.1: latest live-preview PNG bytes while generating (Forge current_image)
         self.faceswap = None    # 5.1: {"image": face+hair crop png, "model", "kind", "weight", "stop_at"}
         self.reference = None   # 5.0: character reference {"image": png, "model": IP-Adapter model (Forge), "weight"}
+        self.adetailer = None   # 6.1: ADetailer passes (Forge): model name (5.3) or [{ad_model, ad_denoising_strength, ...}]
         self.id = uuid.uuid4().hex[:8]
 
     def values(self):
@@ -235,6 +309,8 @@ class Job:
                      upscale_mode="pure" if not self.upscale.get("denoise") else "img2img")
         if self.hires:
             d["hires"] = self.hires.get("scale")
+        if self.adetailer:
+            d["adetailer"] = adetailer_meta(self.adetailer)
         return d
 
 
@@ -677,8 +753,9 @@ class A1111:
             p["override_settings"] = ov
             if getattr(job, "restore_settings", False):  # 5.3 Video mode: put Forge's own settings back afterwards
                 p["override_settings_restore_afterwards"] = True
-        if getattr(job, "adetailer", None):  # 5.3: ADetailer face pass (Forge extension)
-            p.setdefault("alwayson_scripts", {})["ADetailer"] = {"args": [True, False, {"ad_model": job.adetailer}]}
+        ad = adetailer_args(getattr(job, "adetailer", None))
+        if ad:  # 5.3 face pass / 6.1 up to two passes (ADetailer extension)
+            p.setdefault("alwayson_scripts", {})["ADetailer"] = {"args": ad}
         cn = getattr(job, "controlnet", None)
         if cn and cn.get("image"):
             from .pose import add_forge_controlnet
@@ -758,6 +835,32 @@ class A1111:
         except (BackendError, AttributeError, TypeError, ValueError):
             out = []
         return out or list(DEFAULT_SCHEDULERS)
+
+    def adetailer_models(self, refresh=False):
+        """6.1: ADetailer detector models from GET /adetailer/v1/ad_model, cached per URL. An older ADetailer without
+        that route (but listed in /sdapi/v1/scripts) gets the usual default names; [] = not installed / Forge offline."""
+        if not refresh and _AD_CACHE.get(self.url):
+            return list(_AD_CACHE[self.url])
+        names = []
+        try:
+            d = _http(self.url + "/adetailer/v1/ad_model", timeout=8)
+            names = [str(n) for n in (d.get("ad_model") or []) if n and str(n).lower() != "none"] if isinstance(d, dict) else []
+        except BackendError as e:
+            if str(e).startswith("HTTP"):  # Forge answered but has no such route: is the extension there at all?
+                try:
+                    sc = _http(self.url + "/sdapi/v1/scripts", timeout=8)
+                    if any(str(n).lower() == "adetailer" for n in (sc or {}).get("txt2img", []) or []):
+                        names = list(AD_DEFAULT_MODELS)
+                except (BackendError, AttributeError, TypeError, ValueError):
+                    pass
+        except (ValueError, TypeError, AttributeError):
+            names = []
+        if names:
+            _AD_CACHE[self.url] = list(names)
+        return names
+
+    def has_adetailer(self):
+        return bool(self.adetailer_models())
 
     def upscalers(self):
         """Names for the hires-fix upscaler list: latent modes + installed upscalers (ESRGAN etc)."""

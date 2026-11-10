@@ -2257,6 +2257,33 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         im.add(_frow("Upscaler", self.hr_up, button("⟳", self._hr_upscalers, "ghost", "Load upscalers from Forge")))
         im.add(_frow("Denoise", self.hr_denoise, None))
         im.add(label("Hires denoise 0.3–0.5 keeps the picture, higher adds detail but can change it", "hint", wrap=True))
+        # 6.1: ADetailer (Forge extension): detect faces / hands after each image and redraw them at full detail
+        self._ad_found = None  # None = not checked yet, False = Forge has no ADetailer, True = models loaded
+        self.ad_on = QCheckBox(tr("ADetailer (fix faces / hands after each image)"))
+        self.ad_on.setChecked(bool(self.store.get("ad_on", False)))
+        self.ad_reload = button("⟳", self._ad_models, "ghost", "Load ADetailer models from Forge")
+        self.ad_model = QComboBox(); self.ad_model.setMinimumWidth(120)
+        self.ad_model.addItem(self.store.get("ad_model") or imagegen.AD_FACE)
+        self.ad_denoise = QDoubleSpinBox(); self.ad_denoise.setRange(0.0, 1.0); self.ad_denoise.setSingleStep(0.05)
+        self.ad_denoise.setValue(float(self.store.get("ad_denoise", 0.4)))
+        self.ad_conf = QDoubleSpinBox(); self.ad_conf.setRange(0.0, 1.0); self.ad_conf.setSingleStep(0.05)
+        self.ad_conf.setValue(float(self.store.get("ad_confidence", 0.3)))
+        self.ad_prompt = QLineEdit(self.store.get("ad_prompt", "") or "")
+        self.ad_prompt.setPlaceholderText(tr("Optional, e.g. detailed eyes - empty uses the main prompt"))
+        self.ad2_on = QCheckBox(tr("Second pass")); self.ad2_on.setChecked(bool(self.store.get("ad2_on", False)))
+        self.ad2_model = QComboBox(); self.ad2_model.setMinimumWidth(120)
+        self.ad2_model.addItem(self.store.get("ad2_model") or imagegen.AD_HAND)
+        self.ad2_denoise = QDoubleSpinBox(); self.ad2_denoise.setRange(0.0, 1.0); self.ad2_denoise.setSingleStep(0.05)
+        self.ad2_denoise.setValue(float(self.store.get("ad2_denoise", 0.4)))
+        self.ad_box = QWidget(); abl = QVBoxLayout(self.ad_box); abl.setContentsMargins(0, 0, 0, 0)
+        abl.addLayout(_frow("Detector", self.ad_model, None))
+        abl.addLayout(_frow("AD denoise", self.ad_denoise, label("Confidence", "muted"), self.ad_conf, None))
+        abl.addLayout(_frow("AD prompt", self.ad_prompt))
+        abl.addLayout(hrow(self.ad2_on, None))
+        abl.addLayout(_frow("Detector 2", self.ad2_model, label("Denoise", "muted"), self.ad2_denoise, None))
+        self.ad_note = label("", "hint", wrap=True)
+        im.add(hrow(self.ad_on, None, self.ad_reload)); im.add(self.ad_box); im.add(self.ad_note)
+        self.ad_on.toggled.connect(self._ad_form); self.ad2_on.toggled.connect(self._ad_form)
         self.img_unload = QCheckBox(tr("Unload Ollama models before each image"))
         self.img_unload.setToolTip(tr("Unload Ollama models from VRAM before each image (frees memory for the image model)"))
         self.img_unload.setChecked(bool(self.store.get("img_unload_ollama", True)))
@@ -2292,7 +2319,7 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
                                                                             self.notify(tr("Saved"))))))
         iv.addWidget(cm)
         self.settings_img_card = im
-        for cb in (self.img_kind, self.img_ckpt, self.img_sampler, self.img_scheduler, self.hr_up, self.img_wf):
+        for cb in (self.img_kind, self.img_ckpt, self.img_sampler, self.img_scheduler, self.hr_up, self.img_wf, self.ad_model, self.ad2_model):
             cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon); cb.setMinimumContentsLength(8); cb.setMinimumWidth(100)
         self.img_url.setMinimumWidth(80)
         self._settings_two_pane(v, [("Appearance", ap), ("General", g), ("AI provider", a), ("Image generation", im),
@@ -2428,6 +2455,50 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         wk.ok.connect(done); self._keep(wk); wk.start()
         return wk
 
+    def _ad_form(self, *_):
+        """6.1: ADetailer controls work only with Forge / A1111 and the ADetailer extension; greyed out otherwise."""
+        if not hasattr(self, "ad_on"):
+            return
+        forge = self.img_kind.currentData() == "a1111"
+        ok = forge and self._ad_found is not False
+        self.ad_on.setEnabled(ok); self.ad_reload.setEnabled(forge)
+        self.ad_box.setEnabled(ok and self.ad_on.isChecked())
+        self.ad2_model.setEnabled(self.ad2_on.isChecked()); self.ad2_denoise.setEnabled(self.ad2_on.isChecked())
+        if not forge:
+            note = tr("ADetailer needs the Forge / A1111 backend (not available for ComfyUI yet).")
+        elif self._ad_found is False:
+            note = tr("ADetailer wasn't found in Forge. Install the ADetailer extension in Forge, restart it, then reload the list.")
+        elif self._ad_found:
+            note = tr("Detector models loaded from Forge") + f": {self.ad_model.count()}. " + tr(
+                "Denoise 0.3-0.4 keeps the face, confidence 0.3 finds most faces.")
+        else:
+            note = tr("Runs on every Forge image (not Face Swap). Press the reload button to load your detector models from Forge.")
+        self.ad_note.setText(note)
+        tip = "" if ok else note
+        for wdg in (self.ad_on, self.ad_box):
+            wdg.setToolTip(tip)
+
+    def _ad_models(self):
+        kind = self.img_kind.currentData()
+        if kind != "a1111":
+            self._ad_form(); return None
+        b = imagegen.make_backend(kind, self.img_url.text().strip())
+        wk = CallWorker(lambda: b.adetailer_models(refresh=True))
+        wk.ok.connect(self._ad_models_loaded); wk.failed.connect(lambda _e: self._ad_models_loaded([]))
+        self._keep(wk); wk.start()
+        return wk
+
+    def _ad_models_loaded(self, names):
+        names = [n for n in (names or []) if n]
+        self._ad_found = bool(names)
+        for combo, want in ((self.ad_model, imagegen.AD_FACE), (self.ad2_model, imagegen.AD_HAND)):
+            if not names:
+                break
+            cur = combo.currentText()
+            combo.clear(); combo.addItems(names)
+            combo.setCurrentText(cur if cur in names else (want if want in names else names[0]))
+        self._ad_form()
+
     def _img_wf_changed(self, name, reload=True):
         """5.2: show the SLG toggle only for workflows that have it; reload the model list (UNET vs checkpoints)."""
         p = imagegen.list_workflows(os.path.join(self.data_dir, "workflows")).get(name)
@@ -2510,6 +2581,7 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self.img_url.setEnabled(kind != "none"); self.wf_row.setVisible(kind == "comfyui")
         self.img_ckpt.set_name(self.store.get(f"img_checkpoint:{self._settings_ckpt_key()}", ""))
         self.img_ckpt.set_items([])
+        self._ad_found = None; self._ad_form()
 
     def _img_save(self):
         kind = self.img_kind.currentData()
@@ -2525,6 +2597,11 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         self.store.set("hr_on", self.hr_on.isChecked()); self.store.set("hr_scale", self.hr_scale.value())
         self.store.set("hr_denoise", self.hr_denoise.value()); self.store.set("hr_steps", self.hr_steps.value())
         self.store.set("hr_upscaler", self.hr_up.currentText() or "Latent")
+        self.store.set("ad_on", self.ad_on.isChecked()); self.store.set("ad_model", self.ad_model.currentText() or imagegen.AD_FACE)
+        self.store.set("ad_denoise", self.ad_denoise.value()); self.store.set("ad_confidence", self.ad_conf.value())
+        self.store.set("ad_prompt", self.ad_prompt.text().strip())
+        self.store.set("ad2_on", self.ad2_on.isChecked()); self.store.set("ad2_model", self.ad2_model.currentText() or imagegen.AD_HAND)
+        self.store.set("ad2_denoise", self.ad2_denoise.value())
         for k, c in (("img_sampler", self.img_sampler), ("img_scheduler", self.img_scheduler)):
             t = c.currentText().strip()
             self.store.set(k, None if not t or t == imagegen.PROFILE_DEFAULT else t)
@@ -2564,7 +2641,7 @@ class MainWindow(Shell415, VideoMakerPage, CivitaiBrowserPage, WallpaperPage, Fa
         b = imagegen.make_backend(kind, self.img_url.text().strip())
         self.img_test_lbl.setText(tr("Testing…"))
         wk = CallWorker(b.test)
-        wk.ok.connect(lambda m: (self.img_test_lbl.setText("✅ " + m), self._img_ckpts()))
+        wk.ok.connect(lambda m: (self.img_test_lbl.setText("✅ " + m), self._img_ckpts(), self._ad_models()))
         wk.failed.connect(self._img_test_failed)
         self._keep(wk); wk.start()
 

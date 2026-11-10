@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [6.1.0] - unreleased
+
+### Added
+- **ADetailer for every Forge image**: **Settings -> Image generation -> ADetailer** switches on the ADetailer extension's detect-and-redraw pass for all images PromptMaker sends to Forge / A1111. Pick the detector (the list is loaded from Forge's `/adetailer/v1/ad_model`; `face_yolov8s.pt` by default), its denoise (0.4) and detection confidence (0.3), and an optional prompt for the detailed area (empty = the main prompt).
+- An optional **second pass** (e.g. `hand_yolov8n.pt` for hands) with its own denoise. Both passes inpaint only the masked area with 32 px padding.
+- The gallery sidecar records the ADetailer passes used (`adetailer`: model, denoise, prompt).
+
+### Changed
+- The Video maker's **ADetailer faces (Forge)** tick now uses the same Settings passes instead of a fixed face pass (still `face_yolov8s.pt` when nothing is saved). Unticked means no ADetailer on stills.
+- The controls are greyed out with a note when the backend isn't Forge / A1111 or Forge has no ADetailer. Face Swap jobs never get an ADetailer pass, because it would redraw the swapped face.
+
 ## [6.0.0] - 2026-11-09
 
 ### Added

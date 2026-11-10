@@ -69,6 +69,7 @@ class VideoMakerPage:
         self.vm_lyrics.setMaximumHeight(110); pc.add(self.vm_lyrics)
         self.vm_captions = QCheckBox(tr("Show captions")); self.vm_captions.setChecked(True)
         self.vm_ad = QCheckBox(tr("ADetailer faces (Forge)")); self.vm_ad.setChecked(bool(self.store.get("vm_ad", False)))
+        self.vm_ad.setToolTip(tr("Runs the ADetailer passes set in Settings - Image generation on every still ""(face_yolov8s.pt when none are set). Forge only."))
         pc.add(hrow(self.vm_captions, self.vm_ad, None))
         pc.add(hrow(button("🧠 Plan scenes with AI", self.vm_plan, "primary"), None))
         cc = Card("Characters")
@@ -742,6 +743,14 @@ class VideoMakerPage:
         if self._vm_busy():
             self._vm_worker.cancel(); self.vm_status.setText(tr("Cancelling…"))
 
+    def _vm_adetailer(self, backend):
+        """6.1: ticked = the Settings ADetailer passes (face_yolov8s.pt if none are saved); unticked = none."""
+        if self.vm_ad.isChecked() and isinstance(backend, imagegen.A1111):
+            if not self.store.get("ad_model"):  # nothing saved in Settings yet: the 5.3 face pass
+                return imagegen.AD_FACE
+            return imagegen.adetailer_from_store(self.store, force=True)
+        return None
+
     def vm_stills(self):
         todo = [s for s in self.vm_proj["scenes"] if not s.get("still") and s["prompt"].strip()]
         if not todo:
@@ -757,8 +766,7 @@ class VideoMakerPage:
             w, h = self._vm_still_size(job, s)
             job.width, job.height = w, h
             job.restore_settings = True
-            if self.vm_ad.isChecked() and isinstance(backend, imagegen.A1111):
-                job.adetailer = "face_yolov8s.pt"
+            job.adetailer = self._vm_adetailer(backend)
             if vp.main_character(self.vm_proj, s) and info is None:
                 from . import faceswap as fs
                 info = fs.detect(backend)

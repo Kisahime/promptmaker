@@ -192,6 +192,8 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 **Hires fix (Forge/A1111).** Tick **Hires fix** in Settings → Image generation and press **Save**. PromptMaker sends `enable_hr` with your scale, upscaler, hires steps and denoise (0.3–0.5 keeps the picture; 1.5× Latent with denoise 0.4 is a good start), and tells Forge Neo to reuse the same VAE and text encoders for the second pass.
 
+**ADetailer (Forge/A1111)** *(6.1)*. With the [ADetailer](https://github.com/Bing-su/adetailer) extension installed in Forge, tick **ADetailer** in Settings -> Image generation, press the reload button to load your detector models from Forge, and press **Save**. Pass 1 defaults to `face_yolov8s.pt` (denoise 0.4, confidence 0.3); the optional prompt is used only for the detailed area (empty = the main prompt). Tick **Second pass** to add e.g. `hand_yolov8n.pt`. It applies to every Forge image except Face Swap, and the Video maker's *ADetailer faces* tick uses the same passes. The controls are greyed out for ComfyUI or when Forge has no ADetailer.
+
 **Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
