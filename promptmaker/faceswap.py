@@ -558,24 +558,11 @@ def smart_mask(png, faces, idx, style="Auto", cache_dir=None, hair=True, neck=Fa
     return auto_mask(png, faces[idx], hair, grow, feather, True, neck), None, "shape (" + method + ")"
 
 
-def _soft_fill(img, alpha):
-    """The background filled by smearing the head's own edge colours outward — no flat colour or scenery for the
-    IP-Adapter to copy into the swap."""
-    import cv2
-    import numpy as np
-    h, w = img.shape[:2]
-    s = 128.0 / max(h, w)
-    small = cv2.resize(img, (max(1, int(w * s)), max(1, int(h * s))), interpolation=cv2.INTER_AREA)
-    known = cv2.erode(((alpha[..., 0] > 0.98) * 255).astype(np.uint8), np.ones((7, 7), np.uint8))  # only solid head pixels
-    known = cv2.resize(known, small.shape[1::-1], interpolation=cv2.INTER_AREA)
-    hole = ((known < 255) * 255).astype(np.uint8)
-    fill = cv2.GaussianBlur(cv2.inpaint(small, hole, 9, cv2.INPAINT_TELEA), (0, 0), 6)
-    return cv2.resize(fill, (w, h), interpolation=cv2.INTER_LINEAR)
+BG_FILLS = {"White": (255, 255, 255), "Grey": (132, 133, 135), "Black": (0, 0, 0)}  # BGR; Grey = Fooocus'
 
-
-def clean_face(png, face, style="Auto", cache_dir=None, size=512, pad=0.06, progress=None):
-    """(square PNG of just the head — face, hair, neck — cropped tight to it, the background replaced by a soft smear
-    of its own edge colours, method) or (None, reason) when segmentation can't run."""
+def clean_face(png, face, style="Auto", cache_dir=None, size=512, pad=0.06, progress=None, fill="White"):
+    """(square PNG of just the head — face, hair, neck — cropped tight to it, the background a flat `fill` colour
+    (BG_FILLS), method) or (None, reason) when segmentation can't run."""
     if face is None:
         return None, "no face"
     st = style
@@ -594,10 +581,11 @@ def clean_face(png, face, style="Auto", cache_dir=None, size=512, pad=0.06, prog
     if not len(xs):
         return None, "segmentation found no head"
     a = (m.astype(np.float32) / 255.0)[..., None]
-    out = (img * a + _soft_fill(img, a) * (1.0 - a)).round().astype(np.uint8)
+    bg = np.empty_like(img); bg[:] = BG_FILLS.get(fill, BG_FILLS["White"])
+    out = (img * a + bg * (1.0 - a)).round().astype(np.uint8)
     x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
     side = max(8, int(max(x1 - x0, y1 - y0) * (1 + 2 * pad)))
-    big = cv2.copyMakeBorder(out, side, side, side, side, cv2.BORDER_REPLICATE)
+    big = cv2.copyMakeBorder(out, side, side, side, side, cv2.BORDER_CONSTANT, value=tuple(int(v) for v in bg[0, 0]))
     X, Y = (x0 + x1) // 2 - side // 2 + side, (y0 + y1) // 2 - side // 2 + side
     crop = big[Y:Y + side, X:X + side]
     return _encode(cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA if side > size else cv2.INTER_CUBIC)), method

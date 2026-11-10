@@ -55,7 +55,11 @@ class FaceSwapPage:
         self.fs_nobg = QCheckBox(tr("Remove background")); self.fs_nobg.setChecked(bool(self.store.get("fs_nobg", False)))
         self.fs_nobg.setToolTip(tr("Paint everything except the head (face, hair, neck) plain grey before it is sent, so the background and clothes don't leak into the swap"))
         self.fs_nobg.toggled.connect(lambda on: (self.store.set("fs_nobg", bool(on)), self.fs_recrop()))
-        sc.add(self.fs_nobg)
+        self.fs_bgfill = QComboBox(); self.fs_bgfill.addItems(["White", "Grey", "Black"])
+        self.fs_bgfill.setCurrentText(self.store.get("fs_bgfill", "White"))
+        self.fs_bgfill.setToolTip(tr("Colour behind the cut-out head. Try another one if it shows up in your results"))
+        self.fs_bgfill.currentTextChanged.connect(lambda t: (self.store.set("fs_bgfill", t), self.fs_recrop()))
+        sc.add(hrow(self.fs_nobg, label("Fill"), self.fs_bgfill, None))
         self.fs_crop_view = QLabel(tr("Pick a clear picture of the face")); self.fs_crop_view.setAlignment(Qt.AlignCenter)
         self.fs_crop_view.setMinimumSize(220, 220); self.fs_crop_view.setObjectName("dropZone")
         sc.add(self.fs_crop_view, 1)
@@ -261,12 +265,13 @@ class FaceSwapPage:
 
     def _fs_clean_face(self):
         """(cut-out head PNG or None, status note) — cached per source + face + style."""
-        key = (hash(self.fs_src_png), tuple(self.fs_face_box) if self.fs_face_box else None, self.fs_style.currentText())
+        fill = self.fs_bgfill.currentText()
+        key = (hash(self.fs_src_png), tuple(self.fs_face_box) if self.fs_face_box else None, self.fs_style.currentText(), fill)
         cache = self.__dict__.setdefault("_fs_bg_cache", {})
         if key not in cache:
             cache.clear()
             try:
-                cache[key] = fs.clean_face(self.fs_src_png, self.fs_face_box, self.fs_style.currentText(), self._fs_cache())
+                cache[key] = fs.clean_face(self.fs_src_png, self.fs_face_box, self.fs_style.currentText(), self._fs_cache(), fill=fill)
             except Exception as e:  # noqa: BLE001
                 cache[key] = (None, str(e))
         png, method = cache[key]

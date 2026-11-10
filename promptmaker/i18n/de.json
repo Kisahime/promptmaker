@@ -397,6 +397,11 @@
   "Remove background": "Hintergrund entfernen",
   "Cut out just the head (face, hair, neck) and crop tight to it, so the background and clothes don't leak into the swap. Hair margin is ignored while this is on": "Nur den Kopf (Gesicht, Haare, Hals) ausschneiden und eng zuschneiden, damit Hintergrund und Kleidung nicht in den Tausch einfließen. Der Haarrand wird dabei ignoriert",
   "Background kept ({reason})": "Hintergrund behalten ({reason})",
-  "Background removed": "Hintergrund entfernt"
+  "Background removed": "Hintergrund entfernt",
+  "Fill": "Füllung",
+  "Colour behind the cut-out head. Try another one if it shows up in your results": "Farbe hinter dem ausgeschnittenen Kopf. Probiere eine andere, wenn sie in deinen Bildern auftaucht",
+  "White": "Weiß",
+  "Grey": "Grau",
+  "Black": "Schwarz"
  }
 }
