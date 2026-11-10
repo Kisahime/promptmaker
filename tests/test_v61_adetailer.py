@@ -218,3 +218,40 @@ def _png():
     img = QImage(64, 64, QImage.Format_RGB32); img.fill(QColor("white"))
     buf = QBuffer(); buf.open(QIODevice.WriteOnly); img.save(buf, "PNG")
     return bytes(buf.data())
+
+
+def test_inspector_panel_fits_its_width(win):
+    """6.1: the Generation inspector (Studio, ~350 px viewport) never needs more width than it has, so nothing is cut off."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication, QScrollArea, QWidget
+    win.go("Create"); QApplication.processEvents()
+    card = win.settings_img_card
+    assert win.inspector.isVisible() and win.inspector.isAncestorOf(card)
+    sc = win.inspector.findChild(QScrollArea); vp = sc.viewport()
+    for kind in ("a1111", "comfyui", "none"):
+        win.img_kind.setCurrentIndex(win.img_kind.findData(kind))
+        win.ad_on.setChecked(True); win.ad2_on.setChecked(True); win.img_slg.setVisible(True)
+        QApplication.processEvents()
+        assert sc.widget().minimumSizeHint().width() <= vp.width(), kind
+        assert sc.widget().width() <= vp.width(), kind
+        out = [type(c).__name__ for c in card.findChildren(QWidget)
+               if c.isVisibleTo(card) and c.mapTo(vp, QPoint(c.width(), 0)).x() > vp.width() + 1]
+        assert not out, (kind, out)
+
+
+def test_wrap_check_label_follows_checkbox(win):
+    lbl = win.ad_on.wrap_label
+    assert "ADetailer" in lbl.text() and win.ad_on.accessibleName() == lbl.text()
+    win.img_kind.setCurrentIndex(win.img_kind.findData("comfyui"))
+    assert not lbl.isEnabled() and lbl.toolTip()
+    win.img_kind.setCurrentIndex(win.img_kind.findData("a1111"))
+    assert lbl.isEnabled()
+    before = win.ad_on.isChecked()
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    QTest.mouseClick(lbl, Qt.LeftButton)  # clicking the text toggles the box
+    assert win.ad_on.isChecked() != before
+    win.img_slg.setVisible(False)
+    assert win.img_slg.wrap_label.isHidden()
+    win.img_slg.setVisible(True)
+    assert not win.img_slg.wrap_label.isHidden()
