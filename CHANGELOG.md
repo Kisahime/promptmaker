@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [6.1.0] - unreleased
+## [6.5.0] - unreleased
 
 ### Added
 - **ADetailer for every Forge image**: **Settings -> Image generation -> ADetailer** switches on the ADetailer extension's detect-and-redraw pass for all images PromptMaker sends to Forge / A1111. Pick the detector (the list is loaded from Forge's `/adetailer/v1/ad_model`; `face_yolov8s.pt` by default), its denoise (0.4) and detection confidence (0.3), and an optional prompt for the detailed area (empty = the main prompt).
@@ -12,7 +12,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - **ADetailer presets**: *Face*, *Face + hands* and *Full body* (person segmentation at denoise 0.3, then a face pass) fill the pass fields with detectors the backend actually has; a role with no matching detector is left out. Editing a field switches back to *Custom*.
 - **ADetailer toggle in the top bar** next to the backend status, the same switch as in Settings. It's greyed out (with the reason as a tooltip) when the backend has no ADetailer / FaceDetailer.
 - **Start Forge / Start ComfyUI** in Settings -> Image generation (and the Studio inspector). Each button shows only when its launcher is found: a saved path, the usual folders (e.g. `C:\AI\sd-webui-forge-classic\webui-user.bat`, `...\ComfyUI_windows_portable\run_nvidia_gpu.bat`), or a short search; **Launcher paths** lets you choose another `.bat`. The backend starts in its own console window; PromptMaker waits up to 5 minutes for its API and then switches to it. If that backend is already running, it just connects; if the other one is running, it asks first, because both together can run out of VRAM on an 8 GB card. A **▶** button next to the backend status starts the selected backend when it's offline.
-- German and Spanish translations for all 6.1 strings.
+- **Face Swap: Remove background** on the source face: the head (face, hair, neck) is cut out with the face-parsing / anime segmentation models, cropped tight, and set on a flat **Fill** colour (White, Grey or Black), so the source photo's background and clothes don't leak into the swap. Hair margin is ignored while it's on; without the segmentation models the normal crop is used and the status line says why.
+- German and Spanish translations for all 6.5 strings.
 
 ### Changed
 - The Video maker's **ADetailer faces (Forge)** tick now uses the same Settings passes instead of a fixed face pass (still `face_yolov8s.pt` when nothing is saved). Unticked means no ADetailer on stills.
