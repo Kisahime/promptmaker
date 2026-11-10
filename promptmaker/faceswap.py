@@ -558,6 +558,31 @@ def smart_mask(png, faces, idx, style="Auto", cache_dir=None, hair=True, neck=Fa
     return auto_mask(png, faces[idx], hair, grow, feather, True, neck), None, "shape (" + method + ")"
 
 
+BG_GREY = (132, 133, 135)  # BGR of Fooocus' grey (what crop_face pads with)
+
+
+def clean_background(png, face, style="Auto", cache_dir=None, progress=None):
+    """(png, method): everything but the chosen head (face + hair + neck) painted Fooocus' grey, so the IP-Adapter
+    only sees the person. Returns the untouched png and the reason when segmentation can't run."""
+    if face is None:
+        return png, "no face"
+    st = style
+    if st not in ("Photo", "Anime"):
+        _f, st = detect_all(png, cache_dir, "Auto", progress)
+    raw, method = seg_mask(png, [tuple(face)], 0, st, cache_dir, True, True, progress)
+    if raw is None:
+        return png, method
+    import cv2
+    import numpy as np
+    img = _decode(png)
+    m = cv2.imdecode(np.frombuffer(finish_mask(raw, 4, 6), np.uint8), cv2.IMREAD_GRAYSCALE)
+    if m.shape[:2] != img.shape[:2]:
+        m = cv2.resize(m, (img.shape[1], img.shape[0]))
+    a = (m.astype(np.float32) / 255.0)[..., None]
+    bg = np.empty_like(img); bg[:] = BG_GREY
+    return _encode((img * a + bg * (1.0 - a)).round().astype(np.uint8)), method
+
+
 def mask_to_alpha(mask_png):
     """QImage (ARGB32_Premultiplied, white with alpha = mask) for InpaintCanvas.mask."""
     from PySide6.QtGui import QColor, QImage, QPainter

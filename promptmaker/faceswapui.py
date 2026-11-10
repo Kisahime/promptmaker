@@ -52,6 +52,10 @@ class FaceSwapPage:
         self.fs_margin.setToolTip(tr("How much around the face is sent: 1.6 ≈ Fooocus (face only), 2.2 = face + hair, 3 = head and shoulders"))
         self.fs_margin.valueChanged.connect(lambda x: (self.store.set("fs_margin", float(x)), self.fs_recrop()))
         sc.add(hrow(label("Hair margin"), self.fs_margin, None))
+        self.fs_nobg = QCheckBox(tr("Remove background")); self.fs_nobg.setChecked(bool(self.store.get("fs_nobg", False)))
+        self.fs_nobg.setToolTip(tr("Paint everything except the head (face, hair, neck) plain grey before it is sent, so the background and clothes don't leak into the swap"))
+        self.fs_nobg.toggled.connect(lambda on: (self.store.set("fs_nobg", bool(on)), self.fs_recrop()))
+        sc.add(self.fs_nobg)
         self.fs_crop_view = QLabel(tr("Pick a clear picture of the face")); self.fs_crop_view.setAlignment(Qt.AlignCenter)
         self.fs_crop_view.setMinimumSize(220, 220); self.fs_crop_view.setObjectName("dropZone")
         sc.add(self.fs_crop_view, 1)
@@ -244,11 +248,29 @@ class FaceSwapPage:
     def fs_recrop(self, note=""):
         if not self.fs_src_png:
             return None
-        self.fs_face_png, box = fs.crop_face(self.fs_src_png, self.fs_face_box, self.fs_margin.value(), 512, self._fs_cache())
+        src, bg_note = self.fs_src_png, ""
+        if getattr(self, "fs_nobg", None) is not None and self.fs_nobg.isChecked():
+            src, bg_note = self._fs_clean_source()
+        self.fs_face_png, box = fs.crop_face(src, self.fs_face_box, self.fs_margin.value(), 512, self._fs_cache())
         _show(self.fs_crop_view, self.fs_face_png, 220)
         found = tr("Face found") if self.fs_face_box else tr("No face found – using the centre; pick a closer picture if it looks wrong")
-        self.fs_src_status.setText(" · ".join(x for x in (note, found, tr("this square (face + hair) is what the AI sees")) if x))
+        self.fs_src_status.setText(" · ".join(x for x in (note, found, bg_note, tr("this square (face + hair) is what the AI sees")) if x))
         return self.fs_face_png
+
+    def _fs_clean_source(self):
+        """(source png with a grey background, status note) — cached per source + face so the margin spinner stays fast."""
+        key = (hash(self.fs_src_png), tuple(self.fs_face_box) if self.fs_face_box else None, self.fs_style.currentText())
+        cache = self.__dict__.setdefault("_fs_bg_cache", {})
+        if key not in cache:
+            try:
+                cache.clear()
+                cache[key] = fs.clean_background(self.fs_src_png, self.fs_face_box, self.fs_style.currentText(), self._fs_cache())
+            except Exception as e:  # noqa: BLE001
+                cache[key] = (self.fs_src_png, str(e))
+        png, method = cache[key]
+        if png is self.fs_src_png:
+            return png, tr("Background kept ({reason})").format(reason=method)
+        return png, tr("Background removed")
 
     def fs_open_source(self):
         p, _ = QFileDialog.getOpenFileName(self, tr("Source face"), "", "Images (*.png *.jpg *.jpeg *.webp)")

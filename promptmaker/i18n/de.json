@@ -393,6 +393,10 @@
   "Start Forge in its own window and connect to it": "Forge in einem eigenen Fenster starten und verbinden",
   "Start ComfyUI in its own window and connect to it": "ComfyUI in einem eigenen Fenster starten und verbinden",
   "Where Start Forge / Start ComfyUI find their .bat": "Wo Forge starten / ComfyUI starten ihre .bat finden",
-  "Choose the launcher (.bat)": "Starter auswählen (.bat)"
+  "Choose the launcher (.bat)": "Starter auswählen (.bat)",
+  "Remove background": "Hintergrund entfernen",
+  "Paint everything except the head (face, hair, neck) plain grey before it is sent, so the background and clothes don't leak into the swap": "Alles außer dem Kopf (Gesicht, Haare, Hals) vor dem Senden grau färben, damit Hintergrund und Kleidung nicht in den Tausch einfließen",
+  "Background kept ({reason})": "Hintergrund behalten ({reason})",
+  "Background removed": "Hintergrund entfernt"
  }
 }
