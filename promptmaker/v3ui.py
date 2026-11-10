@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
                                QVBoxLayout, QWidget)
 
 from . import autorefine, firstrun, imagegen, loras, pose, presets
+from . import __version__
 from .i18n import tr
 from .posecanvas import PoseCanvas
 from .widgets import Card, ConfirmButton, button, hrow, label
@@ -139,7 +140,7 @@ class SetupWizard(QDialog):
         self.win, self.res, self.pull_worker = win, None, None
         self.setWindowTitle(tr("PromptMaker setup")); self.resize(720, 560)
         v = QVBoxLayout(self); v.setContentsMargins(22, 18, 22, 18); v.setSpacing(12)
-        v.addWidget(label("Welcome to PromptMaker 3.0", "h1"))
+        v.addWidget(label(tr("Welcome to PromptMaker {version}").format(version=".".join(__version__.split(".")[:2])), "h1"))
         v.addWidget(label("This checks what's on your PC. Everything is optional except an AI model for the AI features – "
                           "the offline Builder works without anything.", "muted", wrap=True))
         o = Card("1 · Ollama (local AI)")

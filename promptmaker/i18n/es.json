@@ -237,7 +237,7 @@
   "Presets": "Ajustes guardados",
   "LoRAs": "LoRAs",
   "PromptMaker setup": "Configuración de PromptMaker",
-  "Welcome to PromptMaker 3.0": "Bienvenido a PromptMaker 3.0",
+  "Welcome to PromptMaker {version}": "Bienvenido a PromptMaker {version}",
   "⟳ Check again": "⟳ Comprobar de nuevo",
   "Skip": "Omitir",
   "Setup saved": "Configuración guardada",
