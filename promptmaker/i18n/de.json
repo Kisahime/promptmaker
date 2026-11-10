@@ -395,7 +395,7 @@
   "Where Start Forge / Start ComfyUI find their .bat": "Wo Forge starten / ComfyUI starten ihre .bat finden",
   "Choose the launcher (.bat)": "Starter auswählen (.bat)",
   "Remove background": "Hintergrund entfernen",
-  "Paint everything except the head (face, hair, neck) plain grey before it is sent, so the background and clothes don't leak into the swap": "Alles außer dem Kopf (Gesicht, Haare, Hals) vor dem Senden grau färben, damit Hintergrund und Kleidung nicht in den Tausch einfließen",
+  "Cut out just the head (face, hair, neck) and crop tight to it, so the background and clothes don't leak into the swap. Hair margin is ignored while this is on": "Nur den Kopf (Gesicht, Haare, Hals) ausschneiden und eng zuschneiden, damit Hintergrund und Kleidung nicht in den Tausch einfließen. Der Haarrand wird dabei ignoriert",
   "Background kept ({reason})": "Hintergrund behalten ({reason})",
   "Background removed": "Hintergrund entfernt"
  }

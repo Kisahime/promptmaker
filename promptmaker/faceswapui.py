@@ -248,28 +248,30 @@ class FaceSwapPage:
     def fs_recrop(self, note=""):
         if not self.fs_src_png:
             return None
-        src, bg_note = self.fs_src_png, ""
+        png, bg_note = None, ""
         if getattr(self, "fs_nobg", None) is not None and self.fs_nobg.isChecked():
-            src, bg_note = self._fs_clean_source()
-        self.fs_face_png, box = fs.crop_face(src, self.fs_face_box, self.fs_margin.value(), 512, self._fs_cache())
+            png, bg_note = self._fs_clean_face()
+        if png is None:
+            png, _box = fs.crop_face(self.fs_src_png, self.fs_face_box, self.fs_margin.value(), 512, self._fs_cache())
+        self.fs_face_png = png
         _show(self.fs_crop_view, self.fs_face_png, 220)
-        found = tr("Face found") if self.fs_face_box else tr("No face found – using the centre; pick a closer picture if it looks wrong")
+        found = tr("Face found") if self.fs_face_box else tr("No face found — using the centre; pick a closer picture if it looks wrong")
         self.fs_src_status.setText(" · ".join(x for x in (note, found, bg_note, tr("this square (face + hair) is what the AI sees")) if x))
         return self.fs_face_png
 
-    def _fs_clean_source(self):
-        """(source png with a grey background, status note) — cached per source + face so the margin spinner stays fast."""
+    def _fs_clean_face(self):
+        """(cut-out head PNG or None, status note) — cached per source + face + style."""
         key = (hash(self.fs_src_png), tuple(self.fs_face_box) if self.fs_face_box else None, self.fs_style.currentText())
         cache = self.__dict__.setdefault("_fs_bg_cache", {})
         if key not in cache:
+            cache.clear()
             try:
-                cache.clear()
-                cache[key] = fs.clean_background(self.fs_src_png, self.fs_face_box, self.fs_style.currentText(), self._fs_cache())
+                cache[key] = fs.clean_face(self.fs_src_png, self.fs_face_box, self.fs_style.currentText(), self._fs_cache())
             except Exception as e:  # noqa: BLE001
-                cache[key] = (self.fs_src_png, str(e))
+                cache[key] = (None, str(e))
         png, method = cache[key]
-        if png is self.fs_src_png:
-            return png, tr("Background kept ({reason})").format(reason=method)
+        if png is None:
+            return None, tr("Background kept ({reason})").format(reason=method)
         return png, tr("Background removed")
 
     def fs_open_source(self):
