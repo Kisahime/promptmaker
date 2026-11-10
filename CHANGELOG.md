@@ -8,10 +8,21 @@ All notable changes to this project are documented here. The format follows [Kee
 - **ADetailer for every Forge image**: **Settings -> Image generation -> ADetailer** switches on the ADetailer extension's detect-and-redraw pass for all images PromptMaker sends to Forge / A1111. Pick the detector (the list is loaded from Forge's `/adetailer/v1/ad_model`; `face_yolov8s.pt` by default), its denoise (0.4) and detection confidence (0.3), and an optional prompt for the detailed area (empty = the main prompt).
 - An optional **second pass** (e.g. `hand_yolov8n.pt` for hands) with its own denoise. Both passes inpaint only the masked area with 32 px padding.
 - The gallery sidecar records the ADetailer passes used (`adetailer`: model, denoise, prompt).
+- **ADetailer on ComfyUI** through the Impact Pack's **FaceDetailer**: PromptMaker checks `/object_info` for `FaceDetailer` and `UltralyticsDetectorProvider` (ComfyUI-Impact-Pack + ComfyUI-Impact-Subpack), lists their detectors (e.g. `bbox/face_yolov8m.pt`), and adds one detector + FaceDetailer per pass after the VAE decode, on the workflow's own model, CLIP, VAE, prompts, seed, steps, CFG, sampler and scheduler (denoise and confidence from the pass; guide size 512, crop factor 3). Without the Impact Pack the block explains how to install both packs with ComfyUI Manager and stays off.
+- **ADetailer presets**: *Face*, *Face + hands* and *Full body* (person segmentation at denoise 0.3, then a face pass) fill the pass fields with detectors the backend actually has; a role with no matching detector is left out. Editing a field switches back to *Custom*.
+- **ADetailer toggle in the top bar** next to the backend status, the same switch as in Settings. It's greyed out (with the reason as a tooltip) when the backend has no ADetailer / FaceDetailer.
+- **Start Forge / Start ComfyUI** in Settings -> Image generation (and the Studio inspector). Each button shows only when its launcher is found: a saved path, the usual folders (e.g. `C:\AI\sd-webui-forge-classic\webui-user.bat`, `...\ComfyUI_windows_portable\run_nvidia_gpu.bat`), or a short search; **Launcher paths** lets you choose another `.bat`. The backend starts in its own console window; PromptMaker waits up to 5 minutes for its API and then switches to it. If that backend is already running, it just connects; if the other one is running, it asks first, because both together can run out of VRAM on an 8 GB card. A **▶** button next to the backend status starts the selected backend when it's offline.
+- German and Spanish translations for all 6.1 strings.
 
 ### Changed
 - The Video maker's **ADetailer faces (Forge)** tick now uses the same Settings passes instead of a fixed face pass (still `face_yolov8s.pt` when nothing is saved). Unticked means no ADetailer on stills.
-- The controls are greyed out with a note when the backend isn't Forge / A1111 or Forge has no ADetailer. Face Swap jobs never get an ADetailer pass, because it would redraw the swapped face.
+- The controls are greyed out with a note when the backend has no ADetailer (Forge) or FaceDetailer (ComfyUI). Face Swap jobs never get an ADetailer pass, because it would redraw the swapped face.
+- Detector names carry over between backends: a ComfyUI name such as `bbox/face_yolov8m.pt` is sent to Forge as its closest model, and the other way round.
+- **Faster when something is offline**: local defaults (Ollama, LM Studio, llama.cpp, KoboldCpp, vLLM) use `127.0.0.1` instead of `localhost`. On Windows `localhost` tries IPv6 first, so a closed port took about 4 s to fail instead of 2 s. Saved URLs that are exactly an old `localhost` default are switched over automatically; custom URLs are left alone.
+
+### Fixed
+- The Generation inspector in the Studio no longer cuts off its right-hand side (long checkboxes wrap; one ADetailer control per row).
+- `test_v53_detect` no longer probes the real ports 7860 / 8188, so a running Forge or ComfyUI can't change its result.
 
 ## [6.0.0] - 2026-11-09
 
