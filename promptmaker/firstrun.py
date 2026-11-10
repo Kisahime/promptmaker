@@ -8,7 +8,7 @@ import urllib.request
 
 from . import imagegen
 
-OLLAMA_URL = "http://localhost:11434"
+OLLAMA_URL = "http://127.0.0.1:11434"
 FORGE_URL = "http://127.0.0.1:7860"
 COMFY_URL = "http://127.0.0.1:8188"
 RECOMMENDED_TEXT = "llama3.2"
