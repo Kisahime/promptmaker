@@ -14,12 +14,12 @@ VISION_HINTS = ("llava", "vision", "-vl", "vl:", "qwen2.5vl", "qwen2.5-vl", "qwe
                 "gpt-4.1", "gpt-5", "claude", "gemini", "internvl")
 
 PRESETS = {
-    "ollama": {"label": "Ollama (local)", "kind": "ollama", "base_url": "http://localhost:11434", "key": False},
-    "lmstudio": {"label": "LM Studio (local)", "kind": "openai", "base_url": "http://localhost:1234/v1", "key": False},
-    "llamacpp": {"label": "llama.cpp server (local)", "kind": "openai", "base_url": "http://localhost:8080/v1", "key": False},
-    "koboldcpp": {"label": "KoboldCpp (local)", "kind": "openai", "base_url": "http://localhost:5001/v1", "key": False},
-    "vllm": {"label": "vLLM (local)", "kind": "openai", "base_url": "http://localhost:8000/v1", "key": False},
-    "openai_compat": {"label": "Other OpenAI-compatible", "kind": "openai", "base_url": "http://localhost:8000/v1", "key": "optional"},
+    "ollama": {"label": "Ollama (local)", "kind": "ollama", "base_url": "http://127.0.0.1:11434", "key": False},
+    "lmstudio": {"label": "LM Studio (local)", "kind": "openai", "base_url": "http://127.0.0.1:1234/v1", "key": False},
+    "llamacpp": {"label": "llama.cpp server (local)", "kind": "openai", "base_url": "http://127.0.0.1:8080/v1", "key": False},
+    "koboldcpp": {"label": "KoboldCpp (local)", "kind": "openai", "base_url": "http://127.0.0.1:5001/v1", "key": False},
+    "vllm": {"label": "vLLM (local)", "kind": "openai", "base_url": "http://127.0.0.1:8000/v1", "key": False},
+    "openai_compat": {"label": "Other OpenAI-compatible", "kind": "openai", "base_url": "http://127.0.0.1:8000/v1", "key": "optional"},
     "openai": {"label": "OpenAI (cloud)", "kind": "openai", "base_url": "https://api.openai.com/v1", "key": True},
     "openrouter": {"label": "OpenRouter (cloud)", "kind": "openai", "base_url": "https://openrouter.ai/api/v1", "key": True},
     "anthropic": {"label": "Anthropic Claude (cloud)", "kind": "anthropic", "base_url": "https://api.anthropic.com/v1", "key": True},
@@ -400,3 +400,17 @@ def resolve_vision(provider, preferred="", failed=()):
         return "", NO_VISION_MSG + (f" ({preferred} can't read images.)" if preferred else "")
     pick = models[0]
     return pick, (f"{preferred} can't read images – using {pick}" if preferred else f"Using vision model {pick}")
+
+
+def migrate_localhost(store):
+    """6.1: a saved URL that is exactly an old 'http://localhost:<port>' default becomes 127.0.0.1 (same server,
+    but Windows doesn't spend 2 s on IPv6 first when it's down). Custom URLs are left alone. Returns changed keys."""
+    pairs = [(f"provider_url:{pid}", p["base_url"]) for pid, p in PRESETS.items() if "127.0.0.1" in p.get("base_url", "")]
+    pairs += [("img_url:a1111", "http://127.0.0.1:7860"), ("img_url:comfyui", "http://127.0.0.1:8188")]
+    changed = []
+    for key, new in pairs:
+        cur = store.get(key)
+        old = new.replace("127.0.0.1", "localhost")
+        if isinstance(cur, str) and cur.strip().rstrip("/") == old.rstrip("/"):
+            store.set(key, new); changed.append(key)
+    return changed

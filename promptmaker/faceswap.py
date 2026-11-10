@@ -245,6 +245,7 @@ def apply_to_job(job, face_png, model, kind, weight=WEIGHT, stop_at=STOP_AT, tar
     back with the mask blur. padding None = 20 % of the mask's size (32–160 px)."""
     job.faceswap = {"image": face_png, "model": model, "kind": kind, "weight": float(weight), "stop_at": float(stop_at)}
     job.reference = None  # the character's own reference would double up – Face Swap's unit replaces it
+    job.adetailer = None  # 6.1: an ADetailer face pass would redraw the swapped face
     if target_png and mask_png:
         from .imagegen import png_size
         w, h = png_size(target_png)
@@ -265,7 +266,7 @@ def harmonise_job(job, image_png, mask_png, face=None, denoise=0.25, frac=0.15):
     from .imagegen import png_size
     w, h = png_size(image_png)
     m = faceblend.harmonise_mask_png(mask_png, w, h, face, frac)
-    job.faceswap = None; job.reference = None; job.hires = None
+    job.faceswap = None; job.reference = None; job.hires = None; job.adetailer = None
     job.width, job.height = inpaint_size(w, h, job.width, job.height)
     job.inpaint = {"image": image_png, "mask": m, "denoise": float(denoise), "mask_blur": 8, "only_masked": True,
                    "padding": int(mask_padding(m)), "fill": "original"}
@@ -555,6 +556,39 @@ def smart_mask(png, faces, idx, style="Auto", cache_dir=None, hair=True, neck=Fa
     if not faces or idx is None:
         return None, None, method
     return auto_mask(png, faces[idx], hair, grow, feather, True, neck), None, "shape (" + method + ")"
+
+
+BG_FILLS = {"White": (255, 255, 255), "Grey": (132, 133, 135), "Black": (0, 0, 0)}  # BGR; Grey = Fooocus'
+
+def clean_face(png, face, style="Auto", cache_dir=None, size=512, pad=0.06, progress=None, fill="White"):
+    """(square PNG of just the head — face, hair, neck — cropped tight to it, the background a flat `fill` colour
+    (BG_FILLS), method) or (None, reason) when segmentation can't run."""
+    if face is None:
+        return None, "no face"
+    st = style
+    if st not in ("Photo", "Anime"):
+        _f, st = detect_all(png, cache_dir, "Auto", progress)
+    raw, method = seg_mask(png, [tuple(face)], 0, st, cache_dir, True, True, progress)
+    if raw is None:
+        return None, method
+    import cv2
+    import numpy as np
+    img = _decode(png)
+    m = cv2.imdecode(np.frombuffer(finish_mask(raw, 0, 3), np.uint8), cv2.IMREAD_GRAYSCALE)
+    if m.shape[:2] != img.shape[:2]:
+        m = cv2.resize(m, (img.shape[1], img.shape[0]))
+    ys, xs = np.nonzero(m > 127)
+    if not len(xs):
+        return None, "segmentation found no head"
+    a = (m.astype(np.float32) / 255.0)[..., None]
+    bg = np.empty_like(img); bg[:] = BG_FILLS.get(fill, BG_FILLS["White"])
+    out = (img * a + bg * (1.0 - a)).round().astype(np.uint8)
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+    side = max(8, int(max(x1 - x0, y1 - y0) * (1 + 2 * pad)))
+    big = cv2.copyMakeBorder(out, side, side, side, side, cv2.BORDER_CONSTANT, value=tuple(int(v) for v in bg[0, 0]))
+    X, Y = (x0 + x1) // 2 - side // 2 + side, (y0 + y1) // 2 - side // 2 + side
+    crop = big[Y:Y + side, X:X + side]
+    return _encode(cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA if side > size else cv2.INTER_CUBIC)), method
 
 
 def mask_to_alpha(mask_png):

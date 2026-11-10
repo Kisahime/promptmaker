@@ -161,6 +161,54 @@ class Card(QFrame):
         return w
 
 
+class _CheckFollow(QWidget):
+    """Event filter: the label of a wrap_check() follows its checkbox's enabled / hidden state and tooltip."""
+
+    def __init__(self, cb, lbl):
+        super().__init__(cb)
+        self.cb, self.lbl = cb, lbl
+        cb.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t == ev.Type.EnabledChange:
+            self.lbl.setEnabled(self.cb.isEnabled())
+        elif t in (ev.Type.ShowToParent, ev.Type.HideToParent):
+            self.lbl.setVisible(not self.cb.isHidden())
+        elif t == ev.Type.ToolTipChange:
+            self.lbl.setToolTip(self.cb.toolTip())
+        return False
+
+
+class _CheckLabel(QLabel):
+    def __init__(self, text, cb):
+        super().__init__(text)
+        self.cb = cb
+        self.setWordWrap(True); self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # wrap to whatever width the panel has
+
+    def mousePressEvent(self, e):
+        if self.cb.isEnabled():
+            self.cb.toggle()
+        super().mousePressEvent(e)
+
+
+def wrap_check(cb, *extra):
+    """6.1: a QCheckBox whose text word-wraps (QCheckBox itself can't), so long options fit narrow panels such as
+    the Studio inspector. The text moves to a clickable label; the checkbox keeps it as its accessible name."""
+    text = cb.text()
+    cb.setText(""); cb.setAccessibleName(text)
+    lbl = _CheckLabel(text, cb)
+    lbl.setEnabled(cb.isEnabled()); lbl.setVisible(not cb.isHidden()); lbl.setToolTip(cb.toolTip())
+    cb.wrap_label = lbl
+    cb._wrap_follow = _CheckFollow(cb, lbl)
+    h = QHBoxLayout(); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+    h.addWidget(cb, 0, Qt.AlignTop); h.addWidget(lbl, 1)
+    for w in extra:
+        h.addWidget(w, 0, Qt.AlignTop)
+    return h
+
+
 def hrow(*widgets, stretch_end=False, spacing=8):
     h = QHBoxLayout()
     h.setSpacing(spacing)

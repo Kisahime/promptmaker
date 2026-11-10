@@ -3,7 +3,7 @@ import json
 import urllib.error
 import urllib.request
 
-BASE = "http://localhost:11434"
+BASE = "http://127.0.0.1:11434"  # 6.1: not localhost - Windows tries IPv6 first (4 s vs 2 s per dead port)
 INSTALL_HINT = ("Ollama isn't running. Start the Ollama app (or run 'ollama serve'), then click Refresh. "
                 "Not installed? Get it free from https://ollama.com/download, then run 'ollama pull llama3.2'.")
 

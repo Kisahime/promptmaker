@@ -256,7 +256,8 @@ class V41Pages:
         self.be_status.setCursor(Qt.PointingHandCursor); self.be_status.setToolTip(tr("Image backend · click for Settings → Image generation"))
         self.be_status.clicked.connect(lambda: self.go("Settings"))
         self.queue_btn = button("☰", self.open_queue, "ghost", "Image queue")
-        f.addLayout(hrow(self.be_status, None, self.queue_btn))
+        extras = self._status_extras() if hasattr(self, "_status_extras") else []  # 6.1: Start + ADetailer toggle
+        f.addLayout(hrow(self.be_status, *extras, None, self.queue_btn))
         self._status = ("off", "")
         self._status_busy = False
         self.status_timer = QTimer(self); self.status_timer.timeout.connect(self.poll_status)
@@ -276,6 +277,8 @@ class V41Pages:
         plain = self._status_text().split("</span>")[-1].strip()
         dot = {"online": "🟢", "offline": "🔴", "loading": "◌"}.get(kind, "○")
         self.be_status.setText(f"{dot} {plain}"[:42]); self.be_status.setToolTip(f"{plain}\n" + tr("Click for Settings → Image generation"))
+        if hasattr(self, "_status_changed"):
+            self._status_changed(kind)
 
     def poll_status(self):
         """One cheap status request in a worker; never stacks (skips while one is in flight)."""

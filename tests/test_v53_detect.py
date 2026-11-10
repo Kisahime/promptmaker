@@ -77,7 +77,9 @@ def test_choose(kind, url, found, want):
     assert bd.choose(kind, url, found) == want
 
 
-def test_window_switches_and_reuses_profile(win, servers):
+def test_window_switches_and_reuses_profile(win, servers, monkeypatch):
+    # 6.1: only the mock servers count - a real Forge / ComfyUI on 7860 / 8188 must not change the result
+    monkeypatch.setattr(bd, "DEFAULT_PORTS", {k: () for k in bd.KINDS})
     _s, cu = servers("comfyui")
     win.store.set("img_backend", "a1111"); win.store.set("img_url:a1111", "http://127.0.0.1:9")
     win.store.set("img_url:comfyui", cu); win.store.set("backend_profile:comfyui", "moss")

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
                                QVBoxLayout, QWidget)
 
 from . import autorefine, firstrun, imagegen, loras, pose, presets
+from . import __version__
 from .i18n import tr
 from .posecanvas import PoseCanvas
 from .widgets import Card, ConfirmButton, button, hrow, label
@@ -139,7 +140,7 @@ class SetupWizard(QDialog):
         self.win, self.res, self.pull_worker = win, None, None
         self.setWindowTitle(tr("PromptMaker setup")); self.resize(720, 560)
         v = QVBoxLayout(self); v.setContentsMargins(22, 18, 22, 18); v.setSpacing(12)
-        v.addWidget(label("Welcome to PromptMaker 3.0", "h1"))
+        v.addWidget(label(tr("Welcome to PromptMaker {version}").format(version=".".join(__version__.split(".")[:2])), "h1"))
         v.addWidget(label("This checks what's on your PC. Everything is optional except an AI model for the AI features – "
                           "the offline Builder works without anything.", "muted", wrap=True))
         o = Card("1 · Ollama (local AI)")
@@ -286,6 +287,9 @@ class V3Pages:
         if self.store.get("hr_on", False):  # Forge: enable_hr; ComfyUI (4.1): LatentUpscaleBy + 2nd KSampler pass
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
+        if a1 or imagegen._IMPACT_CACHE.get(getattr(backend, "url", ""), True):
+            # 6.1: Settings -> ADetailer (Forge ADetailer, or ComfyUI's Impact Pack FaceDetailer unless known missing)
+            job.adetailer = imagegen.adetailer_from_store(self.store)
         job.profile_family = self.profile.get("family", "")
         job.workflow_meta = meta
         if wf_name:  # 5.2: optional per-workflow text encoder / VAE override; empty = auto-detect

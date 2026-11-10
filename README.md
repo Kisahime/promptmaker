@@ -6,7 +6,7 @@
 
 Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 6.0** expands the Video maker's animation: pick which local **Wan2GP model preset** animates your scenes, add one optional **creative LoRA** with its own strength, set **project defaults with per-scene overrides**, and get a **preflight** that names missing files before a job starts and never downloads anything. **Version 5.3** added the **Video maker**: an idea or story (plus an optional song) becomes AI-planned scenes, stills, Wan2GP clips and a finished MP4, all locally. **Version 5.2** added **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
 
-**Latest release:** [v6.0.0](https://github.com/Kisahime/promptmaker/releases/tag/v6.0.0) · [Changelog](CHANGELOG.md)
+**Latest release:** [v6.5.0](https://github.com/Kisahime/promptmaker/releases/tag/v6.5.0) · [Changelog](CHANGELOG.md)
 
 ![Create page](docs/screenshots/create.png)
 
@@ -136,7 +136,7 @@ You need **Python 3.10+** ([python.org](https://www.python.org/downloads/); on W
 
 - **Ollama** (optional, for AI features) with a text model (`ollama pull llama3.2`) and a **vision model** (`ollama pull qwen2.5vl`) for Image to Prompt, captions, Auto-refine and gallery tagging. The setup wizard can download both.
 - **Forge** (or ComfyUI) for images. Forge must run with the API on: `set COMMANDLINE_ARGS=--api` in `webui-user.bat`.
-- **Face Swap**: the face model, see [Face Swap setup](#face-swap-setup).
+- **Face Swap**: the face model, see [Face Swap setup](#face-swap-setup). *(6.5)* Tick **Remove background** to cut out just the head and set it on a plain White, Grey or Black fill, so the source photo's background doesn't leak into the swap.
 - **Live sketch** (optional): for scribble mode, put [xinsir/controlnet-scribble-sdxl-1.0](https://huggingface.co/xinsir/controlnet-scribble-sdxl-1.0) in Forge's `models\ControlNet` folder; without it Live sketch uses fast img2img.
 - **LoRA training** (optional): git and an NVIDIA GPU, see [LoRA training](#lora-training-optional).
 - **Video maker** (optional): **ffmpeg** for the MP4 (PATH, Pinokio's `ffmpeg-env`, or Wan2GP's `ffmpeg_bins`), and [Wan2GP](https://github.com/deepbeepmeep/Wan2GP) only for animated scenes. See [Video maker](#video-maker).
@@ -192,6 +192,8 @@ PromptMaker doesn't include an image model. It sends prompts to a backend you al
 
 **Hires fix (Forge/A1111).** Tick **Hires fix** in Settings → Image generation and press **Save**. PromptMaker sends `enable_hr` with your scale, upscaler, hires steps and denoise (0.3–0.5 keeps the picture; 1.5× Latent with denoise 0.4 is a good start), and tells Forge Neo to reuse the same VAE and text encoders for the second pass.
 
+**ADetailer (Forge, or ComfyUI with the Impact Pack)** *(6.5)*. With the [ADetailer](https://github.com/Bing-su/adetailer) extension in Forge, or [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) + [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) in ComfyUI (install both with ComfyUI Manager), tick **ADetailer** in Settings -> Image generation and press the reload button to load your detector models. Pick a **Preset** (*Face*, *Face + hands*, *Full body*) or set the passes yourself: pass 1 defaults to `face_yolov8s.pt` (denoise 0.4, confidence 0.3), and its optional prompt is used only for the detailed area (empty = the main prompt). Tick **Second pass** to add e.g. `hand_yolov8n.pt`. On ComfyUI each pass becomes an UltralyticsDetectorProvider + FaceDetailer after the VAE decode. The **ADetailer** tick in the top bar is the same switch. It applies to every image except Face Swap, and the Video maker's *ADetailer faces* tick uses the same passes. The controls are greyed out when the backend has no ADetailer / FaceDetailer.
+
 **Freeing VRAM.** With Ollama as the AI provider, PromptMaker unloads every loaded Ollama model (`keep_alive: 0`) before each image. In Auto-refine the vision model reloads after each image, so each round takes a few seconds longer.
 
 Set the backend, URL, workflow, checkpoint, steps and CFG in **Settings → Image generation**, then use the **🖼 Generate** buttons on Create, Builder, Image to Prompt, A/B Test and Gallery. Width and height come from the target model profile's aspect ratio. Images go to `data/gallery/` as PNG files, each with a `.json` sidecar holding the prompt, negative prompt, seed, profile and settings.
@@ -232,6 +234,8 @@ With a reference face, the main character's face is locked with IP-Adapter Plus 
 Projects live in `data/videos/<name>/` (with their stills, clips and character references) and resume where they stopped; **⟳ Redo still / Redo clip** remakes one scene.
 
 ## Backend auto-detect
+
+**Start Forge / Start ComfyUI** *(6.5)*. Settings -> Image generation shows **▶ Start Forge** and **▶ Start ComfyUI** when PromptMaker finds their launchers (`webui-user.bat` for Forge, `run_nvidia_gpu.bat` for the ComfyUI portable build; other locations under **Launcher paths**). The backend opens in its own console window, and PromptMaker switches to it as soon as its API answers (up to 5 minutes; Forge needs `--api` in `COMMANDLINE_ARGS`). It won't start a second copy of something that's already running, and asks first when the other backend is running, since both together can run out of VRAM on an 8 GB card.
 
 At startup PromptMaker checks in the background which image backend is running – Forge / A1111 at its URL or ports 7860–7862, ComfyUI at its URL or 8188 / 8000 / 8189 – and switches to it with a short notice, reusing the target model you last used with that backend. A running current backend is kept; when nothing runs, nothing changes. Turn it off or press **🔎 Detect now** in Settings → Image generation.
 
