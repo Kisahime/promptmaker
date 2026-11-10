@@ -203,7 +203,7 @@ def load_workflow(path):
 AD_FACE, AD_HAND = "face_yolov8s.pt", "hand_yolov8n.pt"
 AD_DEFAULT_MODELS = (AD_FACE, "face_yolov8n.pt", AD_HAND, "person_yolov8n-seg.pt", "mediapipe_face_full")
 AD_MAX_PASSES = 2
-AD_PASS_DEFAULTS = {"ad_denoising_strength": 0.4, "ad_confidence": 0.3, "ad_inpaint_only_masked": True, "ad_inpaint_padding": 32}
+AD_PASS_DEFAULTS = {"ad_denoising_strength": 0.4, "ad_confidence": 0.3, "ad_inpaint_only_masked": True, "ad_inpaint_only_masked_padding": 32}
 _AD_CACHE = {}  # Forge URL -> detector model names
 
 
@@ -227,11 +227,13 @@ def adetailer_passes(value):
             continue
         d = dict(AD_PASS_DEFAULTS)
         d.update({k: v for k, v in item.items() if v is not None})
+        if "ad_inpaint_padding" in d:  # early 6.1 test builds used the wrong key; ADetailer rejects unknown keys
+            d["ad_inpaint_only_masked_padding"] = d.pop("ad_inpaint_padding")
         d["ad_model"] = model
         d["ad_denoising_strength"] = float(d["ad_denoising_strength"])
         d["ad_confidence"] = float(d["ad_confidence"])
         d["ad_inpaint_only_masked"] = bool(d["ad_inpaint_only_masked"])
-        d["ad_inpaint_padding"] = int(d["ad_inpaint_padding"])
+        d["ad_inpaint_only_masked_padding"] = int(d["ad_inpaint_only_masked_padding"])
         for k in ("ad_prompt", "ad_negative_prompt"):
             t = str(d.get(k) or "").strip()
             if t:

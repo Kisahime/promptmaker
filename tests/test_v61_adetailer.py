@@ -1,4 +1,4 @@
-﻿"""6.1: ADetailer passes for Forge / A1111: payload, detector list, Settings controls and the Video maker tick.
+"""6.1: ADetailer passes for Forge / A1111: payload, detector list, Settings controls and the Video maker tick.
 
 No real Forge: _http is monkeypatched, and no image is generated."""
 import json
@@ -43,7 +43,7 @@ def test_one_pass_gets_defaults():
     args = _ad(_job([{"ad_model": FACE, "ad_prompt": "   ", "ad_negative_prompt": ""}]))["args"]
     assert args[:2] == [True, False] and len(args) == 3
     assert args[2] == {"ad_model": FACE, "ad_denoising_strength": 0.4, "ad_confidence": 0.3,
-                       "ad_inpaint_only_masked": True, "ad_inpaint_padding": 32}
+                       "ad_inpaint_only_masked": True, "ad_inpaint_only_masked_padding": 32}
 
 
 def test_two_passes_and_cap():
