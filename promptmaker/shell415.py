@@ -98,7 +98,7 @@ class Shell415:
         w = QWidget(); w.setObjectName("topBar"); w.setAttribute(Qt.WA_StyledBackground, True)
         h = QHBoxLayout(w); h.setContentsMargins(18, 10, 14, 10); h.setSpacing(10)
         self.search_btn = QPushButton("⌕   " + tr("Search pages and actions, or type an idea…") + "        Ctrl+K")
-        self.search_btn.setObjectName("search"); self.search_btn.setCursor(Qt.IBeamCursor); self.search_btn.setMinimumWidth(180)  # 6.1: room for the ADetailer toggle at the 1100 px minimum
+        self.search_btn.setObjectName("search"); self.search_btn.setCursor(Qt.IBeamCursor); self.search_btn.setMinimumWidth(140)  # 6.5: room for the ADetailer toggle at the 1100 px minimum (Linux fonts run wider)
         self.search_btn.setStyleSheet("text-align: left;")
         self.search_btn.clicked.connect(self.open_quickbar)
         h.addWidget(self.search_btn, 2)
@@ -111,11 +111,11 @@ class Shell415:
         for pid, p in self.profiles.items():
             self.profile_combo.addItem(p["name"], pid)
         idx = self.profile_combo.findData(self.store.get("profile", "generic"))
-        self.profile_combo.setCurrentIndex(max(0, idx)); self.profile_combo.setMinimumWidth(170); self.profile_combo.setMaximumWidth(240)
+        self.profile_combo.setCurrentIndex(max(0, idx)); self.profile_combo.setMinimumWidth(140); self.profile_combo.setMaximumWidth(240)
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
         h.addWidget(label("Target", "hint")); h.addWidget(self.profile_combo)
         self.prov_label = label("", "hint"); h.addWidget(self.prov_label)
-        self.model = QComboBox(); self.model.setPlaceholderText("no models"); self.model.setMinimumWidth(130); self.model.setMaximumWidth(200)
+        self.model = QComboBox(); self.model.setPlaceholderText("no models"); self.model.setMinimumWidth(110); self.model.setMaximumWidth(200)
         self.model.currentTextChanged.connect(lambda m: m and self.store.set(f"model:{self.provider.pid}", m))
         h.addWidget(self.model)
         self.ai_dot = label("○ checking…", "hint"); h.addWidget(self.ai_dot)
