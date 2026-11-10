@@ -287,8 +287,9 @@ class V3Pages:
         if self.store.get("hr_on", False):  # Forge: enable_hr; ComfyUI (4.1): LatentUpscaleBy + 2nd KSampler pass
             job.hires = {"scale": self.store.get("hr_scale", 1.5), "upscaler": self.store.get("hr_upscaler", "Latent"),
                          "steps": self.store.get("hr_steps", 0), "denoise": self.store.get("hr_denoise", 0.4)}
-        if a1:
-            job.adetailer = imagegen.adetailer_from_store(self.store)  # 6.1: Settings -> ADetailer (Forge only)
+        if a1 or imagegen._IMPACT_CACHE.get(getattr(backend, "url", ""), True):
+            # 6.1: Settings -> ADetailer (Forge ADetailer, or ComfyUI's Impact Pack FaceDetailer unless known missing)
+            job.adetailer = imagegen.adetailer_from_store(self.store)
         job.profile_family = self.profile.get("family", "")
         job.workflow_meta = meta
         if wf_name:  # 5.2: optional per-workflow text encoder / VAE override; empty = auto-detect

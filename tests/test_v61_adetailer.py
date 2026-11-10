@@ -140,6 +140,9 @@ def test_settings_controls_exist_and_grey_out(win):
     for n in ("ad_on", "ad_reload", "ad_model", "ad_denoise", "ad_conf", "ad_prompt", "ad2_on", "ad2_model", "ad2_denoise", "ad_note"):
         assert hasattr(win, n), n
     win.img_kind.setCurrentIndex(win.img_kind.findData("comfyui"))
+    # ComfyUI: off until the Impact Pack FaceDetailer is confirmed; the reload button checks for it
+    assert not win.ad_on.isEnabled() and win.ad_reload.isEnabled() and "Impact" in win.ad_note.text()
+    win.img_kind.setCurrentIndex(win.img_kind.findData("none"))
     assert not win.ad_on.isEnabled() and not win.ad_reload.isEnabled() and "Forge" in win.ad_note.text()
     _forge(win)
     assert win.ad_on.isEnabled() and win.ad_reload.isEnabled()
@@ -174,9 +177,16 @@ def test_settings_persist_and_reach_the_job(win):
     assert [p["ad_model"] for p in args[2:]] == ["mediapipe_face_full", HAND] and args[2]["ad_prompt"] == "detailed eyes"
     win.ad_on.setChecked(False); win._img_save()
     assert win.make_job("a cat")[0].adetailer is None
-    st.set("img_backend", "comfyui"); st.set("ad_on", True)
-    made = win.make_job("a cat")
-    assert made is None or getattr(made[0], "adetailer", None) is None  # Forge only
+    st.set("img_backend", "comfyui"); st.set("ad_on", True); st.set("img_url:comfyui", "http://127.0.0.1:9")
+    imagegen._IMPACT_CACHE["http://127.0.0.1:9"] = {}  # ComfyUI known to have no Impact Pack
+    try:
+        made = win.make_job("a cat")
+        assert made is None or getattr(made[0], "adetailer", None) is None
+        imagegen._IMPACT_CACHE["http://127.0.0.1:9"] = {"FaceDetailer": {}, "UltralyticsDetectorProvider": {}}
+        made = win.make_job("a cat")
+        assert made and [p["ad_model"] for p in imagegen.adetailer_passes(made[0].adetailer)] == ["mediapipe_face_full", HAND]
+    finally:
+        imagegen._IMPACT_CACHE.pop("http://127.0.0.1:9", None)
 
 
 def test_settings_reload_after_restart(win, tmp_path):
@@ -199,7 +209,14 @@ def test_video_maker_uses_settings(win):
     assert [p["ad_model"] for p in imagegen.adetailer_passes(win._vm_adetailer(forge))] == [FACE]  # nothing saved yet
     win.store.set("ad_model", "mediapipe_face_full"); win.store.set("ad2_on", True); win.store.set("ad2_model", HAND)
     assert [p["ad_model"] for p in imagegen.adetailer_passes(win._vm_adetailer(forge))] == ["mediapipe_face_full", HAND]
-    assert win._vm_adetailer(imagegen.ComfyUI("http://127.0.0.1:9")) is None
+    comfy = imagegen.ComfyUI("http://127.0.0.1:9")
+    imagegen._IMPACT_CACHE[comfy.url] = {}
+    try:
+        assert win._vm_adetailer(comfy) is None  # no Impact Pack
+        imagegen._IMPACT_CACHE[comfy.url] = {"FaceDetailer": {}, "UltralyticsDetectorProvider": {}}
+        assert win._vm_adetailer(comfy)
+    finally:
+        imagegen._IMPACT_CACHE.pop(comfy.url, None)
     assert win.vm_ad.toolTip()
 
 

@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import random
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -244,6 +245,203 @@ def adetailer_passes(value):
     return out[:AD_MAX_PASSES]
 
 
+def _det_base(name):
+    return str(name).replace("\\", "/").split("/")[-1].lower()
+
+
+def match_detector(name, options):
+    """Closest detector in `options` for `name`, so one saved choice works on both backends (Forge 'face_yolov8s.pt'
+    <-> ComfyUI 'bbox/face_yolov8m.pt'): exact, same file name, same family (face_yolov8*), same role
+    (face / hand / person), else ''."""
+    opts = [str(o) for o in (options or []) if o and str(o).lower() != "none"]
+    if not name or not opts:
+        return ""
+    name = str(name)
+    if name in opts:
+        return name
+    b = _det_base(name)
+    for o in opts:
+        if _det_base(o) == b:
+            return o
+    stem = re.sub(r"\.(pt|pth|safetensors|tflite|task|onnx)$", "", b)
+    fam = re.sub(r"[nsmlx](-seg)?$", "", stem)
+    if len(fam) > 4:
+        for o in opts:
+            if _det_base(o).startswith(fam):
+                return o
+    role = next((r for r in ("face", "hand", "person") if r in b), "")
+    if role:
+        cands = [o for o in opts if role in _det_base(o)]
+        cands.sort(key=lambda o: ("yolo" not in _det_base(o), len(o)))
+        if cands:
+            return cands[0]
+    return ""
+
+
+# 6.1: presets for Settings -> ADetailer: (label, [(role, denoise)]). Models come from the backend's own list.
+AD_PRESETS = {
+    "face": ("Face", [("face", 0.4)]),
+    "face_hands": ("Face + hands", [("face", 0.4), ("hand", 0.4)]),
+    "full_body": ("Full body", [("person", 0.3), ("face", 0.4)]),
+}
+AD_ROLE_MODELS = {"face": AD_FACE, "hand": AD_HAND, "person": "person_yolov8n-seg.pt"}
+
+
+def adetailer_preset(key, available=None):
+    """Passes for a preset using detectors that exist in `available` (the Forge or ComfyUI list; None = not loaded
+    yet, so the usual names are used). A role with no matching detector is left out, never sent as a missing model."""
+    out = []
+    for role, den in AD_PRESETS.get(key, ("", []))[1]:
+        want = AD_ROLE_MODELS[role]
+        model = match_detector(want, available) if available else want
+        if model and model not in [p["ad_model"] for p in out]:
+            out.append({"ad_model": model, "ad_denoising_strength": den, "ad_confidence": 0.3})
+    return out
+
+
+def forge_detector(name, known=None):
+    """A detector name Forge's ADetailer accepts: ComfyUI-style 'bbox/x.pt' loses its folder; with Forge's list
+    known, the closest model in it."""
+    base = str(name).replace("\\", "/").split("/")[-1]
+    if known:
+        return match_detector(name, known) or match_detector(base, known) or base
+    return base
+
+
+def _combo_options(spec):
+    """Options of a ComfyUI combo input spec: [[...], {...}] (classic) or ["COMBO", {"options": [...]}] (newer)."""
+    if isinstance(spec, (list, tuple)) and spec:
+        if isinstance(spec[0], (list, tuple)):
+            return list(spec[0])
+        if spec[0] == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
+            return list(spec[1].get("options") or [])
+    return []
+
+
+def _spec_default(spec):
+    opts = _combo_options(spec)
+    if opts:
+        return opts[0]
+    if isinstance(spec, (list, tuple)) and len(spec) > 1 and isinstance(spec[1], dict):
+        return spec[1].get("default")
+    return None
+
+
+IMPACT_NODES = ("FaceDetailer", "UltralyticsDetectorProvider")
+IMPACT_HINT = ("ADetailer on ComfyUI needs the Impact Pack: in ComfyUI Manager -> Custom Nodes Manager install "
+               "ComfyUI-Impact-Pack and ComfyUI-Impact-Subpack, restart ComfyUI, then reload the list.")
+# FaceDetailer inputs PromptMaker sets itself; anything else required gets the default from /object_info.
+FACEDETAILER_FIXED = {"guide_size": 512, "guide_size_for": True, "max_size": 1024, "feather": 5, "noise_mask": True,
+                      "force_inpaint": True, "bbox_dilation": 10, "bbox_crop_factor": 3.0, "sam_detection_hint": "center-1",
+                      "sam_dilation": 0, "sam_threshold": 0.93, "sam_bbox_expansion": 0, "sam_mask_hint_threshold": 0.7,
+                      "sam_mask_hint_use_negative": "False", "drop_size": 10, "wildcard": "", "cycle": 1}
+_IMPACT_CACHE = {}  # ComfyUI URL -> {"FaceDetailer": spec, "UltralyticsDetectorProvider": spec} ({} = not installed)
+
+
+def facedetailer_models(info):
+    spec = ((info or {}).get("UltralyticsDetectorProvider") or {}).get("input", {}).get("required", {}).get("model_name")
+    return [str(o) for o in _combo_options(spec) if o]
+
+
+def _find_clip(wf, start):
+    """Follow a conditioning link back to the CLIP that encoded it (through Combine / SetArea / ControlNet nodes)."""
+    seen, todo = set(), [start]
+    while todo:
+        link = todo.pop(0)
+        if not (isinstance(link, list) and link and link[0] in wf) or link[0] in seen:
+            continue
+        seen.add(link[0])
+        ins = wf[link[0]].get("inputs", {})
+        if isinstance(ins.get("clip"), list):
+            return ins["clip"]
+        todo += [v for v in ins.values() if isinstance(v, list) and v and v[0] in wf]
+    for k, n in wf.items():
+        if n.get("class_type") in ("CheckpointLoaderSimple", "CheckpointLoader"):
+            return [k, 1]
+    for k, n in wf.items():
+        if n.get("class_type") in ("CLIPLoader", "DualCLIPLoader", "TripleCLIPLoader"):
+            return [k, 0]
+    return None
+
+
+def add_comfy_facedetailer(wf, passes, info):
+    """6.1: ADetailer on ComfyUI = Impact Pack FaceDetailer. After the VAEDecode that feeds SaveImage, chain one
+    UltralyticsDetectorProvider + FaceDetailer per pass (max 2) on the same model / CLIP / VAE / conditioning and
+    sampler settings, and save the last FaceDetailer's image instead. Raises ValueError for unknown workflow shapes."""
+    passes = adetailer_passes(passes)
+    if not passes or not info:
+        return wf
+    wf = copy.deepcopy(wf)
+    saves = [k for k, n in wf.items() if n.get("class_type") in ("SaveImage", "SaveImageWebsocket", "Image Save")]
+    src = wf[saves[0]]["inputs"].get("images") if saves else None
+    if not (isinstance(src, list) and src and src[0] in wf and wf[src[0]].get("class_type") == "VAEDecode"):
+        raise ValueError("the workflow has no VAEDecode -> SaveImage step to add FaceDetailer after")
+    dec = src[0]
+    vae = wf[dec]["inputs"].get("vae")
+    smp = wf[dec]["inputs"].get("samples")
+    ks = smp[0] if isinstance(smp, list) and smp and wf.get(smp[0], {}).get("class_type") in ("KSampler", "KSamplerAdvanced") else \
+        next((k for k, n in wf.items() if n.get("class_type") in ("KSampler", "KSamplerAdvanced")), None)
+    if not ks:
+        raise ValueError("the workflow has no KSampler")
+    ki = wf[ks]["inputs"]
+    pos, neg = ki.get("positive"), ki.get("negative")
+    clip = _find_clip(wf, pos)
+    if not (isinstance(ki.get("model"), list) and isinstance(vae, list) and clip and pos and neg):
+        raise ValueError("couldn't find the model, CLIP, VAE and prompts in the workflow")
+
+    def plain(key, default):
+        v = ki.get(key)
+        return default if v is None or isinstance(v, list) else v
+    base = {"model": ki["model"], "clip": clip, "vae": vae, "seed": plain("seed", plain("noise_seed", 0)),
+            "steps": plain("steps", 20), "cfg": plain("cfg", 6.0), "sampler_name": plain("sampler_name", "euler"),
+            "scheduler": plain("scheduler", "normal")}
+    req = ((info.get("FaceDetailer") or {}).get("input") or {}).get("required") or {}
+    models = facedetailer_models(info)
+    image = [dec, 0]
+    for i, p in enumerate(passes):
+        det, fd = f"pm_ad{i + 1}_det", f"pm_ad{i + 1}_fd"
+        wf[det] = {"class_type": "UltralyticsDetectorProvider",
+                   "inputs": {"model_name": match_detector(p["ad_model"], models) or (models[0] if models else p["ad_model"])}}
+        ppos, pneg = pos, neg
+        if p.get("ad_prompt"):
+            wf[f"pm_ad{i + 1}_pos"] = {"class_type": "CLIPTextEncode", "inputs": {"text": p["ad_prompt"], "clip": clip}}
+            ppos = [f"pm_ad{i + 1}_pos", 0]
+        if p.get("ad_negative_prompt"):
+            wf[f"pm_ad{i + 1}_neg"] = {"class_type": "CLIPTextEncode", "inputs": {"text": p["ad_negative_prompt"], "clip": clip}}
+            pneg = [f"pm_ad{i + 1}_neg", 0]
+        vals = dict(FACEDETAILER_FIXED, **base)
+        vals.update(image=image, positive=ppos, negative=pneg, bbox_detector=[det, 0],
+                    denoise=float(p["ad_denoising_strength"]), bbox_threshold=float(p["ad_confidence"]))
+        if req:
+            inputs = {}
+            for name, spec in req.items():
+                v = vals.get(name)
+                opts = _combo_options(spec)
+                if v is None or (opts and not isinstance(v, list) and v not in opts):
+                    v = _spec_default(spec)
+                if v is not None:
+                    inputs[name] = v
+        else:
+            inputs = vals
+        wf[fd] = {"class_type": "FaceDetailer", "inputs": inputs}
+        image = [fd, 0]
+    for k in saves:
+        if wf[k]["inputs"].get("images") == [dec, 0]:
+            wf[k]["inputs"]["images"] = image
+    return wf
+
+
+def _job_warn(job, msg):
+    ws = getattr(job, "warnings", None)
+    if isinstance(ws, list):
+        ws.append(msg)
+    else:
+        try:
+            job.warnings = [msg]
+        except AttributeError:
+            pass
+
+
 def adetailer_args(value):
     """alwayson_scripts["ADetailer"]["args"]: [enable, skip_img2img, pass1, pass2...], or None when there's no pass."""
     passes = adetailer_passes(value)
@@ -409,6 +607,32 @@ class ComfyUI:
     def regional_support(self):
         return "comfy"  # ConditioningSetArea is a core node
 
+    def impact_info(self, refresh=False):
+        """6.1: /object_info for FaceDetailer + UltralyticsDetectorProvider (Impact Pack + Subpack), cached per URL.
+        {} when either node is missing; an offline ComfyUI isn't cached."""
+        if not refresh and self.url in _IMPACT_CACHE:
+            return _IMPACT_CACHE[self.url]
+        info = {}
+        for node in IMPACT_NODES:
+            try:
+                d = _http(f"{self.url}/object_info/{node}", timeout=8)
+            except BackendError as e:
+                if not str(e).startswith("HTTP"):
+                    return {}
+                d = {}
+            if not isinstance(d, dict) or not isinstance(d.get(node), dict):
+                info = {}
+                break
+            info[node] = d[node]
+        _IMPACT_CACHE[self.url] = info
+        return info
+
+    def facedetailer_models(self, refresh=False):
+        """Detector models for ADetailer on ComfyUI (UltralyticsDetectorProvider's list); [] without Impact Pack."""
+        return facedetailer_models(self.impact_info(refresh))
+
+    adetailer_models = facedetailer_models
+
     def controlnet_models(self):
         try:
             info = _http(self.url + "/object_info/ControlNetLoader", timeout=10)
@@ -490,6 +714,16 @@ class ComfyUI:
         hr = getattr(job, "hires", None)
         if hr and not up and not (ip and ip.get("image")):
             wf = add_comfy_hires(wf, hr.get("scale", 1.5), hr.get("denoise", 0.4), hr.get("steps") or 0)
+        adp = adetailer_passes(getattr(job, "adetailer", None))
+        if adp and not up:  # 6.1: ADetailer passes -> Impact Pack FaceDetailer
+            info = self.impact_info()
+            if not info:
+                _job_warn(job, "ADetailer skipped: ComfyUI has no Impact Pack FaceDetailer")
+            else:
+                try:
+                    wf = add_comfy_facedetailer(wf, adp, info)
+                except ValueError as e:
+                    _job_warn(job, f"ADetailer skipped: {e}")
         from . import comfyws
         ws = comfyws.connect(self.url, self.client_id) if (progress or LIVE_PREVIEW) and not os.environ.get("PROMPTMAKER_NO_WS") else None
         try:
@@ -757,6 +991,8 @@ class A1111:
                 p["override_settings_restore_afterwards"] = True
         ad = adetailer_args(getattr(job, "adetailer", None))
         if ad:  # 5.3 face pass / 6.1 up to two passes (ADetailer extension)
+            for d in ad[2:]:
+                d["ad_model"] = forge_detector(d["ad_model"], _AD_CACHE.get(self.url))
             p.setdefault("alwayson_scripts", {})["ADetailer"] = {"args": ad}
         cn = getattr(job, "controlnet", None)
         if cn and cn.get("image"):

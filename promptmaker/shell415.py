@@ -98,7 +98,7 @@ class Shell415:
         w = QWidget(); w.setObjectName("topBar"); w.setAttribute(Qt.WA_StyledBackground, True)
         h = QHBoxLayout(w); h.setContentsMargins(18, 10, 14, 10); h.setSpacing(10)
         self.search_btn = QPushButton("⌕   " + tr("Search pages and actions, or type an idea…") + "        Ctrl+K")
-        self.search_btn.setObjectName("search"); self.search_btn.setCursor(Qt.IBeamCursor); self.search_btn.setMinimumWidth(260)
+        self.search_btn.setObjectName("search"); self.search_btn.setCursor(Qt.IBeamCursor); self.search_btn.setMinimumWidth(180)  # 6.1: room for the ADetailer toggle at the 1100 px minimum
         self.search_btn.setStyleSheet("text-align: left;")
         self.search_btn.clicked.connect(self.open_quickbar)
         h.addWidget(self.search_btn, 2)

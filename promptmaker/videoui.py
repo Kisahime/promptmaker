@@ -69,7 +69,7 @@ class VideoMakerPage:
         self.vm_lyrics.setMaximumHeight(110); pc.add(self.vm_lyrics)
         self.vm_captions = QCheckBox(tr("Show captions")); self.vm_captions.setChecked(True)
         self.vm_ad = QCheckBox(tr("ADetailer faces (Forge)")); self.vm_ad.setChecked(bool(self.store.get("vm_ad", False)))
-        self.vm_ad.setToolTip(tr("Runs the ADetailer passes set in Settings - Image generation on every still ""(face_yolov8s.pt when none are set). Forge only."))
+        self.vm_ad.setToolTip(tr("Runs the ADetailer passes set in Settings - Image generation on every still ""(face_yolov8s.pt when none are set). Forge, or ComfyUI with the Impact Pack."))
         pc.add(hrow(self.vm_captions, self.vm_ad, None))
         pc.add(hrow(button("🧠 Plan scenes with AI", self.vm_plan, "primary"), None))
         cc = Card("Characters")
@@ -745,7 +745,8 @@ class VideoMakerPage:
 
     def _vm_adetailer(self, backend):
         """6.1: ticked = the Settings ADetailer passes (face_yolov8s.pt if none are saved); unticked = none."""
-        if self.vm_ad.isChecked() and isinstance(backend, imagegen.A1111):
+        comfy_ok = isinstance(backend, imagegen.ComfyUI) and imagegen._IMPACT_CACHE.get(backend.url, True)
+        if self.vm_ad.isChecked() and (isinstance(backend, imagegen.A1111) or comfy_ok):
             if not self.store.get("ad_model"):  # nothing saved in Settings yet: the 5.3 face pass
                 return imagegen.AD_FACE
             return imagegen.adetailer_from_store(self.store, force=True)
