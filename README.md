@@ -4,7 +4,32 @@
 
 **A local desktop studio for writing AI image prompts.** You can describe an idea in plain words, build a prompt from 800 presets, refine it in a chat with a local LLM, or score it. Each prompt is formatted for the image model you're targeting, such as FLUX.2, SDXL, Pony, Illustrious, Anima, MOSS-Image, Qwen-Image, Midjourney V7, GPT Image and more.
 
-Everything runs on your own computer by default. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers. **Version 6.0** expands the Video maker's animation: pick which local **Wan2GP model preset** animates your scenes, add one optional **creative LoRA** with its own strength, set **project defaults with per-scene overrides**, and get a **preflight** that names missing files before a job starts and never downloads anything. **Version 5.3** added the **Video maker**: an idea or story (plus an optional song) becomes AI-planned scenes, stills, Wan2GP clips and a finished MP4, all locally. **Version 5.2** added **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition. **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend. **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing. Version 4 added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo). Version 3 added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet. It can also generate images through **ComfyUI** or **Forge / AUTOMATIC1111**, turn images back into prompts, compare prompts A/B, and import checkpoint-specific guidance from **Civitai**.
+Everything runs on your own computer by default, and nothing is downloaded without asking. The AI features are optional and work with [Ollama](https://ollama.com), LM Studio, llama.cpp, KoboldCpp, vLLM or any OpenAI-compatible server, plus optional cloud providers.
+
+**What you can do with it:**
+
+- **Write better prompts**: 800 presets, plain-words ideas, a chat with a local LLM, scoring, wildcards and A/B comparisons.
+- **Generate images**: send prompts straight to **Forge / AUTOMATIC1111** or **ComfyUI**, with an automatic generate, check and refine loop, inpainting, regional prompts, a pose sketcher and Live sketch.
+- **Turn images back into prompts**, and import checkpoint-specific guidance from **Civitai**.
+- **Creative tools**: Face Swap, Wallpaper mode, Characters, Storyboards & comics, and a Video maker that turns a story into a finished MP4 with Wan2GP.
+- **Runs on modest hardware**: built and tested on an 8 GB GPU.
+
+**Quick start (Windows):** download or clone the repo, double-click `install.bat`, then start it with `run.bat`. See [Install](#install) for details and macOS / Linux.
+
+<details>
+<summary><b>Version history</b> (click to expand)</summary>
+
+- **Version 6.0** expands the Video maker's animation: pick which local **Wan2GP model preset** animates your scenes, add one optional **creative LoRA** with its own strength, set **project defaults with per-scene overrides**, and get a **preflight** that names missing files before a job starts and never downloads anything.
+- **Version 5.3** added the **Video maker**: an idea or story (plus an optional song) becomes AI-planned scenes, stills, Wan2GP clips and a finished MP4, all locally.
+- **Version 5.2** added **Wallpaper mode**: exact-size desktop and phone wallpapers with icon-safe composition.
+- **Version 5.1** added **Face Swap**: generate new images with a source face and hair, or swap a face into an existing picture with a segmentation auto-mask and Auto-blend.
+- **Version 5.0** added Characters, Storyboards & comics, Live sketch, optional LoRA training and automatic vision-model routing.
+- **Version 4** added wildcards and dynamic prompts, inpainting and regional prompts, library export/import with optional private GitHub gist sync, and prompt writing for video models (Wan, LTX-Video, HunyuanVideo).
+- **Version 3** added a first-run setup wizard, an automatic generate → check → refine loop, a LoRA manager, reusable characters and styles, and a pose sketcher with ControlNet.
+
+See the [Changelog](CHANGELOG.md) for every release.
+
+</details>
 
 **Latest release:** [v6.5.0](https://github.com/Kisahime/promptmaker/releases/tag/v6.5.0) · [Changelog](CHANGELOG.md)
 
